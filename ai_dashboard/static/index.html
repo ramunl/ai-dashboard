@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI Agents</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --fg: var(--tg-theme-text-color, #1b1b1f);
+    --hint: var(--tg-theme-hint-color, #8a8a90);
+    --card: var(--tg-theme-secondary-bg-color, #f2f2f5);
+    --link: var(--tg-theme-link-color, #2a7ae2);
+    --accent: var(--tg-theme-button-color, #2a7ae2);
+    --ok: #2e9d57;
+    --bad: #d64545;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 12px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 18px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .sub { color: var(--hint); font-size: 13px; margin-top: 2px; word-break: break-all; }
+  section { background: var(--card); border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--hint); margin: 0 0 6px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+  .row span:first-child { color: var(--hint); flex-shrink: 0; }
+  .row span:last-child { text-align: right; word-break: break-all; }
+  .muted { color: var(--hint); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px;
+           background: var(--accent); color: var(--tg-theme-button-text-color, #fff); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--hint); }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  ol { margin: 0; padding-left: 20px; }
+  li { padding: 2px 0; word-break: break-all; }
+  a { color: var(--link); }
+  pre { margin: 0; white-space: pre-wrap; font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--hint); }
+  .alert { display: none; background: #fdecea; color: #8a1c1c; }
+  footer { color: var(--hint); font-size: 12px; margin-top: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot" id="dot"></span><span id="title">AI Agents</span></h1>
+  <div class="sub" id="subtitle"></div>
+</header>
+<section class="alert" id="alert"></section>
+<main id="view"></main>
+<footer id="updated">Loading…</footer>
+
+<script>
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+  const REFRESH_MS = 5000;
+
+  // ---- tiny DOM helpers: every value goes through textContent, never HTML
+  function el(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    if (className) node.className = className;
+    return node;
+  }
+  function row(label, value) {
+    const node = el("div", null, "row");
+    node.append(el("span", label), value instanceof Node ? value : el("span", value ?? "—"));
+    return node;
+  }
+  function card(title, ...children) {
+    const node = el("section");
+    node.append(el("h2", title), ...children);
+    return node;
+  }
+  function muted(text) { return el("div", text, "muted"); }
+  function openLink(url) {
+    const link = el("a", url);
+    link.href = url;
+    link.addEventListener("click", (event) => {
+      if (tg && tg.openLink) { event.preventDefault(); tg.openLink(url); }
+    });
+    return link;
+  }
+
+  // ---- views. The launcher (/) and PM (/pm) join this table in later steps.
+  function renderCoding(view) {
+    const s = view.snapshot;
+    document.getElementById("title").textContent = s && s.project ? s.project.name : "Coding agent";
+    document.getElementById("subtitle").textContent =
+      s && s.project ? `${s.project.repository} [${s.project.branch}]` : "";
+    if (!s) return [card("Coding agent", muted("No data from the agent yet."))];
+
+    const running = s.running
+      ? [row("Status", (() => { const w = el("span"); w.append(el("span", s.running.status || "RUNNING", "badge")); return w; })()),
+         row("Branch", s.running.branch), row("Phase", s.running.phase)]
+      : [muted("Idle")];
+
+    const queue = s.queue.length
+      ? [(() => { const l = el("ol"); s.queue.forEach((t) => l.append(el("li", `#${t.id} ${t.branch} (${t.label})`))); return l; })()]
+      : [muted("Empty")];
+
+    const plan = [];
+    if (s.pending_plan) {
+      plan.push(row("Feature", s.pending_plan.feature), row("Revision", s.pending_plan.revision),
+                row("Approved", s.pending_plan.approved ? "yes" : "no — /approve"));
+    }
+    if (s.pending_branch) plan.push(row("Ready to run", `${s.pending_branch} — /confirm`));
+    if (s.awaiting_bugfix_answer) plan.push(row("Bugfix", "waiting for /answer"));
+
+    const e = s.last_execution;
+    const last = e
+      ? [row("Branch", e.branch), row("Tests", e.tests), row("Files", e.files_changed.length),
+         row("PR", e.pr_url ? openLink(e.pr_url) : "—")]
+      : [muted("No runs yet")];
+
+    const versions = el("pre", [s.version, s.core].filter(Boolean).join("\n"));
+    return [
+      card("Now", ...running),
+      card("Queue", ...queue),
+      card("Plan", ...(plan.length ? plan : [muted("Nothing pending")])),
+      card("Last run", ...last),
+      card("Providers", row("Planner", s.planning_agent), row("Implementer", s.implementation_agent),
+           row("Verbosity", s.verbosity)),
+      card("Versions", versions),
+    ];
+  }
+
+  const VIEWS = { coding: renderCoding };
+  const DEFAULT_VIEW = "coding";
+
+  function currentView() {
+    const name = location.pathname.replace(/^\/+|\/+$/g, "");
+    return VIEWS[name] ? name : DEFAULT_VIEW;
+  }
+
+  function showAlert(message) {
+    const box = document.getElementById("alert");
+    box.textContent = message || "";
+    box.style.display = message ? "block" : "none";
+  }
+
+  async function refresh() {
+    const initData = tg ? tg.initData : "";
+    if (!initData) {
+      showAlert("Open this dashboard from a bot's Dashboard button in Telegram.");
+      return;
+    }
+    const name = currentView();
+    try {
+      const response = await fetch(`/api/${name}`, { headers: { Authorization: "tma " + initData } });
+      const body = await response.json();
+      if (!response.ok) { showAlert(body.error || `HTTP ${response.status}`); return; }
+      document.getElementById("dot").className = "dot " + (body.problem ? "bad" : "ok");
+      showAlert(body.problem ? `${name} ${body.problem}` : "");
+      document.getElementById("view").replaceChildren(...VIEWS[name](body));
+      const age = body.age_seconds === null ? "" : ` · data ${Math.round(body.age_seconds)} s old`;
+      document.getElementById("updated").textContent =
+        "Updated " + new Date().toLocaleTimeString() + age;
+    } catch (error) {
+      showAlert("Cannot reach the dashboard: " + error.message);
+    }
+  }
+
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
