@@ -32,7 +32,8 @@ say()   { printf '\n=== %s ===\n' "$*"; }
 ok()    { printf '    OK: %s\n' "$*"; }
 stop()  { printf '\nSTOP: %s\n' "$*" >&2; exit 1; }
 stamp() { date +%Y%m%d-%H%M%S; }
-env_value() { grep -E "^$1=" "$2" 2>/dev/null | tail -1 | cut -d= -f2- | sed -E "s/^[\"']|[\"']$//g"; }
+# A missing key yields "", not a pipefail exit, so callers can explain or default.
+env_value() { { grep -E "^$1=" "$2" 2>/dev/null || true; } | tail -1 | cut -d= -f2- | sed -E "s/^[\"']|[\"']$//g"; }
 
 [ "$(id -u)" -eq 0 ] || stop "run as root: sudo bash $0"
 
