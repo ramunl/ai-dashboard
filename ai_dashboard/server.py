@@ -52,6 +52,8 @@ async def window_data(request: web.Request) -> web.Response:
     if provider is None:
         return web.json_response({"error": "unknown window"}, status=404)
     view = await provider(settings)
+    if view is None:
+        return web.json_response({"error": "window not configured"}, status=404)
     return web.json_response({**view, "opened_from": viewer.bot}, headers=_NO_STORE)
 
 

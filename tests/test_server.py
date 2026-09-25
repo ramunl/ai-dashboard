@@ -74,9 +74,15 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_window(self) -> None:
         self.assertEqual(
-            (await self.client.get("/api/pm", headers=_auth())).status, 404
+            (await self.client.get("/api/nope", headers=_auth())).status, 404
         )
-        self.assertEqual((await self.client.get("/pm")).status, 404)
+        self.assertEqual((await self.client.get("/nope")).status, 404)
+
+    async def test_pm_window_without_pm_bot_is_not_configured(self) -> None:
+        self.assertEqual((await self.client.get("/pm")).status, 200)
+        response = await self.client.get("/api/pm", headers=_auth())
+        self.assertEqual(response.status, 404)
+        self.assertEqual((await response.json())["error"], "window not configured")
 
     async def test_page_served_for_root_and_windows(self) -> None:
         for path in ("/", "/coding"):
@@ -209,8 +215,19 @@ class LauncherRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             body["problems"][0], {"severity": "error", "text": "ai-ops-agent is failed"}
         )
-        self.assertEqual(body["coding"]["running"], "feature/x")
-        self.assertEqual(body["windows"], [{"path": "coding", "label": "Coding agent"}])
+        self.assertEqual(
+            body["agents"],
+            [
+                {
+                    "name": "coding",
+                    "label": "Coding agent",
+                    "path": "coding",
+                    "service": "active",
+                    "problem": None,
+                    "detail": "running feature/x · Polling CI",
+                }
+            ],
+        )
 
     async def test_root_page_is_the_launcher(self) -> None:
         self.assertEqual((await self.client.get("/")).status, 200)
@@ -240,10 +257,115 @@ class MenuTargetTests(unittest.IsolatedAsyncioTestCase):
             bots=(
                 BotSource("coding", TOKEN, "ai-coding-agent", "coding", Path("/x")),
                 BotSource("ops", "222:OPS", "ai-ops-agent", ""),
+                BotSource("pm", "333:PM", "ai-pm-agent", "pm", Path("/y")),
             ),
         )
         await server._point_menu_buttons(settings, str(fake.make_url("")).rstrip("/"))
         urls = {token: button["web_app"]["url"] for token, button in calls}
         self.assertEqual(
-            urls, {TOKEN: "https://h:8443/coding", "222:OPS": "https://h:8443/"}
+            urls,
+            {
+                TOKEN: "https://h:8443/coding",
+                "222:OPS": "https://h:8443/",
+                "333:PM": "https://h:8443/pm",
+            },
         )
+
+
+class PmWindowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_pm_window_and_launcher_row(self) -> None:
+        from ai_dashboard import views
+
+        tmp = Path(tempfile.mkdtemp())
+        coding_snapshot = tmp / "coding.json"
+        coding_snapshot.write_text(
+            json.dumps({"format": 1, "updated_at": time.time(), "queue": []})
+        )
+        pm_snapshot = tmp / "pm.json"
+        pm_snapshot.write_text(
+            json.dumps(
+                {
+                    "format": 1,
+                    "updated_at": time.time(),
+                    "active_project": "channel-cast",
+                    "todos": {
+                        "project": "channel-cast",
+                        "open": ["release apk"],
+                        "open_count": 1,
+                        "done": 2,
+                    },
+                    "projects": [{"name": "channel-cast", "open": 1, "done": 2}],
+                    "rules": [{"file": "global/kotlin.md", "count": 3}],
+                }
+            )
+        )
+        settings = Settings(
+            public_url="https://h",
+            host="127.0.0.1",
+            port=8787,
+            owner_id=OWNER,
+            bots=(
+                BotSource(
+                    "coding", TOKEN, "ai-coding-agent", "coding", coding_snapshot
+                ),
+                BotSource("pm", "333:PM", "ai-pm-agent", "pm", pm_snapshot),
+            ),
+            monitored_services=("ai-pm-agent",),
+        )
+        status = {
+            "unit": "ai-pm-agent",
+            "load_state": "loaded",
+            "state": "active",
+            "sub_state": "",
+            "restarts": 0,
+            "since": "",
+        }
+        with (
+            patch.object(sources, "service_state", AsyncMock(return_value="active")),
+            patch.object(views, "unit_status", AsyncMock(return_value=status)),
+            patch.object(views, "recent_errors", AsyncMock(return_value=0)),
+            patch.object(views, "read_resources", side_effect=OSError("no /proc here")),
+        ):
+            client = TestClient(
+                TestServer(server.build_app(settings, set_buttons=False))
+            )
+            await client.start_server()
+            try:
+                pm = await (await client.get("/api/pm", headers=_auth("333:PM"))).json()
+                launcher = await (
+                    await client.get("/api/launcher", headers=_auth())
+                ).json()
+            finally:
+                await client.close()
+
+        self.assertEqual(pm["opened_from"], "pm")
+        self.assertEqual(pm["snapshot"]["todos"]["open"], ["release apk"])
+        self.assertEqual(
+            [(a["name"], a["detail"]) for a in launcher["agents"]],
+            [("coding", "idle"), ("pm", "channel-cast · 1 open · 2 done")],
+        )
+        self.assertIsNone(launcher["resources"])  # unreadable /proc degrades, not fails
+
+
+class DetailTests(unittest.TestCase):
+    def test_coding_detail(self) -> None:
+        from ai_dashboard.views import coding_detail
+
+        self.assertEqual(coding_detail({"service": "failed"}), "service failed")
+        idle = {
+            "service": "active",
+            "snapshot": {"queue": [1, 2], "project": {"name": "cc"}},
+        }
+        self.assertEqual(coding_detail(idle), "idle · 2 queued · cc")
+
+    def test_pm_detail(self) -> None:
+        from ai_dashboard.views import pm_detail
+
+        self.assertEqual(
+            pm_detail({"service": "active", "snapshot": None}), "no data yet"
+        )
+        no_project = {
+            "service": "active",
+            "snapshot": {"todos": None, "projects": [1, 2]},
+        }
+        self.assertEqual(pm_detail(no_project), "no active project · 2 projects")

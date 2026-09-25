@@ -60,9 +60,9 @@ def describe(
             snapshot, problem = None, "snapshot has no timestamp"
 
     if state != "active":
-        problem = f"agent service is {state}"
+        problem = f"service is {state}"
     elif problem is None and age is not None and age > STALE_AFTER_SECONDS:
-        problem = f"agent is running but stopped publishing {int(age)} s ago"
+        problem = f"is running but stopped publishing {int(age)} s ago"
 
     return {
         "service": state,

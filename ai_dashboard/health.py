@@ -140,7 +140,7 @@ def _problem(severity: str, text: str) -> dict:
 
 
 def compute_problems(
-    resources: dict | None, services: list[dict], coding: dict | None
+    resources: dict | None, services: list[dict], agents: list[dict]
 ) -> list[dict]:
     """Turn raw readings into what needs attention, most severe first."""
     problems: list[dict] = []
@@ -192,11 +192,18 @@ def compute_problems(
                 )
             )
 
-    if coding:
+    for agent in agents:
         # A stopped service is already reported above; only add snapshot trouble
         # when the agent claims to be running.
-        if coding.get("problem") and coding.get("unit") in active_units:
-            problems.append(_problem("warning", f"coding agent {coding['problem']}"))
+        if agent.get("problem") and agent.get("unit") in active_units:
+            problems.append(
+                _problem(
+                    "warning", f"{agent.get('agent', 'an')} agent {agent['problem']}"
+                )
+            )
+
+    coding = next((agent for agent in agents if agent.get("agent") == "coding"), None)
+    if coding:
         snapshot = coding.get("snapshot") or {}
         if "(updatable)" in (snapshot.get("core") or ""):
             problems.append(

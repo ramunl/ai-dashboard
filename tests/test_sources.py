@@ -23,7 +23,7 @@ class DescribeTests(unittest.TestCase):
 
     def test_service_down_wins_over_everything(self) -> None:
         view = sources.describe("failed", {"updated_at": NOW}, None, NOW)
-        self.assertEqual(view["problem"], "agent service is failed")
+        self.assertEqual(view["problem"], "service is failed")
 
     def test_stale_while_running(self) -> None:
         view = sources.describe("active", {"updated_at": NOW - 200}, None, NOW)

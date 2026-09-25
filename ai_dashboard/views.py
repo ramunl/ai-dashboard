@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from ai_dashboard.config import Settings
+from ai_dashboard.config import BotSource, Settings
 from ai_dashboard.health import (
     compute_problems,
     read_resources,
@@ -16,34 +16,79 @@ from ai_dashboard.sources import agent_view
 
 logger = logging.getLogger(__name__)
 
-# path -> label. "" is the launcher. A window appears here when it exists.
-WINDOWS = {"": "Overview", "coding": "Coding agent"}
+# path -> label. "" is the launcher.
+WINDOWS = {"": "Overview", "coding": "Coding agent", "pm": "PM agent"}
 
 
-async def coding_view(settings: Settings) -> dict:
-    return await agent_view(settings.bot("coding"))
+async def _window_of(settings: Settings, name: str) -> dict | None:
+    """An agent window's data, or None if that bot is not configured."""
+    bot = settings.bot(name)
+    return None if bot is None else await agent_view(bot)
 
 
-def _coding_summary(view: dict) -> dict:
+async def coding_view(settings: Settings) -> dict | None:
+    return await _window_of(settings, "coding")
+
+
+async def pm_view(settings: Settings) -> dict | None:
+    return await _window_of(settings, "pm")
+
+
+def coding_detail(view: dict) -> str:
+    if view.get("service") != "active":
+        return f"service {view.get('service')}"
     snapshot = view.get("snapshot") or {}
     running = snapshot.get("running")
-    project = snapshot.get("project") or {}
+    if running:
+        phase = f" · {running['phase']}" if running.get("phase") else ""
+        return f"running {running.get('branch')}{phase}"
+    parts = ["idle"]
+    queued = len(snapshot.get("queue") or [])
+    if queued:
+        parts.append(f"{queued} queued")
+    project = (snapshot.get("project") or {}).get("name")
+    if project:
+        parts.append(project)
+    return " · ".join(parts)
+
+
+def pm_detail(view: dict) -> str:
+    if view.get("service") != "active":
+        return f"service {view.get('service')}"
+    snapshot = view.get("snapshot")
+    if not snapshot:
+        return "no data yet"
+    todos = snapshot.get("todos")
+    if not todos:
+        return f"no active project · {len(snapshot.get('projects') or [])} projects"
+    parts = [todos["project"], f"{todos['open_count']} open"]
+    if todos.get("done"):
+        parts.append(f"{todos['done']} done")
+    return " · ".join(parts)
+
+
+_DETAILS = {"coding": coding_detail, "pm": pm_detail}
+
+
+def _agent_row(bot: BotSource, view: dict) -> dict:
+    detail = _DETAILS.get(bot.name, lambda _view: "")
     return {
+        "name": bot.name,
+        "label": WINDOWS.get(bot.menu_path, bot.name),
+        "path": bot.menu_path,
         "service": view.get("service"),
         "problem": view.get("problem"),
-        "project": project.get("name"),
-        "running": running.get("branch") if running else None,
-        "phase": running.get("phase") if running else None,
-        "queued": len(snapshot.get("queue") or []),
+        "detail": detail(view),
     }
 
 
 async def launcher_view(settings: Settings) -> dict:
     units = list(settings.monitored_services)
-    services, errors, coding = await asyncio.gather(
+    agent_bots = [bot for bot in settings.bots if bot.snapshot_file is not None]
+    services, errors, agent_views = await asyncio.gather(
         asyncio.gather(*(unit_status(unit) for unit in units)),
         asyncio.gather(*(recent_errors(unit) for unit in units)),
-        agent_view(settings.bot("coding")),
+        asyncio.gather(*(agent_view(bot) for bot in agent_bots)),
     )
     for service, count in zip(services, errors):
         service["errors_last_hour"] = count
@@ -55,12 +100,9 @@ async def launcher_view(settings: Settings) -> dict:
     return {
         "resources": resources,
         "services": list(services),
-        "coding": _coding_summary(coding),
-        "problems": compute_problems(resources, list(services), coding),
-        "windows": [
-            {"path": path, "label": label} for path, label in WINDOWS.items() if path
-        ],
+        "agents": [_agent_row(bot, view) for bot, view in zip(agent_bots, agent_views)],
+        "problems": compute_problems(resources, list(services), list(agent_views)),
     }
 
 
-VIEW_PROVIDERS = {"coding": coding_view, "launcher": launcher_view}
+VIEW_PROVIDERS = {"coding": coding_view, "pm": pm_view, "launcher": launcher_view}

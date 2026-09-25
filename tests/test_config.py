@@ -36,6 +36,7 @@ class SettingsTests(unittest.TestCase):
             "CODING_ENV_FILE": _env_file(env_text),
             # hermetic: never read a real /etc/ai-ops-agent.env
             "OPS_ENV_FILE": "/nonexistent/ai-ops-agent.env",
+            "PM_ENV_FILE": "/nonexistent/ai-pm-agent.env",
             **overrides,
         }
         return load_settings(environ)
@@ -97,3 +98,25 @@ class MultiBotTests(SettingsTests):
         )
         custom = self._load(MONITORED_SERVICES=" a , b,,")
         self.assertEqual(custom.monitored_services, ("a", "b"))
+
+
+class PmBotTests(SettingsTests):
+    def test_pm_bot_with_default_snapshot_path(self) -> None:
+        pm = _env_file('PM_TELEGRAM_BOT_TOKEN="333:PM"\nYOUR_CHAT_ID=777\n')
+        bot = self._load(PM_ENV_FILE=pm).bot("pm")
+        self.assertEqual(
+            (bot.token, bot.menu_path, bot.service), ("333:PM", "pm", "ai-pm-agent")
+        )
+        self.assertEqual(str(bot.snapshot_file), "/var/lib/ai-pm-agent/snapshot.json")
+
+    def test_pm_snapshot_path_follows_agent_setting(self) -> None:
+        pm = _env_file(
+            "PM_TELEGRAM_BOT_TOKEN=3:P\nYOUR_CHAT_ID=777\nPM_SNAPSHOT_FILE=/x/pm.json\n"
+        )
+        self.assertEqual(
+            str(self._load(PM_ENV_FILE=pm).bot("pm").snapshot_file), "/x/pm.json"
+        )
+
+    def test_ops_has_no_snapshot(self) -> None:
+        ops = _env_file("OPS_TELEGRAM_BOT_TOKEN=2:O\nYOUR_CHAT_ID=777\n")
+        self.assertIsNone(self._load(OPS_ENV_FILE=ops).bot("ops").snapshot_file)

@@ -170,12 +170,10 @@
         })
       : [el("div", "All good", "muted")];
 
-    const c = v.coding;
-    const codingDetail = c.service !== "active" ? `service ${c.service}`
-      : c.running ? `running ${c.running}${c.phase ? " · " + c.phase : ""}`
-      : `idle${c.queued ? " · " + c.queued + " queued" : ""}${c.project ? " · " + c.project : ""}`;
-    const agents = [navRow("Coding agent", codingDetail, "/coding",
-                           c.service !== "active" || c.problem ? "bad" : "ok")];
+    const agents = v.agents.length
+      ? v.agents.map((a) => navRow(a.label, a.detail, "/" + a.path,
+                                   a.service !== "active" || a.problem ? "bad" : "ok"))
+      : [muted("No agents publish data yet")];
 
     const services = v.services.map((s) => {
       const state = s.load_state === "not-found" ? "not installed" : s.state;
@@ -203,13 +201,59 @@
     };
   }
 
-  function codingPage(v) {
-    return { nodes: renderCoding(v), dot: v.problem ? "bad" : "ok",
-             alert: v.problem ? `coding ${v.problem}` : "" };
+  function renderPm(view) {
+    const s = view.snapshot;
+    document.getElementById("title").textContent = "PM agent";
+    document.getElementById("subtitle").textContent =
+      s && s.active_project ? `todo project: ${s.active_project}` : "";
+    if (!s) return [card("PM agent", muted("No data from the agent yet."))];
+
+    const todos = [];
+    if (s.todos) {
+      if (s.todos.open.length) {
+        const list = el("ol");
+        s.todos.open.forEach((item) => list.append(el("li", item)));
+        todos.push(list);
+        const more = s.todos.open_count - s.todos.open.length;
+        if (more > 0) todos.push(muted(`… and ${more} more (/todo_list)`));
+      } else {
+        todos.push(muted("Nothing open"));
+      }
+      if (s.todos.done) todos.push(muted(`✓ ${s.todos.done} done`));
+    } else {
+      todos.push(muted("No active project: /todo_use <project>"));
+    }
+
+    const projects = s.projects.length
+      ? s.projects.map((p) => row(p.name + (p.name === s.active_project ? " (active)" : ""),
+                                  `${p.open} open · ${p.done} done`))
+      : [muted("No todo lists yet")];
+
+    const rules = s.rules.length
+      ? s.rules.map((r) => row(r.file, `${r.count} rule${r.count === 1 ? "" : "s"}`))
+      : [muted("No rule files")];
+
+    return [
+      card(s.todos ? `Todos · ${s.todos.project}` : "Todos", ...todos),
+      card("Projects", ...projects),
+      card("Rules", ...rules),
+      card("Versions", el("pre", [s.version, s.core].filter(Boolean).join("\n"))),
+    ];
   }
 
-  // path -> [api window, renderer]. PM joins here in step 3.
-  const PAGES = { "": ["launcher", renderLauncher], coding: ["coding", codingPage] };
+  function pmPage(v) {
+    return { nodes: renderPm(v), dot: v.problem ? "bad" : "ok",
+             alert: v.problem ? `pm agent ${v.problem}` : "" };
+  }
+
+  function codingPage(v) {
+    return { nodes: renderCoding(v), dot: v.problem ? "bad" : "ok",
+             alert: v.problem ? `coding agent ${v.problem}` : "" };
+  }
+
+  // path -> [api window, renderer]
+  const PAGES = { "": ["launcher", renderLauncher], coding: ["coding", codingPage],
+                  pm: ["pm", pmPage] };
 
   function currentPath() {
     const path = location.pathname.replace(/^\/+|\/+$/g, "");

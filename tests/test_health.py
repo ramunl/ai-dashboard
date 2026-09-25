@@ -68,20 +68,20 @@ class ProblemTests(unittest.TestCase):
         return [(p["severity"], p["text"]) for p in health.compute_problems(*args)]
 
     def test_all_good(self) -> None:
-        self.assertEqual(self._texts(_resources(), [_service()], None), [])
+        self.assertEqual(self._texts(_resources(), [_service()], []), [])
 
     def test_service_down_is_an_error(self) -> None:
-        problems = self._texts(_resources(), [_service(state="failed")], None)
+        problems = self._texts(_resources(), [_service(state="failed")], [])
         self.assertIn(("error", "ai-coding-agent is failed"), problems)
 
     def test_not_installed_is_a_warning_not_a_failure(self) -> None:
         problems = self._texts(
-            None, [_service("ai-pm-agent", state="inactive", load="not-found")], None
+            None, [_service("ai-pm-agent", state="inactive", load="not-found")], []
         )
         self.assertEqual(problems, [("warning", "ai-pm-agent is not installed")])
 
     def test_restart_loop_and_errors(self) -> None:
-        problems = self._texts(None, [_service(restarts=4, errors=7)], None)
+        problems = self._texts(None, [_service(restarts=4, errors=7)], [])
         self.assertIn(
             ("warning", "ai-coding-agent restarted automatically 4 times"), problems
         )
@@ -92,35 +92,37 @@ class ProblemTests(unittest.TestCase):
     def test_resource_thresholds(self) -> None:
         self.assertIn(
             ("error", "Disk 95% full"),
-            self._texts(_resources(disk_used=0.95), [], None),
+            self._texts(_resources(disk_used=0.95), [], []),
         )
         self.assertIn(
             ("warning", "Disk 85% full"),
-            self._texts(_resources(disk_used=0.85), [], None),
+            self._texts(_resources(disk_used=0.85), [], []),
         )
         self.assertIn(
             ("error", "Memory almost exhausted (5% available)"),
-            self._texts(_resources(mem_available=0.05), [], None),
+            self._texts(_resources(mem_available=0.05), [], []),
         )
         self.assertIn(
             ("warning", "High load: 3.00 on 1 CPU"),
-            self._texts(_resources(load5=3.0), [], None),
+            self._texts(_resources(load5=3.0), [], []),
         )
 
     def test_coding_snapshot_problem_only_when_service_active(self) -> None:
         coding = {
+            "agent": "coding",
             "unit": "ai-coding-agent",
             "problem": "has not published a snapshot yet",
         }
-        running = self._texts(None, [_service()], coding)
+        running = self._texts(None, [_service()], [coding])
         self.assertIn(
             ("warning", "coding agent has not published a snapshot yet"), running
         )
-        stopped = self._texts(None, [_service(state="failed")], coding)
+        stopped = self._texts(None, [_service(state="failed")], [coding])
         self.assertEqual([p for p in stopped if "snapshot" in p[1]], [])
 
     def test_core_update_and_stuck_queue_are_info(self) -> None:
         coding = {
+            "agent": "coding",
             "unit": "ai-coding-agent",
             "problem": None,
             "snapshot": {
@@ -129,7 +131,7 @@ class ProblemTests(unittest.TestCase):
                 "running": None,
             },
         }
-        problems = self._texts(None, [_service()], coding)
+        problems = self._texts(None, [_service()], [coding])
         self.assertIn(
             ("info", "Coding agent core update available: /core update coding"),
             problems,
@@ -140,7 +142,7 @@ class ProblemTests(unittest.TestCase):
 
     def test_sorted_most_severe_first(self) -> None:
         problems = self._texts(
-            _resources(disk_used=0.85), [_service(state="failed")], None
+            _resources(disk_used=0.85), [_service(state="failed")], []
         )
         self.assertEqual([severity for severity, _ in problems], ["error", "warning"])
 
@@ -167,3 +169,22 @@ class RecentErrorsTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(health, "_run", AsyncMock(return_value=out)):
             status = await health.unit_status("ai-ops-agent")
         self.assertEqual((status["state"], status["restarts"]), ("active", 2))
+
+
+class AgentProblemTests(unittest.TestCase):
+    def test_frozen_pm_agent_is_flagged_like_coding(self) -> None:
+        pm = {
+            "agent": "pm",
+            "unit": "ai-pm-agent",
+            "problem": "is running but stopped publishing 200 s ago",
+        }
+        problems = health.compute_problems(None, [_service("ai-pm-agent")], [pm])
+        self.assertEqual(
+            problems,
+            [
+                {
+                    "severity": "warning",
+                    "text": "pm agent is running but stopped publishing 200 s ago",
+                }
+            ],
+        )

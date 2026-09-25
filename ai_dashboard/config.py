@@ -63,6 +63,8 @@ class _BotSpec:
     default_service: str
     menu_path: str
     required: bool
+    snapshot_var: str | None = None
+    default_snapshot: str | None = None
 
 
 _SPECS = (
@@ -75,6 +77,20 @@ _SPECS = (
         "ai-coding-agent",
         "coding",
         required=True,
+        snapshot_var="AGENT_SNAPSHOT_FILE",
+        default_snapshot="/var/lib/ai-coding-agent/snapshot.json",
+    ),
+    _BotSpec(
+        "pm",
+        "PM_ENV_FILE",
+        "/etc/ai-pm-agent.env",
+        "PM_TELEGRAM_BOT_TOKEN",
+        "PM_SERVICE",
+        "ai-pm-agent",
+        "pm",
+        required=False,
+        snapshot_var="PM_SNAPSHOT_FILE",
+        default_snapshot="/var/lib/ai-pm-agent/snapshot.json",
     ),
     _BotSpec(
         "ops",
@@ -110,12 +126,8 @@ def _load_bot(
     if not token:
         raise ConfigError(f"{spec.token_var} not found in {env_file}")
     snapshot = None
-    if spec.name == "coding":
-        snapshot = Path(
-            agent_env.get(
-                "AGENT_SNAPSHOT_FILE", "/var/lib/ai-coding-agent/snapshot.json"
-            )
-        )
+    if spec.snapshot_var:
+        snapshot = Path(agent_env.get(spec.snapshot_var, spec.default_snapshot))
     bot = BotSource(
         name=spec.name,
         token=token,
