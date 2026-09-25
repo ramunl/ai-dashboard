@@ -1,0 +1,11 @@
+{
+  "name": "ai-dashboard-page-tests",
+  "private": true,
+  "description": "Browser-level tests for ai_dashboard/static/index.html",
+  "scripts": {
+    "test": "node --test tests/js/*.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}

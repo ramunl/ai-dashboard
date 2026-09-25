@@ -260,21 +260,52 @@
     return PAGES[path] ? path : "";
   }
 
-  function navigate(path) {
-    history.pushState({}, "", path);
+  const TITLES = { "": "Server", coding: "Coding agent", pm: "PM agent" };
+
+  // Every navigation starts a new generation. A response that arrives after
+  // the user moved on belongs to an old generation and is ignored; the page
+  // the user moved to always starts its own request, so it cannot stay empty.
+  let generation = 0;
+
+  function show() {
+    generation++;
     syncBackButton();
-    document.getElementById("view").replaceChildren();
+    const path = currentPath();
+    document.getElementById("title").textContent = TITLES[path];
+    document.getElementById("subtitle").textContent = "";
+    document.getElementById("dot").className = "dot";
+    document.getElementById("updated").textContent = "Loading…";
+    showAlert("");
+    document.getElementById("view").replaceChildren(muted("Loading…"));
     refresh();
   }
 
-  // Telegram's native Back: on any window other than the launcher, go to it.
-  // Works even when the window was opened straight from its bot.
+  function navigate(path) {
+    const target = path.replace(/^\/+|\/+$/g, "");
+    if (target === currentPath()) return;
+    history.pushState({ fromLauncher: currentPath() === "" }, "", "/" + target);
+    show();
+  }
+
+  // Back from a window: step back in history when we came from the launcher,
+  // otherwise (opened straight from a bot) replace this entry with the
+  // launcher. Either way history does not grow with every round trip.
+  function goBack() {
+    if (history.state && history.state.fromLauncher) {
+      history.back();  // fires popstate -> show()
+    } else {
+      history.replaceState({}, "", "/");
+      show();
+    }
+  }
+
+  // Telegram's native Back: on any window other than the launcher.
   function syncBackButton() {
     if (!tg || !tg.BackButton) return;
     if (currentPath()) tg.BackButton.show(); else tg.BackButton.hide();
   }
-  if (tg && tg.BackButton) tg.BackButton.onClick(() => navigate("/"));
-  window.addEventListener("popstate", () => { syncBackButton(); refresh(); });
+  if (tg && tg.BackButton) tg.BackButton.onClick(goBack);
+  window.addEventListener("popstate", show);
 
   function showAlert(message) {
     const box = document.getElementById("alert");
@@ -282,21 +313,22 @@
     box.style.display = message ? "block" : "none";
   }
 
-  let inFlight = false;
+  let loadingPath = null;  // page whose request is in flight
   async function refresh() {
     const initData = tg ? tg.initData : "";
     if (!initData) {
       showAlert("Open this dashboard from a bot's Dashboard button in Telegram.");
       return;
     }
-    if (inFlight) return;
-    inFlight = true;
     const path = currentPath();
+    if (loadingPath === path) return;  // this page is already loading
+    loadingPath = path;
+    const mine = generation;
     const [api, render] = PAGES[path];
     try {
       const response = await fetch(`/api/${api}`, { headers: { Authorization: "tma " + initData } });
       const body = await response.json();
-      if (currentPath() !== path) return;  // navigated away meanwhile
+      if (mine !== generation) return;  // user moved on; that page loads itself
       if (!response.ok) { showAlert(body.error || `HTTP ${response.status}`); return; }
       const page = render(body);
       document.getElementById("dot").className = "dot " + page.dot;
@@ -306,14 +338,13 @@
       document.getElementById("updated").textContent =
         "Updated " + new Date().toLocaleTimeString() + age;
     } catch (error) {
-      showAlert("Cannot reach the dashboard: " + error.message);
+      if (mine === generation) showAlert("Cannot reach the dashboard: " + error.message);
     } finally {
-      inFlight = false;
+      if (loadingPath === path) loadingPath = null;
     }
   }
 
-  syncBackButton();
-  refresh();
+  show();
   setInterval(refresh, REFRESH_MS);
 </script>
 </body>

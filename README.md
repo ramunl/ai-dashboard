@@ -135,3 +135,13 @@ ruff check ai_dashboard tests && ruff format --check ai_dashboard tests
 pytest
 ```
 # ai-dashboard
+
+### Page tests
+
+`ai_dashboard/static/index.html` has its own navigation logic, tested in a
+simulated browser (jsdom) with a deliberately slow server, so navigation
+races show up:
+
+```bash
+npm install && npm test
+```

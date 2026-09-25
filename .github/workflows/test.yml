@@ -27,3 +27,12 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Page tests (browser-level, jsdom)
+        run: |
+          npm install --no-audit --no-fund
+          npm test
