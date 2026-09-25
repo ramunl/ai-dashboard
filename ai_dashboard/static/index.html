@@ -38,6 +38,13 @@
   li { padding: 2px 0; word-break: break-all; }
   a { color: var(--link); }
   pre { margin: 0; white-space: pre-wrap; font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--hint); }
+  .dot.warn { background: #d99a1e; } .dot.info { background: var(--accent); }
+  .problem { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+  .nav { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+         padding: 6px 0; cursor: pointer; }
+  .nav + .nav { border-top: 1px solid rgba(127,127,127,.2); }
+  .nav .chev { color: var(--hint); font-size: 18px; }
+  .sub2 { color: var(--hint); font-size: 13px; }
   .alert { display: none; background: #fdecea; color: #8a1c1c; }
   footer { color: var(--hint); font-size: 12px; margin-top: 12px; text-align: center; }
 </style>
@@ -126,13 +133,104 @@
     ];
   }
 
-  const VIEWS = { coding: renderCoding };
-  const DEFAULT_VIEW = "coding";
-
-  function currentView() {
-    const name = location.pathname.replace(/^\/+|\/+$/g, "");
-    return VIEWS[name] ? name : DEFAULT_VIEW;
+  // ---- launcher (/): server health, services, problems, links to windows
+  function fmtBytes(n) {
+    const units = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
   }
+  function fmtDuration(seconds) {
+    const d = Math.floor(seconds / 86400), h = Math.floor(seconds % 86400 / 3600),
+          m = Math.floor(seconds % 3600 / 60);
+    return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+  }
+  function navRow(label, detail, path, state) {
+    const node = el("div", null, "nav");
+    const left = el("div");
+    const title = el("div");
+    title.append(el("span", null, "dot " + state), " ", label);
+    left.append(title, el("div", detail, "sub2"));
+    node.append(left, el("span", "›", "chev"));
+    node.addEventListener("click", () => navigate(path));
+    return node;
+  }
+
+  function renderLauncher(v) {
+    const r = v.resources;
+    document.getElementById("title").textContent = "Server";
+    document.getElementById("subtitle").textContent =
+      r ? `${r.hostname} · up ${fmtDuration(r.uptime_seconds)}` : "";
+
+    const problems = v.problems.length
+      ? v.problems.map((p) => {
+          const row = el("div", null, "problem");
+          row.append(el("span", null, "dot " + ({ error: "bad", warning: "warn", info: "info" })[p.severity]),
+                     el("span", p.text));
+          return row;
+        })
+      : [el("div", "All good", "muted")];
+
+    const c = v.coding;
+    const codingDetail = c.service !== "active" ? `service ${c.service}`
+      : c.running ? `running ${c.running}${c.phase ? " · " + c.phase : ""}`
+      : `idle${c.queued ? " · " + c.queued + " queued" : ""}${c.project ? " · " + c.project : ""}`;
+    const agents = [navRow("Coding agent", codingDetail, "/coding",
+                           c.service !== "active" || c.problem ? "bad" : "ok")];
+
+    const services = v.services.map((s) => {
+      const state = s.load_state === "not-found" ? "not installed" : s.state;
+      const extra = [];
+      if (s.restarts) extra.push(`${s.restarts} restarts`);
+      if (s.errors_last_hour) extra.push(`${s.errors_last_hour} errors/1h`);
+      const value = el("span");
+      value.append(el("span", null, "dot " + (s.state === "active" ? "ok" : "bad")), " ",
+                   [state, ...extra].join(" · "));
+      return row(s.unit, value);
+    });
+
+    const server = r ? [
+      row("Load", `${r.load.map((x) => x.toFixed(2)).join(" / ")} (${r.cpus} CPU)`),
+      row("Memory", `${fmtBytes(r.memory.total - r.memory.available)} of ${fmtBytes(r.memory.total)}`),
+      row("Disk", `${fmtBytes(r.disk.used)} of ${fmtBytes(r.disk.total)} (${Math.round(100 * r.disk.used / r.disk.total)}%)`),
+    ] : [muted("Resources unavailable")];
+
+    const worst = v.problems.length ? v.problems[0].severity : null;
+    return {
+      nodes: [card("Problems", ...problems), card("Agents", ...agents),
+              card("Services", ...services), card("Server", ...server)],
+      dot: worst === "error" ? "bad" : worst === "warning" ? "warn" : "ok",
+      alert: "",
+    };
+  }
+
+  function codingPage(v) {
+    return { nodes: renderCoding(v), dot: v.problem ? "bad" : "ok",
+             alert: v.problem ? `coding ${v.problem}` : "" };
+  }
+
+  // path -> [api window, renderer]. PM joins here in step 3.
+  const PAGES = { "": ["launcher", renderLauncher], coding: ["coding", codingPage] };
+
+  function currentPath() {
+    const path = location.pathname.replace(/^\/+|\/+$/g, "");
+    return PAGES[path] ? path : "";
+  }
+
+  function navigate(path) {
+    history.pushState({}, "", path);
+    syncBackButton();
+    document.getElementById("view").replaceChildren();
+    refresh();
+  }
+
+  // Telegram's native Back: on any window other than the launcher, go to it.
+  // Works even when the window was opened straight from its bot.
+  function syncBackButton() {
+    if (!tg || !tg.BackButton) return;
+    if (currentPath()) tg.BackButton.show(); else tg.BackButton.hide();
+  }
+  if (tg && tg.BackButton) tg.BackButton.onClick(() => navigate("/"));
+  window.addEventListener("popstate", () => { syncBackButton(); refresh(); });
 
   function showAlert(message) {
     const box = document.getElementById("alert");
@@ -140,28 +238,37 @@
     box.style.display = message ? "block" : "none";
   }
 
+  let inFlight = false;
   async function refresh() {
     const initData = tg ? tg.initData : "";
     if (!initData) {
       showAlert("Open this dashboard from a bot's Dashboard button in Telegram.");
       return;
     }
-    const name = currentView();
+    if (inFlight) return;
+    inFlight = true;
+    const path = currentPath();
+    const [api, render] = PAGES[path];
     try {
-      const response = await fetch(`/api/${name}`, { headers: { Authorization: "tma " + initData } });
+      const response = await fetch(`/api/${api}`, { headers: { Authorization: "tma " + initData } });
       const body = await response.json();
+      if (currentPath() !== path) return;  // navigated away meanwhile
       if (!response.ok) { showAlert(body.error || `HTTP ${response.status}`); return; }
-      document.getElementById("dot").className = "dot " + (body.problem ? "bad" : "ok");
-      showAlert(body.problem ? `${name} ${body.problem}` : "");
-      document.getElementById("view").replaceChildren(...VIEWS[name](body));
-      const age = body.age_seconds === null ? "" : ` · data ${Math.round(body.age_seconds)} s old`;
+      const page = render(body);
+      document.getElementById("dot").className = "dot " + page.dot;
+      showAlert(page.alert);
+      document.getElementById("view").replaceChildren(...page.nodes);
+      const age = typeof body.age_seconds === "number" ? ` · data ${Math.round(body.age_seconds)} s old` : "";
       document.getElementById("updated").textContent =
         "Updated " + new Date().toLocaleTimeString() + age;
     } catch (error) {
       showAlert("Cannot reach the dashboard: " + error.message);
+    } finally {
+      inFlight = false;
     }
   }
 
+  syncBackButton();
   refresh();
   setInterval(refresh, REFRESH_MS);
 </script>

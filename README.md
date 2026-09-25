@@ -13,13 +13,26 @@ Telegram ──https──▶ Caddy ──▶ ai-dashboard (127.0.0.1:8787)
 
 ## Windows
 
-| Path | Opened from | Status |
+| Path | Opened from | Shows |
 |---|---|---|
-| `/coding` | Coding bot | live |
-| `/` (launcher: server health, problems) | Ops bot | next |
+| `/` | Ops bot | Launcher: problems, agents, services, server resources |
+| `/coding` | Coding bot | Coding agent: now, queue, plan, last run, versions |
 | `/pm` | PM bot | later |
 
-`/` currently shows the Coding window.
+Every window except the launcher shows Telegram's Back button, which leads to
+the launcher, including when the window was opened straight from its bot.
+
+### Launcher problems
+
+Computed on each refresh, most severe first:
+
+| Severity | When |
+|---|---|
+| error | a monitored service is not active; disk at least 90% full; memory under 10% available |
+| warning | service not installed; restarted automatically 3+ times; errors in its journal in the last hour; disk at least 80%; memory under 15%; 5-minute load above 2x CPUs; coding agent running but not publishing |
+| info | coding agent core update available; tasks queued with nothing running |
+
+Journal error counts are cached for 30 s.
 
 ## How it gets data: agents publish, the dashboard reads
 
@@ -88,6 +101,11 @@ a chat still lists commands.
 | `DASHBOARD_HOST` | `127.0.0.1` | bind address |
 | `CODING_ENV_FILE` | `/etc/ai-coding-agent/ai-coding-agent.env` | coding bot token, owner, snapshot path |
 | `CODING_SERVICE` | `ai-coding-agent` | unit reported in the Coding window |
+| `OPS_ENV_FILE` | `/etc/ai-ops-agent.env` | ops bot token; skipped if absent |
+| `OPS_SERVICE` | `ai-ops-agent` | ops agent unit |
+| `MONITORED_SERVICES` | `ai-coding-agent,ai-pm-agent,ai-ops-agent` | units on the launcher |
+
+All bots' `YOUR_CHAT_ID` must match; otherwise the dashboard refuses to start.
 
 Invalid configuration exits with status 2 and a clear log line.
 

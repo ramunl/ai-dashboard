@@ -11,7 +11,7 @@ NOW = 10_000.0
 
 
 def _bot(snapshot_file: Path) -> BotSource:
-    return BotSource("coding", "coding", "1:A", "ai-coding-agent", snapshot_file)
+    return BotSource("coding", "1:A", "ai-coding-agent", "coding", snapshot_file)
 
 
 class DescribeTests(unittest.TestCase):

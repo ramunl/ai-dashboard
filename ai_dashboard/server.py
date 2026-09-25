@@ -13,8 +13,8 @@ from aiohttp import web
 
 from ai_dashboard.auth import InitDataError, verify_init_data
 from ai_dashboard.config import Settings
-from ai_dashboard.sources import agent_view
 from ai_dashboard.telegram_api import API_BASE, set_menu_button
+from ai_dashboard.views import VIEW_PROVIDERS, WINDOWS
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,7 @@ def _init_data(request: web.Request) -> str:
 
 
 async def page(request: web.Request) -> web.StreamResponse:
-    settings = request.app[SETTINGS]
-    window = request.match_info.get("window", "")
-    if window and settings.bot(window) is None:
+    if request.match_info.get("window", "") not in WINDOWS:
         raise web.HTTPNotFound()
     return web.FileResponse(PAGE, headers=_NO_STORE)
 
@@ -50,10 +48,10 @@ async def window_data(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": error.reason}, status=error.status, headers=_NO_STORE
         )
-    bot = settings.bot(request.match_info["window"])
-    if bot is None:
+    provider = VIEW_PROVIDERS.get(request.match_info["window"])
+    if provider is None:
         return web.json_response({"error": "unknown window"}, status=404)
-    view = await agent_view(bot)
+    view = await provider(settings)
     return web.json_response({**view, "opened_from": viewer.bot}, headers=_NO_STORE)
 
 
@@ -68,7 +66,7 @@ async def _point_menu_buttons(settings: Settings, api_base: str) -> None:
                     bot.name,
                     bot.token,
                     settings.owner_id,
-                    f"{settings.public_url}/{bot.window}",
+                    f"{settings.public_url}/{bot.menu_path}",
                     api_base,
                 )
                 for bot in pending

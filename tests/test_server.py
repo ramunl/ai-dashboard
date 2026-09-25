@@ -25,7 +25,7 @@ def _settings(snapshot_file: Path) -> Settings:
         host="127.0.0.1",
         port=8787,
         owner_id=OWNER,
-        bots=(BotSource("coding", "coding", TOKEN, "ai-coding-agent", snapshot_file),),
+        bots=(BotSource("coding", TOKEN, "ai-coding-agent", "coding", snapshot_file),),
     )
 
 
@@ -135,3 +135,115 @@ class MenuButtonTests(unittest.IsolatedAsyncioTestCase):
                 )
         self.assertFalse(ok)
         self.assertIn("chat not found", "\n".join(logs.output))
+
+
+class LauncherRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        from ai_dashboard import views
+
+        snapshot = Path(tempfile.mkdtemp()) / "snapshot.json"
+        snapshot.write_text(
+            json.dumps(
+                {
+                    "format": 1,
+                    "updated_at": time.time(),
+                    "queue": [],
+                    "running": {"branch": "feature/x", "phase": "Polling CI"},
+                    "project": {"name": "channel-cast"},
+                }
+            )
+        )
+        states = {
+            "ai-coding-agent": "active",
+            "ai-pm-agent": "active",
+            "ai-ops-agent": "failed",
+        }
+
+        async def fake_status(unit: str) -> dict:
+            return {
+                "unit": unit,
+                "load_state": "loaded",
+                "state": states[unit],
+                "sub_state": "",
+                "restarts": 0,
+                "since": "",
+            }
+
+        resources = {
+            "hostname": "vps",
+            "cpus": 1,
+            "load": [0.1, 0.1, 0.1],
+            "memory": {"total": 1000, "available": 500},
+            "disk": {"total": 1000, "used": 500, "free": 500},
+            "uptime_seconds": 60,
+        }
+        self.patches = [
+            patch.object(views, "unit_status", side_effect=fake_status),
+            patch.object(views, "recent_errors", AsyncMock(return_value=0)),
+            patch.object(views, "read_resources", return_value=resources),
+            patch.object(sources, "service_state", AsyncMock(return_value="active")),
+        ]
+        for item in self.patches:
+            item.start()
+        app = server.build_app(_settings(snapshot), set_buttons=False)
+        self.client = TestClient(TestServer(app))
+        await self.client.start_server()
+
+    async def asyncTearDown(self) -> None:
+        for item in self.patches:
+            item.stop()
+        await self.client.close()
+
+    async def test_requires_signature(self) -> None:
+        self.assertEqual((await self.client.get("/api/launcher")).status, 401)
+
+    async def test_reports_services_resources_and_problems(self) -> None:
+        response = await self.client.get("/api/launcher", headers=_auth())
+        body = await response.json()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(
+            [s["unit"] for s in body["services"]],
+            ["ai-coding-agent", "ai-pm-agent", "ai-ops-agent"],
+        )
+        self.assertEqual(body["resources"]["hostname"], "vps")
+        self.assertEqual(
+            body["problems"][0], {"severity": "error", "text": "ai-ops-agent is failed"}
+        )
+        self.assertEqual(body["coding"]["running"], "feature/x")
+        self.assertEqual(body["windows"], [{"path": "coding", "label": "Coding agent"}])
+
+    async def test_root_page_is_the_launcher(self) -> None:
+        self.assertEqual((await self.client.get("/")).status, 200)
+
+
+class MenuTargetTests(unittest.IsolatedAsyncioTestCase):
+    async def test_each_bot_opens_its_own_window(self) -> None:
+        calls = []
+
+        async def handler(request: web.Request) -> web.Response:
+            calls.append(
+                (request.match_info["token"], (await request.json())["menu_button"])
+            )
+            return web.json_response({"ok": True})
+
+        fake_app = web.Application()
+        fake_app.router.add_post("/bot{token}/setChatMenuButton", handler)
+        fake = TestServer(fake_app)
+        await fake.start_server()
+        self.addAsyncCleanup(fake.close)
+
+        settings = Settings(
+            public_url="https://h:8443",
+            host="127.0.0.1",
+            port=8787,
+            owner_id=OWNER,
+            bots=(
+                BotSource("coding", TOKEN, "ai-coding-agent", "coding", Path("/x")),
+                BotSource("ops", "222:OPS", "ai-ops-agent", ""),
+            ),
+        )
+        await server._point_menu_buttons(settings, str(fake.make_url("")).rstrip("/"))
+        urls = {token: button["web_app"]["url"] for token, button in calls}
+        self.assertEqual(
+            urls, {TOKEN: "https://h:8443/coding", "222:OPS": "https://h:8443/"}
+        )
