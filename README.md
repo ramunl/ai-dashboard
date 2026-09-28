@@ -134,7 +134,15 @@ pip install -r requirements.txt -r requirements-dev.txt
 ruff check ai_dashboard tests && ruff format --check ai_dashboard tests
 pytest
 ```
-# ai-dashboard
+
+The Ruff configuration enforces the Python rules for naming, imports,
+88-character lines, annotations, public and constructor docstrings, and mutable
+defaults. Run `ruff format ai_dashboard tests` before committing.
+
+Local process execution and timeout cleanup live in `ai_dashboard/commands.py`.
+Health readers collect measurements; `ai_dashboard/problems.py` evaluates those
+readings into the overview's ordered problem list. See the
+[Python rules audit](docs/python-rules-audit.md) for the review and validation.
 
 ### Page tests
 

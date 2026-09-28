@@ -30,6 +30,7 @@ def _init_data(request: web.Request) -> str:
 
 
 async def page(request: web.Request) -> web.StreamResponse:
+    """Serve the dashboard page for a supported window."""
     if request.match_info.get("window", "") not in WINDOWS:
         raise web.HTTPNotFound()
     return web.FileResponse(PAGE, headers=_NO_STORE)
@@ -44,10 +45,12 @@ async def static_file(request: web.Request) -> web.StreamResponse:
 
 
 async def health(_request: web.Request) -> web.Response:
+    """Return the HTTP service liveness response."""
     return web.json_response({"ok": True})
 
 
 async def window_data(request: web.Request) -> web.Response:
+    """Authenticate the owner and return the requested window data."""
     settings = request.app[SETTINGS]
     try:
         viewer = verify_init_data(
@@ -74,8 +77,7 @@ async def _point_menu_buttons(settings: Settings, api_base: str) -> None:
             results = [
                 await set_menu_button(
                     session,
-                    bot.name,
-                    bot.token,
+                    bot,
                     settings.owner_id,
                     f"{settings.public_url}/{bot.menu_path}",
                     api_base,
@@ -91,6 +93,7 @@ async def _point_menu_buttons(settings: Settings, api_base: str) -> None:
 def build_app(
     settings: Settings, set_buttons: bool = True, api_base: str = API_BASE
 ) -> web.Application:
+    """Register dashboard routes and optional menu-button startup work."""
     app = web.Application()
     app[SETTINGS] = settings
     app.router.add_get("/healthz", health)
