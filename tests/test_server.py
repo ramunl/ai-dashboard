@@ -90,6 +90,16 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 200)
             self.assertIn("telegram-web-app.js", await response.text())
 
+    async def test_page_assets_served_without_caching(self) -> None:
+        for path in ("/static/styles.css", "/static/js/app.js"):
+            response = await self.client.get(path)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    async def test_static_does_not_leave_its_directory(self) -> None:
+        for path in ("/static/nope.js", "/static/..%2Fserver.py", "/static/js"):
+            self.assertEqual((await self.client.get(path)).status, 404)
+
     async def test_health(self) -> None:
         self.assertEqual(await (await self.client.get("/healthz")).json(), {"ok": True})
 

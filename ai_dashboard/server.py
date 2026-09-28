@@ -18,7 +18,8 @@ from ai_dashboard.views import VIEW_PROVIDERS, WINDOWS
 
 logger = logging.getLogger(__name__)
 
-PAGE = Path(__file__).with_name("static") / "index.html"
+STATIC_DIR = Path(__file__).with_name("static").resolve()
+PAGE = STATIC_DIR / "index.html"
 SETTINGS = web.AppKey("settings", Settings)
 _NO_STORE = {"Cache-Control": "no-store"}
 
@@ -32,6 +33,14 @@ async def page(request: web.Request) -> web.StreamResponse:
     if request.match_info.get("window", "") not in WINDOWS:
         raise web.HTTPNotFound()
     return web.FileResponse(PAGE, headers=_NO_STORE)
+
+
+async def static_file(request: web.Request) -> web.StreamResponse:
+    """Serve the page's styles and scripts; no-store so a deploy is seen at once."""
+    path = (STATIC_DIR / request.match_info["name"]).resolve()
+    if not path.is_relative_to(STATIC_DIR) or not path.is_file():
+        raise web.HTTPNotFound()
+    return web.FileResponse(path, headers=_NO_STORE)
 
 
 async def health(_request: web.Request) -> web.Response:
@@ -86,6 +95,7 @@ def build_app(
     app[SETTINGS] = settings
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/{window}", window_data)
+    app.router.add_get("/static/{name:.+}", static_file)
     app.router.add_get("/", page)
     app.router.add_get("/{window}", page)
 

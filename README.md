@@ -138,8 +138,12 @@ pytest
 
 ### Page tests
 
-`ai_dashboard/static/index.html` has its own navigation logic, tested in a
-simulated browser (jsdom) with a deliberately slow server, so navigation
+The page lives in `ai_dashboard/static/`: `index.html`, `styles.css`, and
+scripts split by role under `js/` (`api.js` network, `router.js` navigation,
+`dom.js` element helpers, `app.js` the shell, one file per window in
+`js/views/`). The server serves them under `/static/` with `no-store`. The
+page's navigation logic is tested in a simulated browser (jsdom) with a
+deliberately slow server and a request that never answers, so navigation
 races show up:
 
 ```bash
