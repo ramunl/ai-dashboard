@@ -84,15 +84,10 @@ async function refresh() {
   }
 }
 
-function reportUncaught(message) {
-  showAlert("Page error: " + message);
-}
-
-window.addEventListener("error", (event) => reportUncaught(event.message));
-window.addEventListener("unhandledrejection", (event) =>
-  reportUncaught(event.reason && event.reason.message ? event.reason.message : String(event.reason)));
-
+// Uncaught errors are shown by boot.js, which loads before every other script.
 initTelegram();
 initRouter();
 show();
 setInterval(refresh, REFRESH_MS);
+window.dashboardStarted = true;
+
