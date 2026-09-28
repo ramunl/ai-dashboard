@@ -10,6 +10,8 @@ import logging
 
 import aiohttp
 
+from ai_dashboard.config import BotSource
+
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.telegram.org"
@@ -17,8 +19,7 @@ API_BASE = "https://api.telegram.org"
 
 async def set_menu_button(
     session: aiohttp.ClientSession,
-    bot_name: str,
-    token: str,
+    bot: BotSource,
     chat_id: int,
     url: str,
     api_base: str = API_BASE,
@@ -34,18 +35,18 @@ async def set_menu_button(
     }
     try:
         async with session.post(
-            f"{api_base}/bot{token}/setChatMenuButton",
+            f"{api_base}/bot{bot.token}/setChatMenuButton",
             json=payload,
             timeout=aiohttp.ClientTimeout(total=15),
         ) as response:
             body = await response.json(content_type=None)
     except (aiohttp.ClientError, TimeoutError, ValueError) as error:
-        logger.warning("Menu button for %s not set: %s", bot_name, type(error).__name__)
+        logger.warning("Menu button for %s not set: %s", bot.name, type(error).__name__)
         return False
     if not body.get("ok"):
         logger.warning(
-            "Menu button for %s not set: %s", bot_name, body.get("description", "error")
+            "Menu button for %s not set: %s", bot.name, body.get("description", "error")
         )
         return False
-    logger.info("Menu button for %s -> %s", bot_name, url)
+    logger.info("Menu button for %s -> %s", bot.name, url)
     return True

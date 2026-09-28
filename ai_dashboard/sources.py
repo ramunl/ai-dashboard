@@ -12,6 +12,7 @@ import json
 import time
 from pathlib import Path
 
+from ai_dashboard.commands import run_command
 from ai_dashboard.config import BotSource
 
 SNAPSHOT_FORMAT = 1
@@ -21,18 +22,11 @@ STALE_AFTER_SECONDS = 90
 
 async def service_state(unit: str) -> str:
     """systemd's view of a unit: active, inactive, failed, activating, ..."""
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "systemctl",
-            "is-active",
-            unit,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
-    except (OSError, asyncio.TimeoutError):
-        return "unknown"
-    return stdout.decode().strip() or "unknown"
+    # systemctl reports inactive and missing units with nonzero exit codes.
+    output = await run_command(
+        "systemctl", "is-active", unit, timeout=5, accepted_exit_codes=(0, 3, 4)
+    )
+    return output.strip() if output and output.strip() else "unknown"
 
 
 def read_snapshot(path: Path) -> tuple[dict | None, str | None]:
@@ -74,6 +68,7 @@ def describe(
 
 
 async def agent_view(bot: BotSource, now: float | None = None) -> dict:
+    """Combine an agent snapshot with its current service state."""
     state = await service_state(bot.service)
     snapshot, problem = await asyncio.to_thread(read_snapshot, bot.snapshot_file)
     view = describe(state, snapshot, problem, time.time() if now is None else now)

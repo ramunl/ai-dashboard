@@ -22,6 +22,7 @@ class InitDataError(Exception):
     """initData is missing, forged, stale, or belongs to someone else."""
 
     def __init__(self, reason: str, status: int = 401) -> None:
+        """Attach a safe client-facing reason and HTTP status."""
         super().__init__(reason)
         self.reason = reason
         self.status = status
@@ -29,6 +30,8 @@ class InitDataError(Exception):
 
 @dataclass(frozen=True)
 class Viewer:
+    """Identify the verified owner and originating bot."""
+
     bot: str
     user_id: int
 

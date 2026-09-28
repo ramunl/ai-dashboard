@@ -39,6 +39,8 @@ class BotSource:
 
 @dataclass(frozen=True)
 class Settings:
+    """Hold validated server settings and configured agent sources."""
+
     public_url: str
     host: str
     port: int
@@ -47,9 +49,11 @@ class Settings:
     monitored_services: tuple[str, ...] = DEFAULT_MONITORED
 
     def tokens(self) -> dict[str, str]:
+        """Map configured bot names to their authentication tokens."""
         return {bot.name: bot.token for bot in self.bots}
 
     def bot(self, name: str) -> BotSource | None:
+        """Return a configured bot by name, or None."""
         return next((bot for bot in self.bots if bot.name == name), None)
 
 
@@ -109,6 +113,7 @@ def _chat_id(raw: str) -> int:
     try:
         return int(raw)
     except ValueError:
+        logger.warning("Invalid YOUR_CHAT_ID in agent configuration")
         return 0
 
 
@@ -139,6 +144,7 @@ def _load_bot(
 
 
 def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
+    """Load and validate server, bot, and owner settings."""
     env = os.environ if environ is None else environ
     public_url = env.get("DASHBOARD_PUBLIC_URL", "").strip().rstrip("/")
     if not public_url.startswith("https://"):
