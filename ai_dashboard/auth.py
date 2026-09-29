@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode
 
-MAX_AGE_SECONDS = 24 * 60 * 60
+MAX_AGE_SECONDS = 60 * 60
 
 
 class InitDataError(Exception):

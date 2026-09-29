@@ -41,8 +41,14 @@ class VerifyTests(unittest.TestCase):
         self._rejects(_signed("111:CODING", user_id=1), "not the bot owner", status=403)
 
     def test_rejects_stale(self) -> None:
-        old = int(time.time()) - 2 * 86400
+        old = int(time.time()) - 2 * 60 * 60
         self._rejects(_signed("111:CODING", auth_date=old), "expired")
+
+    def test_accepts_within_the_hour(self) -> None:
+        recent = int(time.time()) - 50 * 60
+        self.assertEqual(
+            verify_init_data(_signed("222:PM", auth_date=recent), TOKENS, OWNER).bot, "pm"
+        )
 
     def test_rejects_missing_and_malformed(self) -> None:
         self._rejects("", "missing")
