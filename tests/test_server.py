@@ -92,7 +92,11 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("telegram-web-app.js", await response.text())
 
     async def test_page_assets_served_without_caching(self) -> None:
-        for path in ("/static/styles.css", "/static/js/app.js"):
+        for path in (
+            "/static/styles.css",
+            "/static/js/app.js",
+            "/static/vendor/telegram-web-app.js",
+        ):
             response = await self.client.get(path)
             self.assertEqual(response.status, 200)
             self.assertEqual(response.headers["Cache-Control"], "no-store")
