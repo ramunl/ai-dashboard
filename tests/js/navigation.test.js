@@ -17,7 +17,7 @@ const TEST_TIMEOUT_MS = 400;
 function pageSource() {
   return fs
     .readFileSync(path.join(STATIC, "index.html"), "utf8")
-    .replace('<script src="https://telegram.org/js/telegram-web-app.js"></script>', "")
+    .replace('<script src="/static/vendor/telegram-web-app.js"></script>', "")
     .replace('<link rel="stylesheet" href="/static/styles.css">', "")
     .replace(/<script src="\/static\/(.+?)"><\/script>/g, (_tag, file) => {
       const code = fs.readFileSync(path.join(STATIC, file), "utf8")
