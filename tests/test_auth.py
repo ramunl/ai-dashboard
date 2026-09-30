@@ -47,7 +47,8 @@ class VerifyTests(unittest.TestCase):
     def test_accepts_within_the_hour(self) -> None:
         recent = int(time.time()) - 50 * 60
         self.assertEqual(
-            verify_init_data(_signed("222:PM", auth_date=recent), TOKENS, OWNER).bot, "pm"
+            verify_init_data(_signed("222:PM", auth_date=recent), TOKENS, OWNER).bot,
+            "pm",
         )
 
     def test_rejects_missing_and_malformed(self) -> None:
