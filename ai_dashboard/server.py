@@ -86,6 +86,7 @@ def build_app(
     app[SETTINGS] = settings
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/{window}", window_data)
+    app.router.add_static("/static/", PAGE.parent)
     app.router.add_get("/", page)
     app.router.add_get("/{window}", page)
 

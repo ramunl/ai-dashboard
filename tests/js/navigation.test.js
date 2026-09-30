@@ -12,7 +12,9 @@ const { JSDOM } = require("jsdom");
 
 const PAGE = fs
   .readFileSync(path.join(__dirname, "../../ai_dashboard/static/index.html"), "utf8")
-  .replace('<script src="https://telegram.org/js/telegram-web-app.js"></script>', "");
+  .replace('<script src="https://telegram.org/js/telegram-web-app.js"></script>', "")
+  .replace(/<script src="\/static\/(.*?)"><\/script>/g, (_, file) =>
+    `<script>${fs.readFileSync(path.join(__dirname, "../../ai_dashboard/static", file), "utf8")}</script>`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const LAUNCHER = {
@@ -22,6 +24,7 @@ const LAUNCHER = {
   agents: [
     { name: "coding", label: "Coding agent", path: "coding", service: "active", problem: null, detail: "idle" },
     { name: "pm", label: "PM agent", path: "pm", service: "active", problem: null, detail: "cc · 1 open" },
+    { name: "ops", label: "Ops agent", path: "ops", service: "failed", problem: null, detail: "Server health, logs and updates" },
   ],
   problems: [],
 };
@@ -29,7 +32,7 @@ const PM = { agent: "pm", service: "active", problem: null, age_seconds: 2, snap
   format: 1, active_project: "cc", todos: { project: "cc", open: ["release apk"], open_count: 1, done: 0 },
   projects: [{ name: "cc", open: 1, done: 0 }], rules: [], version: "v", core: "core: v1.1" } };
 
-async function openPage(url, latencyMs = 150) {
+async function openPage(url, latencyMs = 150, neverResponds = false) {
   const back = { handler: null, visible: false };
   const errors = [];
   const dom = new JSDOM(PAGE, {
@@ -38,7 +41,18 @@ async function openPage(url, latencyMs = 150) {
       window.Telegram = { WebApp: { initData: "signed", ready() {}, expand() {}, openLink() {},
         BackButton: { show() { back.visible = true; }, hide() { back.visible = false; },
                       onClick(handler) { back.handler = handler; } } } };
-      window.fetch = async (api) => {
+      if (neverResponds) {
+        const originalTimeout = window.setTimeout.bind(window);
+        window.setTimeout = (callback, ms) => originalTimeout(callback, ms === 10000 ? 20 : ms);
+      }
+      window.fetch = async (api, options) => {
+        if (neverResponds) return new Promise((resolve, reject) => {
+          options.signal.addEventListener("abort", () => {
+            const error = new Error("Aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+        });
         await sleep(latencyMs);  // a slow 1-CPU server
         return { ok: true, json: async () => (api.endsWith("/launcher") ? LAUNCHER : PM) };
       };
@@ -66,7 +80,7 @@ test("Back pressed before the window loads still renders the launcher", async ()
   await sleep(50);
   page.back.handler();
   await sleep(600);
-  assert.deepStrictEqual(page.state(), { path: "/", title: "Server", cards: 4, backVisible: false });
+  assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
   assert.deepStrictEqual(page.errors, []);
 });
 
@@ -91,7 +105,7 @@ test("rapid round trips keep history bounded and end rendered", async () => {
     await sleep(40);
   }
   await sleep(600);
-  assert.strictEqual(page.state().cards, 4);
+  assert.strictEqual(page.state().cards, 2);
   assert.strictEqual(page.state().path, "/");
   assert.ok(page.dom.window.history.length <= 2, `history grew to ${page.dom.window.history.length}`);
 });
@@ -103,6 +117,31 @@ test("window opened from its bot shows Back and returns to the launcher", async 
   assert.deepStrictEqual(page.state(), { path: "/pm", title: "PM agent", cards: 4, backVisible: true });
   page.back.handler();
   await sleep(300);
-  assert.deepStrictEqual(page.state(), { path: "/", title: "Server", cards: 4, backVisible: false });
+  assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
   assert.strictEqual(page.dom.window.history.length, 1);
+});
+
+ test("overview consolidates service status and opens Ops details", async () => {
+  const page = await openPage("/", 10);
+  await sleep(60);
+  const doc = page.dom.window.document;
+  assert.ok(![...doc.querySelectorAll("h2")].some((h) => h.textContent === "Services"));
+  assert.strictEqual(doc.querySelectorAll(".nav").length, 3);
+  assert.ok(doc.querySelectorAll(".nav")[2].textContent.includes("failed"));
+  assert.ok(doc.querySelectorAll(".nav")[2].querySelector(".dot.bad"));
+  page.tapAgent(2);
+  await sleep(60);
+  assert.strictEqual(page.state().path, "/ops");
+  assert.strictEqual(page.state().title, "Ops agent");
+  assert.strictEqual(page.state().backVisible, true);
+  assert.deepStrictEqual(page.errors, []);
+});
+
+test("a request that never responds shows a timeout instead of loading silently", async () => {
+  const page = await openPage("/", 0, true);
+  await sleep(80);
+  const alert = page.dom.window.document.getElementById("alert");
+  assert.ok(alert.textContent.includes("timed out"));
+  assert.strictEqual(alert.style.display, "block");
+  assert.deepStrictEqual(page.errors, []);
 });

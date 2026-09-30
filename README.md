@@ -15,12 +15,18 @@ Telegram ──https──▶ Caddy ──▶ ai-dashboard (127.0.0.1:8787)
 
 | Path | Opened from | Shows |
 |---|---|---|
-| `/` | Ops bot | Launcher: problems, agents, services, server resources |
+| `/` | Ops bot | AI Agents overview: health summary, agent status and links, resource meters |
+| `/ops` | Overview agent list | Ops service status, restarts, recent errors and server resources |
 | `/coding` | Coding bot | Coding agent: now, queue, plan, last run, versions |
 | `/pm` | PM bot | PM agent: active project's open todos, projects, rule files, versions |
 
 Every window except the launcher shows Telegram's Back button, which leads to
 the launcher, including when the window was opened straight from its bot.
+
+The overview lists Coding, PM and Ops as peers. Service state, snapshot problems,
+restarts and recent errors appear in each agent row, replacing the duplicate
+Services card. Healthy systems show a compact summary; alerts expand into a
+Needs attention card. Ops uses systemd data and does not need a snapshot.
 
 ### Launcher problems
 
@@ -138,7 +144,8 @@ pytest
 
 ### Page tests
 
-`ai_dashboard/static/index.html` has its own navigation logic, tested in a
+The page separates HTML, theme styles, DOM helpers, networking, routing and
+individual views under `ai_dashboard/static/`. Its navigation is tested in a
 simulated browser (jsdom) with a deliberately slow server, so navigation
 races show up:
 

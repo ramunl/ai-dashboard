@@ -225,12 +225,42 @@ class LauncherRouteTests(unittest.IsolatedAsyncioTestCase):
                     "service": "active",
                     "problem": None,
                     "detail": "running feature/x · Polling CI",
+                    "unit": "ai-coding-agent",
+                    "restarts": 0,
+                    "errors_last_hour": 0,
+                    "load_state": "loaded",
                 }
             ],
         )
 
     async def test_root_page_is_the_launcher(self) -> None:
         self.assertEqual((await self.client.get("/")).status, 200)
+        self.assertEqual((await self.client.get("/ops")).status, 200)
+        for asset in (
+            "styles.css",
+            "dom.js",
+            "api.js",
+            "router.js",
+            "views/overview.js",
+        ):
+            self.assertEqual((await self.client.get(f"/static/{asset}")).status, 200)
+
+    async def test_ops_without_snapshot_appears_with_failed_service(self) -> None:
+        from dataclasses import replace
+
+        from ai_dashboard.views import launcher_view
+
+        settings = self.client.server.app[server.SETTINGS]
+        settings = replace(
+            settings,
+            bots=(*settings.bots, BotSource("ops", "222:OPS", "ai-ops-agent", "")),
+        )
+        overview = await launcher_view(settings)
+        ops = next(agent for agent in overview["agents"] if agent["name"] == "ops")
+        self.assertEqual(ops["label"], "Ops agent")
+        self.assertEqual(ops["path"], "ops")
+        self.assertEqual(ops["service"], "failed")
+        self.assertEqual(ops["errors_last_hour"], 0)
 
 
 class MenuTargetTests(unittest.IsolatedAsyncioTestCase):
@@ -322,7 +352,11 @@ class PmWindowTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             patch.object(sources, "service_state", AsyncMock(return_value="active")),
-            patch.object(views, "unit_status", AsyncMock(return_value=status)),
+            patch.object(
+                views,
+                "unit_status",
+                AsyncMock(side_effect=lambda unit: {**status, "unit": unit}),
+            ),
             patch.object(views, "recent_errors", AsyncMock(return_value=0)),
             patch.object(views, "read_resources", side_effect=OSError("no /proc here")),
         ):
