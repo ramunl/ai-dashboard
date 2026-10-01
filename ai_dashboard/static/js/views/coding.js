@@ -53,6 +53,7 @@ function codingCards(snapshot) {
       row("Implementer", snapshot.implementation_agent),
       row("Verbosity", snapshot.verbosity),
     ),
+    limitsCard(snapshot.limits),
     card("Versions", el("pre", [snapshot.version, snapshot.core].filter(Boolean).join("\n"))),
   ];
 }

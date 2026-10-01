@@ -189,3 +189,13 @@ sudo install -m 755 /opt/ai-dashboard/deploy/update-ai-dashboard /usr/local/sbin
 
 The script uses the clone's own remote (the repo is public), not the agents'
 deploy key, which GitHub scopes to a single repository.
+
+### Provider limits
+
+The Coding window includes a Limits card with cached Codex account quota windows,
+percentage remaining, reset times and reading age. The agent refreshes quota
+every five minutes through its authenticated Codex app-server; dashboard
+refreshes do not make provider requests. Older snapshots show a waiting state.
+Claude API rate limits appear after `/limits claude` in Telegram; that explicit
+check consumes one tiny API request and is separate from Claude Code plan usage.
+Failed or old readings are labeled as last known data.

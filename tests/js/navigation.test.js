@@ -149,7 +149,7 @@ test("Back from the coding window renders the launcher again", async () => {
   await sleep(250);
   page.tapAgent(0);
   await sleep(250);
-  assert.deepStrictEqual(page.state(), { path: "/coding", title: "repo", cards: 6, backVisible: true });
+  assert.deepStrictEqual(page.state(), { path: "/coding", title: "repo", cards: 7, backVisible: true });
   page.back.handler();
   await sleep(250);
   assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
@@ -270,4 +270,27 @@ test("agent rows show uptime and the overview shows the disk trend", async () =>
   const fresh = await openPage("/", { latencyMs: 10 });
   await sleep(60);
   assert.match(fresh.doc.querySelector("main").textContent, /after a few hours of readings/);
+});
+
+test("coding limits render quota windows, resets and missing provider readings", async () => {
+  const page = await openPage("/coding", { latencyMs: 10 });
+  await sleep(60);
+  const limits = {
+    codex: { status: "ok", checked_at: Date.now() / 1000, windows: [
+      { bucket: "codex", remaining_percent: 0, window_minutes: 300, resets_at: 1800000000 },
+      { bucket: "codex", remaining_percent: 72, window_minutes: 10080, resets_at: 1800100000 },
+    ] },
+    claude: { status: "not_configured", message: "Claude API key is not configured", windows: [] },
+  };
+  page.dom.window.eval(`document.getElementById("view").replaceChildren(limitsCard(${JSON.stringify(limits)}))`);
+  assert.match(page.text("view"), /5-hour/);
+  assert.match(page.text("view"), /Weekly/);
+  assert.match(page.text("view"), /0% remaining/);
+  assert.match(page.text("view"), /72% remaining/);
+  assert.match(page.text("view"), /Resets/);
+  assert.match(page.text("view"), /not configured/);
+  assert.strictEqual(page.doc.querySelectorAll("progress")[0].value, 0);
+  page.dom.window.eval('document.getElementById("view").replaceChildren(limitsCard(null))');
+  assert.match(page.text("view"), /Waiting for a limits reading/);
+  assert.deepStrictEqual(page.errors, []);
 });
