@@ -13,6 +13,7 @@ from aiohttp import web
 
 from ai_dashboard.auth import InitDataError, verify_init_data
 from ai_dashboard.config import Settings
+from ai_dashboard.disk_history import record_forever
 from ai_dashboard.telegram_api import API_BASE, set_menu_button
 from ai_dashboard.views import VIEW_PROVIDERS, WINDOWS
 
@@ -91,9 +92,12 @@ async def _point_menu_buttons(settings: Settings, api_base: str) -> None:
 
 
 def build_app(
-    settings: Settings, set_buttons: bool = True, api_base: str = API_BASE
+    settings: Settings,
+    set_buttons: bool = True,
+    api_base: str = API_BASE,
+    record_disk: bool = True,
 ) -> web.Application:
-    """Register dashboard routes and optional menu-button startup work."""
+    """Register dashboard routes and optional background startup work."""
     app = web.Application()
     app[SETTINGS] = settings
     app.router.add_get("/healthz", health)
@@ -109,6 +113,15 @@ def build_app(
         with contextlib.suppress(asyncio.CancelledError):
             await task
 
+    async def disk_recorder(_app: web.Application) -> AsyncIterator[None]:
+        task = asyncio.create_task(record_forever(settings.disk_history_file))
+        yield
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
     if set_buttons:
         app.cleanup_ctx.append(menu_buttons)
+    if record_disk:
+        app.cleanup_ctx.append(disk_recorder)
     return app

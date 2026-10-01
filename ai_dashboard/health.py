@@ -86,6 +86,8 @@ async def unit_status(unit: str) -> dict:
         "NRestarts",
         "-p",
         "ActiveEnterTimestamp",
+        "-p",
+        "ActiveEnterTimestampMonotonic",
     )
     fields = parse_unit_show(out or "")
     restarts = fields.get("NRestarts", "")
@@ -96,7 +98,27 @@ async def unit_status(unit: str) -> dict:
         "sub_state": fields.get("SubState", ""),
         "restarts": int(restarts) if restarts.isdigit() else 0,
         "since": fields.get("ActiveEnterTimestamp", ""),
+        # Seconds after boot when the unit last started; time-zone free.
+        "started_after_boot": _monotonic_seconds(
+            fields.get("ActiveEnterTimestampMonotonic", "")
+        ),
     }
+
+
+def _monotonic_seconds(value: str) -> float | None:
+    """Microseconds since boot from systemd, as seconds; None if never started."""
+    microseconds = int(value) if value.isdigit() else 0
+    return microseconds / 1_000_000 if microseconds else None
+
+
+def uptime_of(service: dict | None, server_uptime: float | None) -> float | None:
+    """How long a unit has been running, from boot-relative timestamps."""
+    if not service or server_uptime is None:
+        return None
+    started = service.get("started_after_boot")
+    if started is None or service.get("state") != "active":
+        return None
+    return max(0.0, server_uptime - started)
 
 
 async def recent_errors(unit: str, now: float | None = None) -> int | None:

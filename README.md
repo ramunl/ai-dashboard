@@ -15,8 +15,8 @@ Telegram ──https──▶ Caddy ──▶ ai-dashboard (127.0.0.1:8787)
 
 | Path | Opened from | Shows |
 |---|---|---|
-| `/` | Ops bot | AI Agents overview: health, agent status and resource meters |
-| `/ops` | Overview agent list | Ops service status, restarts, errors and resources |
+| `/` | Back from any window | AI Agents overview: health, agent status, resources, disk trend |
+| `/ops` | Ops bot | Ops service status, restarts, errors, uptime and resources |
 | `/coding` | Coding bot | Coding agent: now, queue, plan, last run, versions |
 | `/pm` | PM bot | PM agent: active project's open todos, projects, rule files, versions |
 
@@ -111,6 +111,7 @@ a chat still lists commands.
 | `PM_ENV_FILE` | `/etc/ai-pm-agent.env` | PM bot token and `PM_SNAPSHOT_FILE`; skipped if absent |
 | `PM_SERVICE` | `ai-pm-agent` | PM agent unit |
 | `MONITORED_SERVICES` | `ai-coding-agent,ai-pm-agent,ai-ops-agent` | units on the launcher |
+| `DASHBOARD_STATE_DIR` | `/var/lib/ai-dashboard` | the dashboard's own state (disk history) |
 
 All bots' `YOUR_CHAT_ID` must match; otherwise the dashboard refuses to start.
 
@@ -162,3 +163,29 @@ races show up:
 ```bash
 npm install && npm test
 ```
+
+## Disk trend
+
+A single reading ("63% used") hides how fast the disk is filling. The dashboard
+records disk usage once an hour (`DASHBOARD_STATE_DIR/disk-history.json`, last
+14 days) and shows growth per day and time until full, from a least-squares fit
+over the last 3 days. It needs about 6 hours of readings before showing a trend.
+It warns when the disk will be full within 30 days, and reports an error within 7.
+
+Each agent row also shows how long its service has been up, from systemd's
+boot-relative start time; a deploy or a crash restart resets it.
+## Deploy
+
+With `ai-dashboard` as the coding agent's active project (`/repo_use`),
+`/deploy <branch>` runs `/usr/local/sbin/update-ai-dashboard`: fetch, fast-forward,
+install requirements, restart `ai-dashboard`, and confirm it came back up. The
+log is `/var/log/ai-dashboard/update.log`.
+
+`setup-dashboard-https.sh` installs the script. On an existing server, once:
+
+```bash
+sudo install -m 755 /opt/ai-dashboard/deploy/update-ai-dashboard /usr/local/sbin/
+```
+
+The script uses the clone's own remote (the repo is public), not the agents'
+deploy key, which GitHub scopes to a single repository.

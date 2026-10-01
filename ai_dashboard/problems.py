@@ -43,6 +43,7 @@ def _resource_problems(resources: dict | None) -> list[dict]:
         problems.append(_problem("error", f"Disk {used:.0%} full"))
     elif used >= 0.8:
         problems.append(_problem("warning", f"Disk {used:.0%} full"))
+    problems.extend(_disk_trend_problems(disk.get("trend")))
     memory = resources["memory"]
     free = memory["available"] / memory["total"] if memory["total"] else 1
     if free < 0.10:
@@ -60,6 +61,20 @@ def _resource_problems(resources: dict | None) -> list[dict]:
         )
 
     return problems
+
+
+def _disk_trend_problems(trend: dict | None) -> list[dict]:
+    """Warn while there is still time to act, not when the disk is already full."""
+    days = trend.get("days_until_full") if trend else None
+    if days is None:
+        return []
+    growth = trend["bytes_per_day"] / 1024**3
+    text = f"Disk grows {growth:.1f} GB/day: full in ~{days:.0f} days"
+    if days <= 7:
+        return [_problem("error", text)]
+    if days <= 30:
+        return [_problem("warning", text)]
+    return []
 
 
 def _agent_problems(agents: list[dict], active_units: set[str]) -> list[dict]:

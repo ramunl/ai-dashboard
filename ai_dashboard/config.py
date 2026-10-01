@@ -47,6 +47,12 @@ class Settings:
     owner_id: int
     bots: tuple[BotSource, ...] = field(default_factory=tuple)
     monitored_services: tuple[str, ...] = DEFAULT_MONITORED
+    state_dir: Path = Path("/var/lib/ai-dashboard")
+
+    @property
+    def disk_history_file(self) -> Path:
+        """Hourly disk readings behind the overview's growth trend."""
+        return self.state_dir / "disk-history.json"
 
     def tokens(self) -> dict[str, str]:
         """Map configured bot names to their authentication tokens."""
@@ -103,7 +109,7 @@ _SPECS = (
         "OPS_TELEGRAM_BOT_TOKEN",
         "OPS_SERVICE",
         "ai-ops-agent",
-        "",
+        "ops",
         required=False,
     ),
 )
@@ -187,4 +193,5 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         owner_id=owner,
         bots=tuple(bot for bot, _ in loaded),
         monitored_services=monitored,
+        state_dir=Path(env.get("DASHBOARD_STATE_DIR", "/var/lib/ai-dashboard")),
     )

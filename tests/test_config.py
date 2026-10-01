@@ -76,7 +76,7 @@ class MultiBotTests(SettingsTests):
         ops = _env_file('OPS_TELEGRAM_BOT_TOKEN="222:OPS"\nYOUR_CHAT_ID=777\n')
         settings = self._load(OPS_ENV_FILE=ops)
         self.assertEqual(settings.tokens(), {"coding": "111:A", "ops": "222:OPS"})
-        self.assertEqual(settings.bot("ops").menu_path, "")
+        self.assertEqual(settings.bot("ops").menu_path, "ops")
         self.assertEqual(settings.bot("coding").menu_path, "coding")
 
     def test_missing_ops_env_file_is_skipped(self) -> None:

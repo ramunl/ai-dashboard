@@ -232,3 +232,42 @@ test("overview opens Ops details without a duplicate Services card", async () =>
   assert.strictEqual(page.state().backVisible, true);
   assert.deepStrictEqual(page.errors, []);
 });
+
+// Overview data with a problem, uptimes, and a disk trend.
+const WITH_PROBLEM = {
+  ...LAUNCHER,
+  resources: { ...LAUNCHER.resources,
+    disk: { ...LAUNCHER.resources.disk, trend: { bytes_per_day: 0.56 * 1024 ** 3, days_until_full: 15.5 } } },
+  agents: LAUNCHER.agents.map((agent) => ({ ...agent, up_seconds: 3 * 3600 + 120 })),
+  problems: [{ severity: "warning", text: "Disk grows 0.6 GB/day: full in ~16 days" }],
+};
+const answer = (body) => async (name) =>
+  ({ ok: true, status: 200, json: async () => (name === "launcher" ? body : DATA[name]) });
+const cardTitles = (page) => [...page.doc.querySelectorAll("main h2")].map((node) => node.textContent);
+
+test("Ops window shows its own cards, never the agent list", async () => {
+  const overview = await openPage("/", { respond: answer(WITH_PROBLEM) });
+  await sleep(60);
+  assert.deepStrictEqual(cardTitles(overview), ["Needs attention", "Agents", "Server resources"]);
+
+  const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
+  await sleep(60);
+  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Needs attention", "Server resources"]);
+  assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
+
+  const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
+  await sleep(60);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Server resources"]);
+});
+
+test("agent rows show uptime and the overview shows the disk trend", async () => {
+  const page = await openPage("/", { respond: answer(WITH_PROBLEM) });
+  await sleep(60);
+  const text = page.doc.querySelector("main").textContent;
+  assert.match(text, /up 3h 2m/);
+  assert.match(text, /full in ~16 days/);
+
+  const fresh = await openPage("/", { latencyMs: 10 });
+  await sleep(60);
+  assert.match(fresh.doc.querySelector("main").textContent, /after a few hours of readings/);
+});

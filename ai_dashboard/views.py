@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from ai_dashboard.config import BotSource, Settings
+from ai_dashboard.disk_history import load_samples, trend
 from ai_dashboard.health import (
     compute_problems,
     read_resources,
     recent_errors,
     unit_status,
+    uptime_of,
 )
 from ai_dashboard.sources import agent_view
 
@@ -96,6 +99,7 @@ def _launcher_agents(
     agent_bots: list[BotSource],
     views: list[dict],
     services: list[dict],
+    server_uptime: float | None = None,
 ) -> list[dict]:
     """Combine snapshot details with service diagnostics for every configured bot."""
     rows = [_agent_row(bot, view) for bot, view in zip(agent_bots, views)]
@@ -106,7 +110,7 @@ def _launcher_agents(
                 {
                     "name": bot.name,
                     "label": "Ops agent" if bot.name == "ops" else bot.name,
-                    "path": "ops" if bot.name == "ops" else bot.menu_path,
+                    "path": bot.menu_path,
                     "service": service["state"],
                     "problem": None,
                     "detail": "Server health, logs and updates",
@@ -118,6 +122,7 @@ def _launcher_agents(
         row["restarts"] = service.get("restarts", 0)
         row["errors_last_hour"] = service.get("errors_last_hour", 0)
         row["load_state"] = service.get("load_state")
+        row["up_seconds"] = uptime_of(service, server_uptime)
     return rows
 
 
@@ -142,7 +147,14 @@ async def launcher_view(settings: Settings) -> dict:
     except OSError as error:
         logger.warning("Could not read server resources: %s", error)
         resources = None
-    rows = _launcher_agents(settings, agent_bots, list(agent_views), list(services))
+    if resources:
+        samples = await asyncio.to_thread(load_samples, settings.disk_history_file)
+        disk = resources["disk"]
+        disk["trend"] = trend(samples, disk["total"], time.time())
+    uptime = resources["uptime_seconds"] if resources else None
+    rows = _launcher_agents(
+        settings, agent_bots, list(agent_views), list(services), uptime
+    )
     return {
         "resources": resources,
         "services": list(services),

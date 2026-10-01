@@ -188,3 +188,26 @@ class AgentProblemTests(unittest.TestCase):
                 }
             ],
         )
+
+
+class UptimeTests(unittest.TestCase):
+    def test_uptime_from_boot_relative_start(self) -> None:
+        service = {"state": "active", "started_after_boot": 100.0}
+        self.assertEqual(health.uptime_of(service, 3700.0), 3600.0)
+
+    def test_unknown_when_not_running_or_never_started(self) -> None:
+        self.assertIsNone(
+            health.uptime_of({"state": "failed", "started_after_boot": 1.0}, 10.0)
+        )
+        self.assertIsNone(
+            health.uptime_of({"state": "active", "started_after_boot": None}, 10.0)
+        )
+        self.assertIsNone(health.uptime_of(None, 10.0))
+        self.assertIsNone(
+            health.uptime_of({"state": "active", "started_after_boot": 1.0}, None)
+        )
+
+    def test_monotonic_parsing(self) -> None:
+        self.assertEqual(health._monotonic_seconds("2500000"), 2.5)
+        self.assertIsNone(health._monotonic_seconds("0"))
+        self.assertIsNone(health._monotonic_seconds(""))

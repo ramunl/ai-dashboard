@@ -27,6 +27,8 @@ def _settings(snapshot_file: Path) -> Settings:
         port=8787,
         owner_id=OWNER,
         bots=(BotSource("coding", TOKEN, "ai-coding-agent", "coding", snapshot_file),),
+        # Never read or write the real /var/lib/ai-dashboard from tests.
+        state_dir=snapshot_file.parent,
     )
 
 
@@ -43,7 +45,9 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.snapshot.write_text(
             json.dumps({"format": 1, "updated_at": time.time(), "queue": [{"id": 1}]})
         )
-        app = server.build_app(_settings(self.snapshot), set_buttons=False)
+        app = server.build_app(
+            _settings(self.snapshot), set_buttons=False, record_disk=False
+        )
         self.client = TestClient(TestServer(app))
         await self.client.start_server()
         self.service = patch.object(
@@ -202,7 +206,9 @@ class LauncherRouteTests(unittest.IsolatedAsyncioTestCase):
         ]
         for item in self.patches:
             item.start()
-        app = server.build_app(_settings(snapshot), set_buttons=False)
+        app = server.build_app(
+            _settings(snapshot), set_buttons=False, record_disk=False
+        )
         self.client = TestClient(TestServer(app))
         await self.client.start_server()
 
@@ -240,6 +246,7 @@ class LauncherRouteTests(unittest.IsolatedAsyncioTestCase):
                     "restarts": 0,
                     "errors_last_hour": 0,
                     "load_state": "loaded",
+                    "up_seconds": None,
                 }
             ],
         )
@@ -264,7 +271,7 @@ class LauncherRouteTests(unittest.IsolatedAsyncioTestCase):
         settings = self.client.server.app[server.SETTINGS]
         settings = replace(
             settings,
-            bots=(*settings.bots, BotSource("ops", "222:OPS", "ai-ops-agent", "")),
+            bots=(*settings.bots, BotSource("ops", "222:OPS", "ai-ops-agent", "ops")),
         )
         overview = await launcher_view(settings)
         ops = next(agent for agent in overview["agents"] if agent["name"] == "ops")
@@ -297,7 +304,7 @@ class MenuTargetTests(unittest.IsolatedAsyncioTestCase):
             owner_id=OWNER,
             bots=(
                 BotSource("coding", TOKEN, "ai-coding-agent", "coding", Path("/x")),
-                BotSource("ops", "222:OPS", "ai-ops-agent", ""),
+                BotSource("ops", "222:OPS", "ai-ops-agent", "ops"),
                 BotSource("pm", "333:PM", "ai-pm-agent", "pm", Path("/y")),
             ),
         )
@@ -307,7 +314,7 @@ class MenuTargetTests(unittest.IsolatedAsyncioTestCase):
             urls,
             {
                 TOKEN: "https://h:8443/coding",
-                "222:OPS": "https://h:8443/",
+                "222:OPS": "https://h:8443/ops",
                 "333:PM": "https://h:8443/pm",
             },
         )
@@ -352,6 +359,7 @@ class PmWindowTests(unittest.IsolatedAsyncioTestCase):
                 BotSource("pm", "333:PM", "ai-pm-agent", "pm", pm_snapshot),
             ),
             monitored_services=("ai-pm-agent",),
+            state_dir=tmp,
         )
         status = {
             "unit": "ai-pm-agent",
@@ -372,7 +380,9 @@ class PmWindowTests(unittest.IsolatedAsyncioTestCase):
             patch.object(views, "read_resources", side_effect=OSError("no /proc here")),
         ):
             client = TestClient(
-                TestServer(server.build_app(settings, set_buttons=False))
+                TestServer(
+                    server.build_app(settings, set_buttons=False, record_disk=False)
+                )
             )
             await client.start_server()
             try:

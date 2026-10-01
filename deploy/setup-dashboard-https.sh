@@ -71,6 +71,8 @@ say "2. Python environment and service unit"
 "${VENV}/bin/pip" install -q -r "${APP_DIR}/requirements.txt"
 "${VENV}/bin/python" -c "import aiohttp" || stop "aiohttp still not importable in ${VENV}"
 install -m 644 "${APP_DIR}/deploy/ai-dashboard.service" "${UNIT_FILE}"
+# Lets the coding agent's /deploy update the dashboard.
+install -m 755 "${APP_DIR}/deploy/update-ai-dashboard" /usr/local/sbin/update-ai-dashboard
 systemctl daemon-reload
 ok "venv ${VENV} ready, unit installed"
 
