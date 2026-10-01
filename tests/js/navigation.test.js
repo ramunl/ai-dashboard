@@ -35,6 +35,7 @@ const LAUNCHER = {
   agents: [
     { name: "coding", label: "Coding agent", path: "coding", service: "active", problem: null, detail: "idle" },
     { name: "pm", label: "PM agent", path: "pm", service: "active", problem: null, detail: "cc · 1 open" },
+    { name: "ops", label: "Ops agent", path: "ops", service: "active", problem: null, detail: "Server health, logs and updates" },
   ],
   problems: [],
 };
@@ -102,7 +103,7 @@ test("Back pressed before the window loads still renders the launcher", async ()
   await sleep(50);
   page.back.handler();
   await sleep(600);
-  assert.deepStrictEqual(page.state(), { path: "/", title: "Server", cards: 4, backVisible: false });
+  assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
   assert.deepStrictEqual(page.errors, []);
 });
 
@@ -127,7 +128,7 @@ test("rapid round trips keep history bounded and end rendered", async () => {
     await sleep(40);
   }
   await sleep(600);
-  assert.strictEqual(page.state().cards, 4);
+  assert.strictEqual(page.state().cards, 2);
   assert.strictEqual(page.state().path, "/");
   assert.ok(page.dom.window.history.length <= 2, `history grew to ${page.dom.window.history.length}`);
 });
@@ -139,7 +140,7 @@ test("window opened from its bot shows Back and returns to the launcher", async 
   assert.deepStrictEqual(page.state(), { path: "/pm", title: "PM agent", cards: 4, backVisible: true });
   page.back.handler();
   await sleep(300);
-  assert.deepStrictEqual(page.state(), { path: "/", title: "Server", cards: 4, backVisible: false });
+  assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
   assert.strictEqual(page.dom.window.history.length, 1);
 });
 
@@ -151,7 +152,7 @@ test("Back from the coding window renders the launcher again", async () => {
   assert.deepStrictEqual(page.state(), { path: "/coding", title: "repo", cards: 6, backVisible: true });
   page.back.handler();
   await sleep(250);
-  assert.deepStrictEqual(page.state(), { path: "/", title: "Server", cards: 4, backVisible: false });
+  assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
   assert.ok(page.dom.window.history.length <= 2, `history grew to ${page.dom.window.history.length}`);
   assert.deepStrictEqual(page.errors, []);
 });
@@ -163,7 +164,7 @@ test("a stale request for the same window does not block its reload", async () =
   await sleep(30);
   page.dom.window.eval("show()");  // the launcher is shown again meanwhile
   await sleep(400);
-  assert.deepStrictEqual(page.state(), { path: "/", title: "Server", cards: 4, backVisible: false });
+  assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
 });
 
 test("Back renders the launcher even if the WebView never fires popstate", async () => {
@@ -173,7 +174,7 @@ test("Back renders the launcher even if the WebView never fires popstate", async
   await sleep(250);
   page.back.handler();
   await sleep(700);
-  assert.deepStrictEqual(page.state(), { path: "/", title: "Server", cards: 4, backVisible: false });
+  assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
   assert.ok(page.dom.window.history.length <= 2, `history grew to ${page.dom.window.history.length}`);
 });
 
@@ -215,7 +216,19 @@ test("agent rows are links and every status dot has text", async () => {
   await sleep(250);
   const rows = [...page.doc.querySelectorAll(".nav-row")];
   assert.deepStrictEqual(rows.map((a) => [a.tagName, a.getAttribute("href")]),
-                         [["A", "/coding"], ["A", "/pm"]]);
+                         [["A", "/coding"], ["A", "/pm"], ["A", "/ops"]]);
   assert.strictEqual(page.text("status-label"), "OK");
   assert.strictEqual(page.doc.querySelectorAll("[style]").length, 0);
+});
+
+test("overview opens Ops details without a duplicate Services card", async () => {
+  const page = await openPage("/", { latencyMs: 10 });
+  await sleep(60);
+  assert.ok(![...page.doc.querySelectorAll("h2")].some((node) => node.textContent === "Services"));
+  page.tapAgent(2);
+  await sleep(60);
+  assert.strictEqual(page.state().path, "/ops");
+  assert.strictEqual(page.state().title, "Ops agent");
+  assert.strictEqual(page.state().backVisible, true);
+  assert.deepStrictEqual(page.errors, []);
 });

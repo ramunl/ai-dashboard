@@ -17,7 +17,12 @@ from ai_dashboard.sources import agent_view
 logger = logging.getLogger(__name__)
 
 # path -> label. "" is the launcher.
-WINDOWS = {"": "Overview", "coding": "Coding agent", "pm": "PM agent"}
+WINDOWS = {
+    "": "Overview",
+    "coding": "Coding agent",
+    "pm": "PM agent",
+    "ops": "Ops agent",
+}
 
 
 async def _window_of(settings: Settings, name: str) -> dict | None:
@@ -86,9 +91,44 @@ def _agent_row(bot: BotSource, view: dict) -> dict:
     }
 
 
+def _launcher_agents(
+    settings: Settings,
+    agent_bots: list[BotSource],
+    views: list[dict],
+    services: list[dict],
+) -> list[dict]:
+    """Combine snapshot details with service diagnostics for every configured bot."""
+    rows = [_agent_row(bot, view) for bot, view in zip(agent_bots, views)]
+    for bot in settings.bots:
+        service = next(item for item in services if item["unit"] == bot.service)
+        if bot.snapshot_file is None:
+            rows.append(
+                {
+                    "name": bot.name,
+                    "label": "Ops agent" if bot.name == "ops" else bot.name,
+                    "path": "ops" if bot.name == "ops" else bot.menu_path,
+                    "service": service["state"],
+                    "problem": None,
+                    "detail": "Server health, logs and updates",
+                }
+            )
+        row = next(item for item in rows if item["name"] == bot.name)
+        row["unit"] = bot.service
+        row["service"] = service["state"]
+        row["restarts"] = service.get("restarts", 0)
+        row["errors_last_hour"] = service.get("errors_last_hour", 0)
+        row["load_state"] = service.get("load_state")
+    return rows
+
+
 async def launcher_view(settings: Settings) -> dict:
     """Collect server and agent readings for the overview window."""
-    units = list(settings.monitored_services)
+    units = list(
+        dict.fromkeys(
+            (*settings.monitored_services, *(bot.service for bot in settings.bots))
+        )
+    )
+
     agent_bots = [bot for bot in settings.bots if bot.snapshot_file is not None]
     services, errors, agent_views = await asyncio.gather(
         asyncio.gather(*(unit_status(unit) for unit in units)),
@@ -102,10 +142,11 @@ async def launcher_view(settings: Settings) -> dict:
     except OSError as error:
         logger.warning("Could not read server resources: %s", error)
         resources = None
+    rows = _launcher_agents(settings, agent_bots, list(agent_views), list(services))
     return {
         "resources": resources,
         "services": list(services),
-        "agents": [_agent_row(bot, view) for bot, view in zip(agent_bots, agent_views)],
+        "agents": rows,
         "problems": compute_problems(resources, list(services), list(agent_views)),
     }
 
