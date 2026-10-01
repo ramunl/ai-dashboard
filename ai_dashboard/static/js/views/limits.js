@@ -15,7 +15,7 @@ function limitReset(timestamp) {
     : `Resets ${date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
 }
 
-function codexLimitRows(limits) {
+function quotaLimitRows(limits) {
   const rows = [];
   for (const window of limits.windows || []) {
     rows.push(row(quotaWindowLabel(window), `${window.remaining_percent}% remaining`));
@@ -49,7 +49,8 @@ function providerLimitRows(name, limits, renderRows) {
 
 function limitsCard(limits) {
   return card("Limits",
-    ...providerLimitRows("Codex", limits && limits.codex, codexLimitRows),
+    ...providerLimitRows("Codex", limits && limits.codex, quotaLimitRows),
+    ...providerLimitRows("Claude Code", limits && limits.claude_code, quotaLimitRows),
     ...providerLimitRows("Claude API", limits && limits.claude, claudeLimitRows),
   );
 }

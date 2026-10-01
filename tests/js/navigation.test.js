@@ -294,3 +294,23 @@ test("coding limits render quota windows, resets and missing provider readings",
   assert.match(page.text("view"), /Waiting for a limits reading/);
   assert.deepStrictEqual(page.errors, []);
 });
+
+test("Claude Code subscription windows stay separate from Claude API limits", async () => {
+  const page = await openPage("/coding", { latencyMs: 10 });
+  await sleep(60);
+  const limits = {
+    claude_code: { status: "ok", checked_at: Date.now() / 1000 - 7200, windows: [
+      { bucket: "Claude Code", window_minutes: 300, remaining_percent: 0, resets_at: 1800000000 },
+      { bucket: "Claude Code", window_minutes: 10080, remaining_percent: 65, resets_at: 1800100000 },
+    ] },
+    claude: { status: "not_configured", message: "Claude API key is not configured", windows: [] },
+  };
+  page.dom.window.eval(`document.getElementById("view").replaceChildren(limitsCard(${JSON.stringify(limits)}))`);
+  assert.match(page.text("view"), /Claude Code · 5-hour/);
+  assert.match(page.text("view"), /Claude Code · Weekly/);
+  assert.match(page.text("view"), /0% remaining/);
+  assert.match(page.text("view"), /65% remaining/);
+  assert.match(page.text("view"), /last known reading/);
+  assert.match(page.text("view"), /Claude API/);
+  assert.deepStrictEqual(page.errors, []);
+});
