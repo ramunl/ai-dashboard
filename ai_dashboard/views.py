@@ -32,14 +32,17 @@ async def _window_of(settings: Settings, name: str) -> dict | None:
 
 
 async def coding_view(settings: Settings) -> dict | None:
+    """Return the coding window data when its bot is configured."""
     return await _window_of(settings, "coding")
 
 
 async def pm_view(settings: Settings) -> dict | None:
+    """Return the PM window data when its bot is configured."""
     return await _window_of(settings, "pm")
 
 
 def coding_detail(view: dict) -> str:
+    """Summarize coding activity for a launcher row."""
     if view.get("service") != "active":
         return f"service {view.get('service')}"
     snapshot = view.get("snapshot") or {}
@@ -58,6 +61,7 @@ def coding_detail(view: dict) -> str:
 
 
 def pm_detail(view: dict) -> str:
+    """Summarize the active TODO project for a launcher row."""
     if view.get("service") != "active":
         return f"service {view.get('service')}"
     snapshot = view.get("snapshot")
@@ -118,11 +122,13 @@ def _launcher_agents(
 
 
 async def launcher_view(settings: Settings) -> dict:
+    """Collect server and agent readings for the overview window."""
     units = list(
         dict.fromkeys(
             (*settings.monitored_services, *(bot.service for bot in settings.bots))
         )
     )
+
     agent_bots = [bot for bot in settings.bots if bot.snapshot_file is not None]
     services, errors, agent_views = await asyncio.gather(
         asyncio.gather(*(unit_status(unit) for unit in units)),

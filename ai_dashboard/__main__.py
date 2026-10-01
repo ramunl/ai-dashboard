@@ -12,6 +12,7 @@ from ai_dashboard.server import build_app
 
 
 def main() -> int:
+    """Load configuration and run the dashboard HTTP service."""
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )

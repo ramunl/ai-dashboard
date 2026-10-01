@@ -15,18 +15,17 @@ Telegram ──https──▶ Caddy ──▶ ai-dashboard (127.0.0.1:8787)
 
 | Path | Opened from | Shows |
 |---|---|---|
-| `/` | Ops bot | AI Agents overview: health summary, agent status and links, resource meters |
-| `/ops` | Overview agent list | Ops service status, restarts, recent errors and server resources |
+| `/` | Ops bot | AI Agents overview: health, agent status and resource meters |
+| `/ops` | Overview agent list | Ops service status, restarts, errors and resources |
 | `/coding` | Coding bot | Coding agent: now, queue, plan, last run, versions |
 | `/pm` | PM bot | PM agent: active project's open todos, projects, rule files, versions |
 
 Every window except the launcher shows Telegram's Back button, which leads to
 the launcher, including when the window was opened straight from its bot.
 
-The overview lists Coding, PM and Ops as peers. Service state, snapshot problems,
-restarts and recent errors appear in each agent row, replacing the duplicate
-Services card. Healthy systems show a compact summary; alerts expand into a
-Needs attention card. Ops uses systemd data and does not need a snapshot.
+The overview lists Coding, PM and Ops as peers. Each row combines agent activity
+with service state, restarts and recent errors. Healthy systems show a compact
+summary; alerts appear in Needs attention. Ops needs no snapshot.
 
 ### Launcher problems
 
@@ -140,13 +139,24 @@ pip install -r requirements.txt -r requirements-dev.txt
 ruff check ai_dashboard tests && ruff format --check ai_dashboard tests
 pytest
 ```
-# ai-dashboard
+
+The Ruff configuration enforces the Python rules for naming, imports,
+88-character lines, annotations, public and constructor docstrings, and mutable
+defaults. Run `ruff format ai_dashboard tests` before committing.
+
+Local process execution and timeout cleanup live in `ai_dashboard/commands.py`.
+Health readers collect measurements; `ai_dashboard/problems.py` evaluates those
+readings into the overview's ordered problem list. See the
+[Python rules audit](docs/python-rules-audit.md) for the review and validation.
 
 ### Page tests
 
-The page separates HTML, theme styles, DOM helpers, networking, routing and
-individual views under `ai_dashboard/static/`. Its navigation is tested in a
-simulated browser (jsdom) with a deliberately slow server, so navigation
+The page lives in `ai_dashboard/static/`: `index.html`, `styles.css`, and
+scripts split by role under `js/` (`api.js` network, `router.js` navigation,
+`dom.js` element helpers, `app.js` the shell, one file per window in
+`js/views/`). The server serves them under `/static/` with `no-store`. The
+page's navigation logic is tested in a simulated browser (jsdom) with a
+deliberately slow server and a request that never answers, so navigation
 races show up:
 
 ```bash

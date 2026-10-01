@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -14,7 +17,8 @@ def read_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
-    except OSError:
+    except OSError as error:
+        logger.warning("Could not read env file %s (%s)", path, type(error).__name__)
         return values
     for raw in lines:
         line = raw.strip()

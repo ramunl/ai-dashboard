@@ -4,24 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AI Agents</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="/static/vendor/telegram-web-app.js"></script>
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 <header>
-  <h1><span class="dot" id="dot"></span><span id="title">AI Agents</span></h1>
-  <div class="sub" id="subtitle"></div>
+  <h1>
+    <span class="status-dot" id="status-dot"></span>
+    <span id="title">AI Agents</span>
+    <span class="status-label" id="status-label"></span>
+  </h1>
+  <div class="subtitle" id="subtitle"></div>
 </header>
-<section class="alert" id="alert" role="alert"></section>
+<section class="alert" id="alert" role="alert" hidden></section>
 <main id="view"></main>
 <footer id="updated">Loading…</footer>
 
-<script src="/static/dom.js"></script>
-<script src="/static/views/coding.js"></script>
-<script src="/static/views/overview.js"></script>
-<script src="/static/views/pm.js"></script>
-<script src="/static/api.js"></script>
-<script src="/static/router.js"></script>
-
+<script src="/static/js/boot.js"></script>
+<script src="/static/js/telegram.js"></script>
+<script src="/static/js/dom.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/views/launcher.js"></script>
+<script src="/static/js/views/coding.js"></script>
+<script src="/static/js/views/pm.js"></script>
+<script src="/static/js/router.js"></script>
+<script src="/static/js/app.js"></script>
 </body>
 </html>

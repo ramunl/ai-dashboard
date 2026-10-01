@@ -17,6 +17,7 @@ from ai_dashboard.telegram_api import set_menu_button
 
 OWNER = 777
 TOKEN = "111:CODING"
+BOT = BotSource("coding", TOKEN, "ai-coding-agent", "coding")
 
 
 def _settings(snapshot_file: Path) -> Settings:
@@ -90,6 +91,20 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 200)
             self.assertIn("telegram-web-app.js", await response.text())
 
+    async def test_page_assets_served_without_caching(self) -> None:
+        for path in (
+            "/static/styles.css",
+            "/static/js/app.js",
+            "/static/vendor/telegram-web-app.js",
+        ):
+            response = await self.client.get(path)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    async def test_static_does_not_leave_its_directory(self) -> None:
+        for path in ("/static/nope.js", "/static/..%2Fserver.py", "/static/js"):
+            self.assertEqual((await self.client.get(path)).status, 404)
+
     async def test_health(self) -> None:
         self.assertEqual(await (await self.client.get("/healthz")).json(), {"ok": True})
 
@@ -112,9 +127,7 @@ class MenuButtonTests(unittest.IsolatedAsyncioTestCase):
     async def test_points_button_at_window_url(self) -> None:
         base, calls = await self._fake_telegram({"ok": True})
         async with aiohttp.ClientSession() as session:
-            ok = await set_menu_button(
-                session, "coding", TOKEN, OWNER, "https://h/coding", base
-            )
+            ok = await set_menu_button(session, BOT, OWNER, "https://h/coding", base)
         self.assertTrue(ok)
         token, payload = calls[0]
         self.assertEqual(token, TOKEN)
@@ -125,7 +138,7 @@ class MenuButtonTests(unittest.IsolatedAsyncioTestCase):
         async with aiohttp.ClientSession() as session:
             with self.assertLogs("ai_dashboard.telegram_api", logging.WARNING) as logs:
                 ok = await set_menu_button(
-                    session, "coding", TOKEN, OWNER, "https://h/", "http://127.0.0.1:9"
+                    session, BOT, OWNER, "https://h/", "http://127.0.0.1:9"
                 )
         self.assertFalse(ok)
         self.assertNotIn(TOKEN, "\n".join(logs.output))
@@ -136,9 +149,7 @@ class MenuButtonTests(unittest.IsolatedAsyncioTestCase):
         )
         async with aiohttp.ClientSession() as session:
             with self.assertLogs("ai_dashboard.telegram_api", logging.WARNING) as logs:
-                ok = await set_menu_button(
-                    session, "coding", TOKEN, OWNER, "https://h/", base
-                )
+                ok = await set_menu_button(session, BOT, OWNER, "https://h/", base)
         self.assertFalse(ok)
         self.assertIn("chat not found", "\n".join(logs.output))
 
@@ -238,10 +249,10 @@ class LauncherRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get("/ops")).status, 200)
         for asset in (
             "styles.css",
-            "dom.js",
-            "api.js",
-            "router.js",
-            "views/overview.js",
+            "js/dom.js",
+            "js/api.js",
+            "js/router.js",
+            "js/views/launcher.js",
         ):
             self.assertEqual((await self.client.get(f"/static/{asset}")).status, 200)
 
