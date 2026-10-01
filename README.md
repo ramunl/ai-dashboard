@@ -199,3 +199,9 @@ refreshes do not make provider requests. Older snapshots show a waiting state.
 Claude API rate limits appear after `/limits claude` in Telegram; that explicit
 check consumes one tiny API request and is separate from Claude Code plan usage.
 Failed or old readings are labeled as last known data.
+
+Claude Code subscription limits appear separately from Claude API limits. Their
+5-hour and weekly readings come from an interactive Claude Code status line on
+the coding-agent server. They update when that session supplies new data, not
+on a timer; headless bot runs do not supply status-line percentages. Reading
+age remains visible and the publisher drops expired quota windows.
