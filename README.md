@@ -250,3 +250,8 @@ Conflicts preserve the editor draft: cancel to refresh, then review and reapply.
 PM select controls use an explicit theme palette and native color scheme, with
 custom closed-control arrows to keep selected values readable in Telegram
 WebViews. The controls retain native keyboard and option selection behavior.
+
+In PM editors, Telegram Back returns to the Todos list first. Editors also show
+a Back to todos button near the top; Cancel has the same navigation behavior.
+A subsequent Back leaves PM for the overview. Leaving PM clears the editor
+subview so reopening PM starts at the list.

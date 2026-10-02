@@ -46,10 +46,10 @@ function pmPaint() {
   const toolbar = el("div", null, "pm-toolbar pm-project-toolbar");
   toolbar.append(pmSelect("Active todo project", projects, workspace.project || "", project => { if (project) pmSend({ action: "select", project }); }),
     pmButton("New project", () => { pmUi.editor = { projectForm: true, name: "" }; pmPaint(); }),
-    pmButton("+ Add todo", () => {
+    pmButton("+ Add", () => {
       if (!workspace.project) { pmUi.notice = "Select or create a project first."; pmPaint(); return; }
       pmUi.editor = { id: crypto.randomUUID().replaceAll("-", ""), text: "", priority: "normal", status: "open", isNew: true, revision: workspace.revision, project: workspace.project }; pmPaint();
-    }), pmButton("Sync todos", () => pmSend({ action: "sync", project: workspace.project })));
+    }), pmButton("Sync", () => pmSend({ action: "sync", project: workspace.project })));
   node.append(toolbar);
   const search = el("input"); search.type = "search"; search.value = pmUi.search;
   search.addEventListener("input", () => { pmUi.search = search.value; pmPaintList(); });
@@ -86,6 +86,7 @@ function pmTaskRow(item) {
 
 function pmEditor() {
   const draft = pmUi.editor, form = el("form", null, "pm-editor");
+  form.append(pmButton("Back to todos", pmCloseEditor));
   if (draft.projectForm) {
     const name = el("input"); name.required = true; name.pattern = "[A-Za-z0-9][A-Za-z0-9_.-]{0,79}"; name.value = draft.name;
     name.addEventListener("input", () => { draft.name = name.value; });
@@ -105,7 +106,7 @@ function pmEditor() {
     }, "pm-button pm-delete"), muted(`Task ID: ${draft.id}`));
   }
   const save = el("button", pmUi.busy ? "Saving…" : draft.projectForm ? "Create and select" : "Save todo", "pm-button"); save.type = "submit";
-  form.append(save, pmButton("Cancel", () => { pmUi.editor = null; pmUi.notice = ""; pmPaint(); refresh(); }));
+  form.append(save, pmButton("Cancel", pmCloseEditor));
   if (pmUi.busy) form.querySelectorAll("button, input, select, textarea").forEach(c => { c.disabled = true; });
   return form;
 }
@@ -128,4 +129,17 @@ async function pmSend(payload, closeEditor = false) {
       pmPaint();
     }
   }
+}
+
+// An editor is a local PM subview: Back closes it before leaving the PM route.
+function pmCloseEditor() {
+  if (pmUi.busy) {
+    showAlert("Saving your todo. Wait for the operation to finish before going back.");
+    return;
+  }
+  pmUi.editor = null;
+  pmUi.notice = "";
+  showAlert("");
+  pmPaint();
+  refresh();
 }

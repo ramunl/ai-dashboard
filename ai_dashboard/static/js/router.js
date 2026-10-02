@@ -26,6 +26,7 @@ function currentRoute() {
 function navigate(path) {
   const target = normalizePath(path);
   if (target === currentPath()) return;
+  if (currentPath() === "pm" && !pmUi.busy) pmUi.editor = null;
   history.pushState({ isFromLauncher: currentPath() === "" }, "", "/" + target);
   show();
 }
@@ -39,6 +40,10 @@ function showLauncherInPlace() {
 // otherwise (opened straight from a bot) replace this entry with the launcher.
 // Either way history does not grow with every round trip.
 function goBack() {
+  if (currentPath() === "pm" && pmUi.editor) {
+    pmCloseEditor();
+    return;
+  }
   if (!(history.state && history.state.isFromLauncher)) {
     showLauncherInPlace();
     return;
@@ -56,6 +61,7 @@ function goBack() {
 
 function onPopstate() {
   isAwaitingPopstate = false;
+  if (currentPath() !== "pm" && !pmUi.busy) pmUi.editor = null;
   show();
 }
 

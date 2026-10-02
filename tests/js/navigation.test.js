@@ -557,7 +557,7 @@ test("PM add generates an identity and sends one request while busy", async () =
     return new Promise(resolve => { resolvePost = resolve; });
   } });
   await sleep(70);
-  buttonNamed(page, "+ Add todo").click();
+  buttonNamed(page, "+ Add").click();
   const text = page.doc.querySelector("textarea"); text.value = "New todo";
   text.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
   const form = page.doc.querySelector("form");
@@ -611,4 +611,57 @@ test("PM select values stay present when Telegram changes its theme", async () =
       assert.ok(select.selectedOptions[0].textContent.trim());
     }
   }
+});
+
+
+test("native Back from a todo editor returns to the list before the dashboard", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  buttonNamed(page, "Normal task").click();
+  page.back.handler();
+  await sleep(30);
+  assert.strictEqual(page.dom.window.location.pathname, "/pm");
+  assert.strictEqual(page.doc.querySelector("textarea"), null);
+  assert.ok(page.doc.querySelector(".pm-task-list"));
+  page.back.handler();
+  assert.strictEqual(page.dom.window.location.pathname, "/");
+});
+
+test("editor Back to todos and Cancel stay within PM", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  for (const label of ["Back to todos", "Cancel"]) {
+    buttonNamed(page, "Normal task").click();
+    buttonNamed(page, label).click();
+    await sleep(20);
+    assert.strictEqual(page.dom.window.location.pathname, "/pm");
+    assert.ok(page.doc.querySelector(".pm-task-list"));
+  }
+});
+
+test("native Back also closes the Add todo and New project subviews", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  for (const label of ["+ Add", "New project"]) {
+    buttonNamed(page, label).click();
+    page.back.handler();
+    await sleep(20);
+    assert.strictEqual(page.dom.window.location.pathname, "/pm");
+    assert.strictEqual(page.doc.querySelector("form"), null);
+  }
+});
+
+
+test("returning from the dashboard opens the TODO list rather than a cached editor", async () => {
+  const respond = async name => name === "pm" ? editablePM() : { ok: true, status: 200, json: async () => DATA[name] };
+  const page = await openPage("/pm", { respond });
+  await sleep(70);
+  buttonNamed(page, "Normal task").click();
+  page.dom.window.eval('navigate("")');
+  await sleep(40);
+  page.dom.window.eval('navigate("pm")');
+  await sleep(40);
+  assert.ok(page.doc.querySelector(".pm-task-list"));
+  assert.strictEqual(page.doc.querySelector("textarea"), null);
+  assert.deepStrictEqual(page.errors, []);
 });
