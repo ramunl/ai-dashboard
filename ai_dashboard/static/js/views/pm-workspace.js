@@ -72,10 +72,12 @@ function pmPaintList() {
   const visible = pmUi.expanded ? items : items.slice(0, 3);
   visible.forEach(item => list.append(pmTaskRow(item)));
   if (items.length > 3) {
-    list.append(pmButton(pmUi.expanded ? "Show fewer" : `Show all (${items.length})`, () => {
+    const actions = el("div", null, "pm-list-actions");
+    actions.append(pmButton(pmUi.expanded ? "Show fewer" : `Show all (${items.length})`, () => {
       pmUi.expanded = !pmUi.expanded;
       pmPaintList();
     }));
+    list.append(actions);
   }
 }
 

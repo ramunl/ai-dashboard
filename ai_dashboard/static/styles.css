@@ -153,3 +153,5 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   background-repeat: no-repeat;
 }
 .pm-field select option { background-color: var(--bg); color: var(--fg); }
+
+.pm-list-actions { display: flex; justify-content: flex-end; margin-top: 0.75rem; }
