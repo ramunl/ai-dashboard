@@ -13,6 +13,7 @@ from aiohttp import web
 
 from ai_dashboard.auth import InitDataError, verify_init_data
 from ai_dashboard.config import Settings
+from ai_dashboard.deployments import TARGETS, DeploymentService
 from ai_dashboard.disk_history import record_forever
 from ai_dashboard.maintenance import CleanupService
 from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).with_name("static").resolve()
 PAGE = STATIC_DIR / "index.html"
 SETTINGS = web.AppKey("settings", Settings)
+DEPLOYMENTS = web.AppKey("deployments", DeploymentService)
 CLEANUP = web.AppKey("cleanup", CleanupService)
 _NO_STORE = {"Cache-Control": "no-store"}
 
@@ -76,7 +78,11 @@ async def window_data(request: web.Request) -> web.Response:
             "editing": await invoke_pm(settings.pm_command, {"action": "read"}),
         }
     if request.match_info["window"] == "ops":
-        view = {**view, "cleanup": request.app[CLEANUP].state()}
+        view = {
+            **view,
+            "cleanup": request.app[CLEANUP].state(),
+            "deployments": await request.app[DEPLOYMENTS].state(),
+        }
     return web.json_response({**view, "opened_from": viewer.bot}, headers=_NO_STORE)
 
 
@@ -99,6 +105,36 @@ async def cleanup_action(request: web.Request) -> web.Response:
             {"error": "a cleanup is already running"}, status=409, headers=_NO_STORE
         )
     return web.json_response({"started": True}, status=202, headers=_NO_STORE)
+
+
+async def rollback_action(request: web.Request) -> web.Response:
+    """Authenticate and queue a fixed-target rollback outside this service."""
+    settings = request.app[SETTINGS]
+    try:
+        verify_init_data(_init_data(request), settings.tokens(), settings.owner_id)
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    try:
+        payload = await request.json()
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != {"target", "expected_commit"}
+            or payload["target"] not in TARGETS
+            or not isinstance(payload["expected_commit"], str)
+            or not 7 <= len(payload["expected_commit"]) <= 64
+        ):
+            raise ValueError("Invalid rollback request")
+    except (ValueError, UnicodeDecodeError, TypeError):
+        return web.json_response(
+            {"error": "Invalid rollback request"}, status=400, headers=_NO_STORE
+        )
+    result = await request.app[DEPLOYMENTS].rollback(
+        payload["target"], payload["expected_commit"]
+    )
+    status = 202 if result.get("ok") else 409 if result.get("conflict") else 503
+    return web.json_response(result, status=status, headers=_NO_STORE)
 
 
 async def _point_menu_buttons(settings: Settings, api_base: str) -> None:
@@ -132,11 +168,13 @@ def build_app(
     """Register dashboard routes and optional background startup work."""
     app = web.Application()
     app[SETTINGS] = settings
+    app[DEPLOYMENTS] = DeploymentService(settings.deployment_command)
     app[CLEANUP] = CleanupService(settings.cleanup_command)
     register_pm_routes(app, settings)
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/{window}", window_data)
     app.router.add_post("/api/ops/cleanup", cleanup_action)
+    app.router.add_post("/api/ops/rollback", rollback_action)
     app.router.add_get("/static/{name:.+}", static_file)
     app.router.add_get("/", page)
     app.router.add_get("/{window}", page)

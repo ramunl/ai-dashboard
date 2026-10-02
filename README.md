@@ -255,3 +255,21 @@ In PM editors, Telegram Back returns to the Todos list first. Editors also show
 a Back to todos button near the top; Cancel has the same navigation behavior.
 A subsequent Back leaves PM for the overview. Leaving PM clears the editor
 subview so reopening PM starts at the list.
+
+### Deployment status and rollback in Ops
+
+The Ops window reads the fixed local `/usr/local/sbin/ai-deploy status` bridge
+installed from the ai-ops-agent deployment manager. It lists the coding, PM,
+Ops, and dashboard services, their recorded deployed version and commit, and
+any previous verified revision. If the manager is missing, the card explains
+that installation is needed. `DASHBOARD_DEPLOYMENT_COMMAND` can override the
+executable path for a custom installation.
+
+A **Roll back** button appears only for a recorded, verified previous revision.
+Confirmation names the service and revision. The owner-authenticated POST queues
+an independent systemd job; the dashboard never runs the restart inside its own
+HTTP process. The page polls status and shows queued/running/failure states.
+GET cannot initiate rollback, targets are fixed, and a stale confirmation is
+rejected if the rollback revision changed. Install and initialize the manager
+following the ai-ops-agent README before using these controls; Git history alone
+is not proof that a revision is safe to roll back to.

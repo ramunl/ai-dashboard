@@ -274,12 +274,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Needs attention", "Disk usage", "Server resources"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Deployments", "Needs attention", "Disk usage", "Server resources"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Disk usage", "Server resources"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Deployments", "Disk usage", "Server resources"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {
@@ -685,4 +685,67 @@ test("PM list collapses to three sorted items and expands without changing filte
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 5);
   buttonNamed(page, "Show fewer").click();
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 3);
+});
+
+const DEPLOYMENT_STATE = { ok: true, targets: [{
+  name: "ai-pm-agent", status: "healthy",
+  current: { commit: "b".repeat(40), version: "v2" },
+  previous: { commit: "a".repeat(40), version: "v1", verified_at: 123 },
+}] };
+const opsDeployments = (deployments) => async () => ({ ok: true, status: 200,
+  json: async () => ({ ...OPS, deployments }),
+});
+
+test("deployment status shows verified versions and confirms exact rollback target", async () => {
+  const page = await openPage("/ops", { respond: opsDeployments(DEPLOYMENT_STATE) });
+  await sleep(50);
+  assert.match(page.doc.querySelector("main").textContent, /Current revisionv2 · bbbbbbbb/);
+  let answer;
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => {
+    assert.match(message, /ai-pm-agent to v1 · aaaaaaaa/);
+    answer = callback;
+  };
+  let payload;
+  page.dom.window.fetch = async (_url, init) => {
+    if (init.method === "POST") payload = JSON.parse(init.body);
+    return { ok: true, status: 202, json: async () => ({ ...OPS, deployments: DEPLOYMENT_STATE }) };
+  };
+  const button = [...page.doc.querySelectorAll("button")].find((item) => item.textContent === "Roll back");
+  button.click();
+  button.click();
+  assert.strictEqual(payload, undefined);
+  answer(true);
+  await sleep(50);
+  assert.deepStrictEqual(payload, { target: "ai-pm-agent", expected_commit: "a".repeat(40) });
+  page.dom.window.close();
+});
+
+test("deployment manager missing and rollback failures are visible", async () => {
+  const missing = await openPage("/ops", { respond: opsDeployments({ ok: false, error: "Deployment manager is not installed" }) });
+  await sleep(50);
+  assert.match(missing.doc.querySelector("main").textContent, /manager is not installed/);
+  missing.dom.window.close();
+  const failed = await openPage("/ops", { respond: opsDeployments({ ok: true, targets: [{ name: "ai-dashboard", status: "rollback_failed", error: "Health check failed" }] }) });
+  await sleep(50);
+  assert.match(failed.doc.querySelector("main").textContent, /rollback failed/);
+  assert.match(failed.doc.querySelector("main").textContent, /Health check failed/);
+  assert.strictEqual([...failed.doc.querySelectorAll("button")].some((button) => button.textContent === "Roll back"), false);
+  failed.dom.window.close();
+});
+
+test("rollback controls disable during a job and declining confirmation sends nothing", async () => {
+  const busy = await openPage("/ops", { respond: opsDeployments({ ...DEPLOYMENT_STATE,
+    targets: [{ ...DEPLOYMENT_STATE.targets[0], status: "rolling_back" }] }) });
+  await sleep(50);
+  const busyButton = [...busy.doc.querySelectorAll("button")].find((button) => button.textContent === "Roll back");
+  assert.strictEqual(busyButton.disabled, true);
+  busy.dom.window.close();
+  const page = await openPage("/ops", { respond: opsDeployments(DEPLOYMENT_STATE) });
+  await sleep(50);
+  page.dom.window.Telegram.WebApp.showConfirm = (_message, answer) => answer(false);
+  const button = [...page.doc.querySelectorAll("button")].find((item) => item.textContent === "Roll back");
+  button.click();
+  assert.strictEqual(button.disabled, false);
+  assert.deepStrictEqual(page.posts, []);
+  page.dom.window.close();
 });

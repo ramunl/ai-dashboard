@@ -59,6 +59,51 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.service.stop()
         await self.client.close()
 
+    async def test_rollback_requires_owner_signature_and_post(self) -> None:
+        route = "/api/ops/rollback"
+        payload = {"target": "ai-pm-agent", "expected_commit": "a" * 40}
+        self.assertEqual((await self.client.post(route, json=payload)).status, 401)
+        response = await self.client.post(route, json=payload, headers=_auth(user_id=1))
+        self.assertEqual(response.status, 403)
+        self.assertEqual((await self.client.get(route, headers=_auth())).status, 405)
+
+    async def test_rollback_rejects_unapproved_target_and_options(self) -> None:
+        service = self.client.app[server.DEPLOYMENTS]
+        with patch.object(service, "rollback", AsyncMock()) as invoke:
+            for payload in (
+                {"target": "/tmp/custom", "expected_commit": "a" * 40},
+                {"target": "ai-pm-agent", "expected_commit": "a" * 40, "ref": "main"},
+            ):
+                response = await self.client.post(
+                    "/api/ops/rollback", json=payload, headers=_auth()
+                )
+                self.assertEqual(response.status, 400)
+            invoke.assert_not_awaited()
+
+    async def test_rollback_queued_and_conflict_responses(self) -> None:
+        service = self.client.app[server.DEPLOYMENTS]
+        payload = {"target": "ai-dashboard", "expected_commit": "a" * 40}
+        with patch.object(
+            service,
+            "rollback",
+            AsyncMock(
+                side_effect=[
+                    {"ok": True, "status": "queued"},
+                    {"ok": False, "conflict": True, "error": "Already running"},
+                ]
+            ),
+        ):
+            response = await self.client.post(
+                "/api/ops/rollback", json=payload, headers=_auth()
+            )
+            self.assertEqual(response.status, 202)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            response = await self.client.post(
+                "/api/ops/rollback", json=payload, headers=_auth()
+            )
+            self.assertEqual(response.status, 409)
+            self.assertEqual((await response.json())["error"], "Already running")
+
     async def test_data_requires_signature(self) -> None:
         self.assertEqual((await self.client.get("/api/coding")).status, 401)
         response = await self.client.get("/api/coding", headers=_auth("999:X"))

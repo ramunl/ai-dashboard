@@ -1,65 +1,15 @@
 #!/usr/bin/env bash
-#
-# update-ai-dashboard: deploy a branch of the dashboard on this server.
-#
-# Called by the coding agent's `/deploy <branch>` when ai-dashboard is the
-# active project. Install once:
-#   sudo install -m 755 /opt/ai-dashboard/deploy/update-ai-dashboard /usr/local/sbin/
-#
-# Usage: update-ai-dashboard [branch] [--no-restart]
-#
-# Unlike the agents, this uses the clone's own remote: the repo is public, and
-# GitHub deploy keys are per repository, so the agents' key could not read it.
+# Compatibility entrypoint; never deploy inside the bot being restarted.
 set -euo pipefail
-
-APP_DIR="${APP_DIR:-/opt/ai-dashboard}"
-VENV="${VENV:-/opt/ai_dashboard_venv}"
-LOG_DIR="${LOG_DIR:-/var/log/ai-dashboard}"
-LOCK_FILE="${LOCK_FILE:-/var/lock/ai-dashboard-update.lock}"
-SERVICE="${SERVICE:-ai-dashboard.service}"
-LOG="${LOG_DIR}/update.log"
-
-BRANCH="main"
-NO_RESTART=0
-for arg in "$@"; do
-  case "$arg" in
-    --no-restart) NO_RESTART=1 ;;
-    *) BRANCH="$arg" ;;
-  esac
+TARGET="$(basename "$0")"
+TARGET="${TARGET#update-}"
+REF=main
+for ARG in "$@"; do
+    if [ "$ARG" = --no-restart ]; then
+        echo '--no-restart cannot verify deployment; use ai-deploy submit deploy instead' >&2
+        exit 1
+    fi
+    REF="$ARG"
 done
-
-# Create the log directory first: if it is missing, every later line would fail
-# before anything could be logged.
-mkdir -p "$LOG_DIR"
-
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  # Fail loudly: a silent success would make /deploy report a deploy that
-  # never ran.
-  echo "[$(date -Is)] update skipped: another update is already running" | tee -a "$LOG"
-  exit 1
-fi
-
-{
-  echo "[$(date -Is)] update started (branch: $BRANCH)"
-  cd "$APP_DIR"
-  git fetch origin "$BRANCH"
-  if [ "$(git rev-parse --abbrev-ref HEAD)" != "$BRANCH" ]; then
-    git checkout "$BRANCH" 2>/dev/null || git checkout -B "$BRANCH" "origin/$BRANCH"
-  fi
-  git pull --ff-only origin "$BRANCH"
-  echo "now at $(git log --oneline -1)"
-  "$VENV/bin/pip" install -q -r "$APP_DIR/requirements.txt"
-  if [ "$NO_RESTART" -eq 1 ]; then
-    echo "$SERVICE restart skipped: --no-restart requested by caller"
-  elif systemctl is-enabled --quiet "$SERVICE"; then
-    systemctl restart "$SERVICE"
-    sleep 2
-    systemctl is-active --quiet "$SERVICE" \
-      || { echo "$SERVICE failed to start after the update"; exit 1; }
-    echo "$SERVICE restarted"
-  else
-    echo "$SERVICE restart skipped: service is not enabled"
-  fi
-  echo "[$(date -Is)] update finished (branch: $BRANCH)"
-} >> "$LOG" 2>&1
+install -d -m 755 "/var/log/$TARGET"
+exec /usr/local/sbin/ai-deploy deploy "$TARGET" "$REF" >>"/var/log/$TARGET/update.log" 2>&1
