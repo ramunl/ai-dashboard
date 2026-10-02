@@ -665,3 +665,24 @@ test("returning from the dashboard opens the TODO list rather than a cached edit
   assert.strictEqual(page.doc.querySelector("textarea"), null);
   assert.deepStrictEqual(page.errors, []);
 });
+
+
+test("PM list collapses to three sorted items and expands without changing filters", async () => {
+  const workspace = { ...TASKS, items: [
+    ...TASKS.items,
+    { id: "d".repeat(32), text: "Extra low", priority: "low", status: "open" },
+    { id: "e".repeat(32), text: "Extra high", priority: "high", status: "open" },
+    { id: "f".repeat(32), text: "Extra normal", priority: "normal", status: "open" },
+  ] };
+  const respond = async () => ({ ok: true, status: 200, json: async () => ({ ...PM, editing: { ok: true, workspace } }) });
+  const page = await openPage("/pm", { respond });
+  await sleep(70);
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 3);
+  assert.deepStrictEqual([...page.doc.querySelectorAll(".pm-task-title")].map(n => n.textContent), ["High priority task", "Extra high", "Normal task"]);
+  buttonNamed(page, "Show all (5)").click();
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 5);
+  await page.dom.window.eval("refresh()");
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 5);
+  buttonNamed(page, "Show fewer").click();
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 3);
+});

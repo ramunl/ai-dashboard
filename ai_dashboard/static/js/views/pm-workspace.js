@@ -1,7 +1,7 @@
 // Todos workspace. Preserve drafts, selected filters and focused inputs on polling.
 const PM_STATUSES = { open: "Open", in_progress: "In progress", blocked: "Blocked", done: "Done" };
 const PM_PRIORITIES = { high: "High", normal: "Normal", low: "Low" };
-const pmUi = { workspace: null, node: null, filter: "open", priority: "all", search: "", sort: "priority", editor: null, busy: false, notice: "" };
+const pmUi = { workspace: null, node: null, filter: "open", priority: "all", search: "", sort: "priority", expanded: false, editor: null, busy: false, notice: "" };
 
 function pmButton(text, action, className = "pm-button") {
   const button = el("button", text, className);
@@ -69,7 +69,14 @@ function pmPaintList() {
   if (pmUi.sort === "priority") items = [...items].sort((a, b) => Object.keys(PM_PRIORITIES).indexOf(a.priority) - Object.keys(PM_PRIORITIES).indexOf(b.priority));
   list.replaceChildren(muted(`${pmUi.workspace.items.filter(i => i.status !== "done").length} open · ${pmUi.workspace.items.filter(i => i.status === "done").length} done`));
   if (!items.length) list.append(muted("No matching todos."));
-  items.forEach(item => list.append(pmTaskRow(item)));
+  const visible = pmUi.expanded ? items : items.slice(0, 3);
+  visible.forEach(item => list.append(pmTaskRow(item)));
+  if (items.length > 3) {
+    list.append(pmButton(pmUi.expanded ? "Show fewer" : `Show all (${items.length})`, () => {
+      pmUi.expanded = !pmUi.expanded;
+      pmPaintList();
+    }));
+  }
 }
 
 function pmTaskRow(item) {
