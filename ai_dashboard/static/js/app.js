@@ -26,7 +26,19 @@ function renderLoading() {
   document.getElementById("updated").textContent = "Loading…";
 }
 
+// True while the user types in a field of the page: a refresh would replace
+// the field, wiping the text and the keyboard focus.
+function isEditing() {
+  const active = document.activeElement;
+  return Boolean(active && active.matches("input, textarea")
+    && document.getElementById("view").contains(active));
+}
+
 function renderPage(page, body) {
+  if (hasData && isEditing()) {
+    console.debug("Refresh not shown: the user is typing in a field");
+    return;
+  }
   setHeader(page.title, page.subtitle, page.status);
   showAlert(page.alert);
   const view = document.getElementById("view");
