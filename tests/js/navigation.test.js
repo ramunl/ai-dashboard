@@ -597,3 +597,18 @@ test("PM new project draft survives heartbeat", async () => {
   assert.strictEqual(page.doc.querySelector("form input"), input);
   assert.strictEqual(input.value, "future-project");
 });
+
+
+test("PM select values stay present when Telegram changes its theme", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  for (const theme of ["dark", "light"]) {
+    page.dom.window.Telegram.WebApp.colorScheme = theme;
+    page.dom.window.eval("applyColorScheme()");
+    assert.strictEqual(page.doc.documentElement.dataset.theme, theme);
+    for (const label of ["Active todo project", "Status", "Priority", "Sort"]) {
+      const select = fieldSelect(page, label);
+      assert.ok(select.selectedOptions[0].textContent.trim());
+    }
+  }
+});
