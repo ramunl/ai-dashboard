@@ -105,7 +105,7 @@ function pmEditor() {
       askConfirmation(`Delete this todo?\n${draft.text}`, answer => { if (answer) pmSend({ action: "delete", id: draft.id, project: draft.project, revision: draft.revision }, true); });
     }, "pm-button pm-delete"), muted(`Task ID: ${draft.id}`));
   }
-  const save = el("button", pmUi.busy ? "Saving…" : draft.projectForm ? "Create and select" : "Save todo", "pm-button"); save.type = "submit";
+  const save = el("button", pmUi.busy ? "Saving…" : draft.projectForm ? "Create and select" : "Save", "pm-button"); save.type = "submit";
   form.append(save, pmButton("Cancel", pmCloseEditor));
   if (pmUi.busy) form.querySelectorAll("button, input, select, textarea").forEach(c => { c.disabled = true; });
   return form;
