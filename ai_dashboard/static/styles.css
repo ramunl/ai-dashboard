@@ -1,5 +1,6 @@
 /* Colors come from Telegram's theme; the fallbacks cover light and dark. */
 :root {
+  color-scheme: light;
   --bg: var(--tg-theme-bg-color, #ffffff);
   --fg: var(--tg-theme-text-color, #1b1b1f);
   --hint: var(--tg-theme-hint-color, #8a8a90);
@@ -17,6 +18,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: var(--tg-theme-bg-color, #1c1c1e);
     --fg: var(--tg-theme-text-color, #f2f2f5);
     --hint: var(--tg-theme-hint-color, #98989f);
@@ -28,6 +30,7 @@
 }
 
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: var(--tg-theme-bg-color, #1c1c1e);
   --fg: var(--tg-theme-text-color, #f2f2f5);
   --hint: var(--tg-theme-hint-color, #98989f);
@@ -134,3 +137,19 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 
 .pm-project-toolbar > .pm-field { flex-basis: 100%; min-width: 0; }
 .pm-toolbar:not(.pm-project-toolbar) > .pm-field { min-width: 5rem; }
+
+/* Native select painting differs in Telegram WebViews. Keep the closed control
+   and its options on the same explicit palette as the surrounding inputs. */
+.pm-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bg);
+  color: var(--fg);
+  padding-right: 2rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg) 50%),
+    linear-gradient(135deg, var(--fg) 50%, transparent 50%);
+  background-position: calc(100% - 1rem) 50%, calc(100% - 0.7rem) 50%;
+  background-size: 0.3rem 0.3rem;
+  background-repeat: no-repeat;
+}
+.pm-field select option { background-color: var(--bg); color: var(--fg); }

@@ -246,3 +246,7 @@ GET only reads; POST `/api/pm/action` accepts fixed JSON operations. Task edits
 carry project, stable ID and revision. The PM service owns all parsing and Git
 publishing. Push failures display “saved locally”; Sync todos retries publication.
 Conflicts preserve the editor draft: cancel to refresh, then review and reapply.
+
+PM select controls use an explicit theme palette and native color scheme, with
+custom closed-control arrows to keep selected values readable in Telegram
+WebViews. The controls retain native keyboard and option selection behavior.
