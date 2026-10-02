@@ -45,15 +45,18 @@ function deploymentsCard(view) {
   if (!deployments || !deployments.ok) {
     return card("Deployments", muted((deployments && deployments.error) || "Deployment status unavailable"));
   }
-  const isBusy = deployments.targets.some((target) => ["queued", "deploying", "rolling_back"].includes(target.status));
+  const isBusy = deployments.targets.some((target) => ["queued", "deploying", "rolling_back", "rollback_failed"].includes(target.status));
   const rows = [];
   for (const target of deployments.targets) {
     rows.push(el("h3", target.name, "card-subtitle"));
     rows.push(row("Status", target.status.replaceAll("_", " ")));
     rows.push(row("Current revision", deploymentRevision(target.current)));
-    if (target.current) rows.push(row("Health verified", target.current.verified_at ? "Yes" : "Not yet"));
+    if (target.current) rows.push(row("Last health verification", target.current.verified_at || "Not recorded"));
     if (target.previous) rows.push(row("Previous verified", deploymentRevision(target.previous)));
     if (target.error) rows.push(el("div", target.error, "card-note"));
+    if (target.status === "rollback_failed") {
+      rows.push(muted("Recovery required on the server: ai-deploy recover. Rollback controls remain disabled until recovery succeeds."));
+    }
     if (target.previous && target.previous.commit && target.previous.verified_at) {
       rows.push(deploymentRollbackButton(target, isBusy));
     }

@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 
 TARGETS = ("ai-coding-agent", "ai-pm-agent", "ai-ops-agent", "ai-dashboard")
-BUSY = ("queued", "deploying", "rolling_back")
+BUSY = ("queued", "deploying", "rolling_back", "rollback_failed")
 NOT_INSTALLED = (
     "Deployment manager is not installed; see the Ops installation instructions"
 )

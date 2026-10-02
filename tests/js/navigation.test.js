@@ -749,3 +749,19 @@ test("rollback controls disable during a job and declining confirmation sends no
   assert.deepStrictEqual(page.posts, []);
   page.dom.window.close();
 });
+
+
+test("failed recovery disables every rollback control and shows server recovery guidance", async () => {
+  const state = { ok: true, targets: [
+    { ...DEPLOYMENT_STATE.targets[0], status: "rollback_failed", current: { commit: "b".repeat(40), version: "v2", verified_at: "2026-10-02T11:00:00+00:00" } },
+    { ...DEPLOYMENT_STATE.targets[0], name: "ai-dashboard" },
+  ] };
+  const page = await openPage("/ops", { respond: opsDeployments(state) });
+  await sleep(50);
+  const buttons = [...page.doc.querySelectorAll("button")].filter(button => button.textContent === "Roll back");
+  assert.strictEqual(buttons.length, 2);
+  assert.strictEqual(buttons.every(button => button.disabled), true);
+  assert.match(page.doc.querySelector("main").textContent, /ai-deploy recover/);
+  assert.match(page.doc.querySelector("main").textContent, /Last health verification2026/);
+  page.dom.window.close();
+});
