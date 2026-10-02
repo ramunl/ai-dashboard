@@ -110,11 +110,15 @@ class RecorderTests(unittest.TestCase):
 
 
 class TrendProblemTests(unittest.TestCase):
-    def _problems(self, days: float | None) -> list[dict]:
+    def _problems(self, days: float | None, span_hours: float = 72) -> list[dict]:
         trend_value = (
             None
             if days is None
-            else {"bytes_per_day": 0.5 * GB, "days_until_full": days}
+            else {
+                "bytes_per_day": 0.5 * GB,
+                "days_until_full": days,
+                "span_hours": span_hours,
+            }
         )
         resources = {
             "disk": {"total": 100, "used": 10, "free": 90, "trend": trend_value},
@@ -124,7 +128,7 @@ class TrendProblemTests(unittest.TestCase):
         }
         return compute_problems(resources, [], [])
 
-    def test_thresholds(self) -> None:
+    def test_thresholds_with_enough_history(self) -> None:
         self.assertEqual(self._problems(None), [])
         self.assertEqual(self._problems(45), [])
         self.assertEqual(
@@ -137,6 +141,13 @@ class TrendProblemTests(unittest.TestCase):
             ],
         )
         self.assertEqual(self._problems(5)[0]["severity"], "error")
+
+    def test_a_few_hours_of_data_raise_nothing(self) -> None:
+        # The case seen on the server: 7 h after deploy, "full in ~6 days".
+        self.assertEqual(self._problems(6, span_hours=7), [])
+
+    def test_one_day_of_data_warns_but_never_errors(self) -> None:
+        self.assertEqual(self._problems(5, span_hours=30)[0]["severity"], "warning")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
-// Overview (/) and Ops (/ops): problems, agents with their status, server health.
+// Overview (/): problems, agents with their status, server health.
+// Card builders here are shared with the Ops window (views/ops.js).
 const SEVERITY_STATUS = { error: "bad", warning: "warn", info: "info" };
 
 function navRow(agent) {
@@ -55,7 +56,8 @@ function resourceRows(resources) {
 function diskTrendText(trend) {
   if (!trend) return "after a few hours of readings";
   if (trend.days_until_full === null) return "not growing";
-  return `+${formatBytes(trend.bytes_per_day)}/day · full in ~${Math.round(trend.days_until_full)} days`;
+  const basis = trend.span_hours < 72 ? ` (from ${Math.round(trend.span_hours)} h of readings)` : "";
+  return `+${formatBytes(trend.bytes_per_day)}/day · full in ~${Math.round(trend.days_until_full)} days${basis}`;
 }
 
 // Cards shared by the overview and the Ops window. Each page picks the cards
@@ -85,18 +87,6 @@ function resourcesCard(view) {
   return card("Server resources", ...resourceRows(view.resources));
 }
 
-function operationsCard(view) {
-  const ops = view.agents.find((agent) => agent.name === "ops");
-  if (!ops) return card("Operations", muted("Ops agent is not configured"));
-  const rows = [
-    row("Service", ops.service),
-    row("Restarts", ops.restarts || 0),
-    row("Errors in last hour", ops.errors_last_hour || 0),
-  ];
-  if (typeof ops.up_seconds === "number") rows.push(row("Up", formatDuration(ops.up_seconds)));
-  return card("Operations", ...rows);
-}
-
 function serverSubtitle(view) {
   const resources = view.resources;
   return resources ? `${resources.hostname} · up ${formatDuration(resources.uptime_seconds)}` : "";
@@ -109,15 +99,5 @@ function launcherPage(view) {
     status: pageStatus(view),
     alert: "",
     nodes: [healthSummary(view), ...problemsCards(view), agentsCard(view), resourcesCard(view)],
-  };
-}
-
-function opsPage(view) {
-  return {
-    title: "Ops agent",
-    subtitle: serverSubtitle(view),
-    status: pageStatus(view),
-    alert: "",
-    nodes: [operationsCard(view), ...problemsCards(view), resourcesCard(view)],
   };
 }

@@ -163,4 +163,10 @@ async def launcher_view(settings: Settings) -> dict:
     }
 
 
-VIEW_PROVIDERS = {"coding": coding_view, "pm": pm_view, "launcher": launcher_view}
+VIEW_PROVIDERS = {
+    "coding": coding_view,
+    "pm": pm_view,
+    "launcher": launcher_view,
+    # The Ops window shows the overview data plus disk cleanup (added in server).
+    "ops": launcher_view,
+}

@@ -2,7 +2,7 @@
 // path -> { api window, page builder, title shown while loading }
 const ROUTES = {
   "": { api: "launcher", page: launcherPage, title: "AI Agents" },
-  ops: { api: "launcher", page: opsPage, title: "Ops agent" },
+  ops: { api: "ops", page: opsPage, title: "Ops agent" },
   coding: { api: "coding", page: codingPage, title: "Coding agent" },
   pm: { api: "pm", page: pmPage, title: "PM agent" },
 };

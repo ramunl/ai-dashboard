@@ -47,7 +47,19 @@ const PM = { agent: "pm", service: "active", problem: null, age_seconds: 2, snap
   format: 1, active_project: "cc", todos: { project: "cc", open: ["release apk"], open_count: 1, done: 0 },
   projects: [{ name: "cc", open: 1, done: 0 }], rules: [], version: "v", core: "core: v1.1" } };
 
-const DATA = { launcher: LAUNCHER, coding: CODING, pm: PM };
+const REPORT = {
+  ok: true,
+  reclaimable_bytes: 2.1 * 1024 ** 3,
+  categories: [
+    { id: "packages", label: "Unused packages and apt cache", bytes: 600 * 1024 ** 2, detail: "4 unused packages, apt cache 210 MB" },
+    { id: "journal", label: "Old system logs", bytes: 1.0 * 1024 ** 3, detail: "journal 1.2 GB; keeps last 7d, at most 200M" },
+    { id: "snaps", label: "Old snap revisions", bytes: 400 * 1024 ** 2, detail: "2 disabled revisions" },
+    { id: "caches", label: "pip and npm caches", bytes: 100 * 1024 ** 2, detail: "/root/.cache/pip, /root/.npm/_cacache" },
+  ],
+  largest: [{ path: "/root/.codex", bytes: 2.4 * 1024 ** 3 }, { path: "/var/log", bytes: 1.3 * 1024 ** 3 }],
+};
+const OPS = { ...LAUNCHER, cleanup: { report: REPORT, report_at: 1, running: false, last_run: null } };
+const DATA = { launcher: LAUNCHER, ops: OPS, coding: CODING, pm: PM };
 
 // A request that never answers until the page aborts it.
 function hang(signal) {
@@ -62,6 +74,7 @@ async function openPage(url, options = {}) {
   const { latencyMs = 150, respond = null, hasPopstate = true } = options;
   const back = { handler: null, visible: false };
   const errors = [];
+  const posts = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (error) => errors.push(error.message));
   const dom = new JSDOM(PAGE, {
@@ -73,6 +86,11 @@ async function openPage(url, options = {}) {
                       onClick(handler) { back.handler = handler; } } } };
       window.fetch = async (api, init) => {
         const name = api.split("/").pop();
+        if (init && init.method === "POST") {
+          posts.push(api);
+          if (options.onPost) return options.onPost(api);
+          return { ok: true, status: 202, json: async () => ({ started: true }) };
+        }
         if (respond) return respond(name, init.signal);
         await sleep(latencyMs);  // a slow 1-CPU server
         return { ok: true, status: 200, json: async () => DATA[name] };
@@ -92,7 +110,7 @@ async function openPage(url, options = {}) {
     }),
     text: (id) => doc.getElementById(id).textContent,
     tapAgent: (index) => doc.querySelectorAll(".nav-row")[index].click(),
-    doc,
+    doc, posts,
   };
 }
 
@@ -241,8 +259,12 @@ const WITH_PROBLEM = {
   agents: LAUNCHER.agents.map((agent) => ({ ...agent, up_seconds: 3 * 3600 + 120 })),
   problems: [{ severity: "warning", text: "Disk grows 0.6 GB/day: full in ~16 days" }],
 };
-const answer = (body) => async (name) =>
-  ({ ok: true, status: 200, json: async () => (name === "launcher" ? body : DATA[name]) });
+const answer = (body) => async (name) => ({
+  ok: true,
+  status: 200,
+  json: async () =>
+    name === "launcher" ? body : name === "ops" ? { ...body, cleanup: OPS.cleanup } : DATA[name],
+});
 const cardTitles = (page) => [...page.doc.querySelectorAll("main h2")].map((node) => node.textContent);
 
 test("Ops window shows its own cards, never the agent list", async () => {
@@ -252,12 +274,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Needs attention", "Server resources"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Needs attention", "Disk usage", "Server resources"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Server resources"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Disk usage", "Server resources"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {
@@ -313,4 +335,118 @@ test("Claude Code subscription windows stay separate from Claude API limits", as
   assert.match(page.text("view"), /last known reading/);
   assert.match(page.text("view"), /Claude API/);
   assert.deepStrictEqual(page.errors, []);
+});
+
+// ---------------------------------------------------------------- disk cleanup
+
+const opsWith = (cleanup) => async (name) => ({
+  ok: true, status: 200,
+  json: async () => (name === "ops" ? { ...OPS, cleanup: { ...OPS.cleanup, ...cleanup } } : DATA[name]),
+});
+const cleanupButton = (page) => page.doc.querySelector("button.action-button");
+const confirmWith = (page, answer) => {
+  const asked = [];
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(answer); };
+  return asked;
+};
+
+test("Ops window lists what fills the disk and offers a cleanup", async () => {
+  const page = await openPage("/ops", { latencyMs: 10 });
+  await sleep(60);
+  const text = page.doc.querySelector("main").textContent;
+  for (const expected of ["Disk usage", "Old system logs", "1.0 GB", "Largest directories", "/root/.codex"]) {
+    assert.ok(text.includes(expected), `missing: ${expected}`);
+  }
+  const button = cleanupButton(page);
+  assert.strictEqual(button.tagName, "BUTTON");
+  assert.match(button.textContent, /Clean up · frees ~2\.1 GB/);
+  assert.strictEqual(button.disabled, false);
+});
+
+test("cleanup starts only after the user confirms, and only once", async () => {
+  const page = await openPage("/ops", { latencyMs: 10 });
+  await sleep(60);
+  const asked = confirmWith(page, true);
+  const button = cleanupButton(page);
+  button.click();
+  button.click();  // double tap
+  await sleep(60);
+  assert.strictEqual(asked.length, 1);
+  assert.match(asked[0], /Free about 2\.1 GB\?/);
+  assert.deepStrictEqual(page.posts, ["/api/ops/cleanup"]);
+});
+
+test("declining the confirmation sends nothing", async () => {
+  const page = await openPage("/ops", { latencyMs: 10 });
+  await sleep(60);
+  confirmWith(page, false);
+  cleanupButton(page).click();
+  await sleep(60);
+  assert.deepStrictEqual(page.posts, []);
+  assert.strictEqual(cleanupButton(page).disabled, false);
+});
+
+test("a refused start is shown and the button comes back", async () => {
+  const page = await openPage("/ops", {
+    latencyMs: 10,
+    onPost: async () => ({ ok: false, status: 409, json: async () => ({ error: "a cleanup is already running" }) }),
+  });
+  await sleep(60);
+  confirmWith(page, true);
+  cleanupButton(page).click();
+  await sleep(60);
+  assert.match(page.text("alert"), /Cleanup did not start: a cleanup is already running/);
+  assert.strictEqual(cleanupButton(page).disabled, false);
+});
+
+test("while cleaning, and with nothing to clean, the button is disabled", async () => {
+  const running = await openPage("/ops", { respond: opsWith({ running: true }) });
+  await sleep(60);
+  assert.strictEqual(cleanupButton(running).textContent, "Cleaning up…");
+  assert.strictEqual(cleanupButton(running).disabled, true);
+
+  const empty = await openPage("/ops", { respond: opsWith({ report: { ...REPORT, reclaimable_bytes: 0 } }) });
+  await sleep(60);
+  assert.strictEqual(cleanupButton(empty).textContent, "Nothing to clean up");
+  assert.strictEqual(cleanupButton(empty).disabled, true);
+});
+
+test("the last cleanup and its failures are reported", async () => {
+  const lastRun = {
+    ok: false, freed_bytes: 1.5 * 1024 ** 3, finished_at: Date.now() / 1000 - 120, triggered_by: "ops",
+    steps: [{ label: "Old snap revisions", ok: false, message: "snap: not installed" }],
+  };
+  const page = await openPage("/ops", { respond: opsWith({ last_run: lastRun }) });
+  await sleep(60);
+  const text = page.doc.querySelector("main").textContent;
+  assert.match(text, /freed 1\.5 GB · 2m ago/);
+  assert.match(text, /Old snap revisions failed: snap: not installed/);
+});
+
+test("a missing ai-cleanup is explained instead of a broken button", async () => {
+  const page = await openPage("/ops", {
+    respond: opsWith({ report: { ok: false, error: "ai-cleanup is not installed on this server" } }),
+  });
+  await sleep(60);
+  assert.match(page.doc.querySelector("main").textContent, /ai-cleanup is not installed/);
+  assert.strictEqual(cleanupButton(page), null);
+});
+
+test("page scripts never define the same top-level function twice", () => {
+  // The scripts share one global namespace: a later file's function silently
+  // replaces an earlier one with the same name (ops.js lastRunRows was once
+  // overwritten by coding.js and the Ops window failed to render).
+  const dir = path.join(__dirname, "../../ai_dashboard/static/js");
+  const files = [...fs.readdirSync(dir).filter((f) => f.endsWith(".js")).map((f) => path.join(dir, f)),
+    ...fs.readdirSync(path.join(dir, "views")).map((f) => path.join(dir, "views", f))];
+  const seen = new Map();
+  const duplicates = [];
+  for (const file of files) {
+    for (const match of fs.readFileSync(file, "utf8").matchAll(/^(?:async )?function (\w+)/gm)) {
+      const name = match[1];
+      if (seen.has(name)) duplicates.push(`${name}: ${seen.get(name)} and ${path.basename(file)}`);
+      seen.set(name, path.basename(file));
+    }
+  }
+  assert.deepStrictEqual(duplicates, []);
 });

@@ -63,14 +63,21 @@ def _resource_problems(resources: dict | None) -> list[dict]:
     return problems
 
 
+# A few hours of readings extrapolated over days is mostly noise (a deploy, a
+# Codex run, a log burst), so the trend must earn its alarms with history.
+TREND_WARNING_MIN_HOURS = 24
+TREND_ERROR_MIN_HOURS = 48
+
+
 def _disk_trend_problems(trend: dict | None) -> list[dict]:
     """Warn while there is still time to act, not when the disk is already full."""
     days = trend.get("days_until_full") if trend else None
-    if days is None:
+    span = trend.get("span_hours", 0) if trend else 0
+    if days is None or span < TREND_WARNING_MIN_HOURS:
         return []
     growth = trend["bytes_per_day"] / 1024**3
     text = f"Disk grows {growth:.1f} GB/day: full in ~{days:.0f} days"
-    if days <= 7:
+    if days <= 7 and span >= TREND_ERROR_MIN_HOURS:
         return [_problem("error", text)]
     if days <= 30:
         return [_problem("warning", text)]

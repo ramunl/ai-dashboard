@@ -14,6 +14,7 @@ from aiohttp import web
 from ai_dashboard.auth import InitDataError, verify_init_data
 from ai_dashboard.config import Settings
 from ai_dashboard.disk_history import record_forever
+from ai_dashboard.maintenance import CleanupService
 from ai_dashboard.telegram_api import API_BASE, set_menu_button
 from ai_dashboard.views import VIEW_PROVIDERS, WINDOWS
 
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).with_name("static").resolve()
 PAGE = STATIC_DIR / "index.html"
 SETTINGS = web.AppKey("settings", Settings)
+CLEANUP = web.AppKey("cleanup", CleanupService)
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
@@ -67,7 +69,30 @@ async def window_data(request: web.Request) -> web.Response:
     view = await provider(settings)
     if view is None:
         return web.json_response({"error": "window not configured"}, status=404)
+    if request.match_info["window"] == "ops":
+        view = {**view, "cleanup": request.app[CLEANUP].state()}
     return web.json_response({**view, "opened_from": viewer.bot}, headers=_NO_STORE)
+
+
+async def cleanup_action(request: web.Request) -> web.Response:
+    """Start a disk cleanup for the owner; the page polls the Ops window for it.
+
+    The request carries no options: the cleanup set is fixed by ai-cleanup.
+    """
+    settings = request.app[SETTINGS]
+    try:
+        viewer = verify_init_data(
+            _init_data(request), settings.tokens(), settings.owner_id
+        )
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    if not request.app[CLEANUP].start_run(viewer.bot):
+        return web.json_response(
+            {"error": "a cleanup is already running"}, status=409, headers=_NO_STORE
+        )
+    return web.json_response({"started": True}, status=202, headers=_NO_STORE)
 
 
 async def _point_menu_buttons(settings: Settings, api_base: str) -> None:
@@ -96,12 +121,15 @@ def build_app(
     set_buttons: bool = True,
     api_base: str = API_BASE,
     record_disk: bool = True,
+    refresh_cleanup: bool | None = None,
 ) -> web.Application:
     """Register dashboard routes and optional background startup work."""
     app = web.Application()
     app[SETTINGS] = settings
+    app[CLEANUP] = CleanupService(settings.cleanup_command)
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/{window}", window_data)
+    app.router.add_post("/api/ops/cleanup", cleanup_action)
     app.router.add_get("/static/{name:.+}", static_file)
     app.router.add_get("/", page)
     app.router.add_get("/{window}", page)
@@ -122,6 +150,22 @@ def build_app(
 
     if set_buttons:
         app.cleanup_ctx.append(menu_buttons)
+
+    async def stop_cleanup(_app: web.Application) -> None:
+        await app[CLEANUP].close()
+
+    app.on_cleanup.append(stop_cleanup)
+
+    async def cleanup_reports(_app: web.Application) -> AsyncIterator[None]:
+        task = asyncio.create_task(app[CLEANUP].refresh_forever())
+        yield
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
     if record_disk:
         app.cleanup_ctx.append(disk_recorder)
+    # Background work follows record_disk unless set explicitly (tests: off).
+    if record_disk if refresh_cleanup is None else refresh_cleanup:
+        app.cleanup_ctx.append(cleanup_reports)
     return app

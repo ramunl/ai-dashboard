@@ -112,6 +112,7 @@ a chat still lists commands.
 | `PM_SERVICE` | `ai-pm-agent` | PM agent unit |
 | `MONITORED_SERVICES` | `ai-coding-agent,ai-pm-agent,ai-ops-agent` | units on the launcher |
 | `DASHBOARD_STATE_DIR` | `/var/lib/ai-dashboard` | the dashboard's own state (disk history) |
+| `DASHBOARD_CLEANUP_COMMAND` | `/usr/local/sbin/ai-cleanup` | disk report and cleanup (from ai-ops-agent) |
 
 All bots' `YOUR_CHAT_ID` must match; otherwise the dashboard refuses to start.
 
@@ -171,6 +172,9 @@ records disk usage once an hour (`DASHBOARD_STATE_DIR/disk-history.json`, last
 14 days) and shows growth per day and time until full, from a least-squares fit
 over the last 3 days. It needs about 6 hours of readings before showing a trend.
 It warns when the disk will be full within 30 days, and reports an error within 7.
+Alarms need history: no warning before 24 hours of readings and no error before
+48, because a few hours extrapolated over days is mostly noise. Until there are
+3 days of readings the trend says how many hours it is based on.
 
 Each agent row also shows how long its service has been up, from systemd's
 boot-relative start time; a deploy or a crash restart resets it.
@@ -205,3 +209,21 @@ Claude Code subscription limits appear separately from Claude API limits. Their
 the coding-agent server. They update when that session supplies new data, not
 on a timer; headless bot runs do not supply status-line percentages. Reading
 age remains visible and the publisher drops expired quota windows.
+
+## Disk cleanup (Ops window)
+
+The Ops window shows what fills the disk (cleanable categories and the largest
+directories) and a **Clean up** button. Both come from the ops agent's
+`ai-cleanup` script (see the ai-ops-agent README), so the dashboard and the ops
+bot share one implementation.
+
+- The report refreshes every 10 minutes in the background and after each run.
+- The button asks for confirmation (Telegram's dialog), then sends
+  `POST /api/ops/cleanup`. The request has no options: the set of cleanups is
+  fixed by `ai-cleanup`, so nothing from the page reaches a command line.
+- The endpoint needs the owner's signed Telegram data like every data request.
+  A GET cannot start a cleanup.
+- One cleanup at a time: a second request gets 409. The page polls the Ops
+  window and shows the result, including any step that failed.
+- If `ai-cleanup` is not installed, the Ops window says so instead of
+  showing a button.
