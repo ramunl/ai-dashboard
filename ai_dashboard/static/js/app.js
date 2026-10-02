@@ -29,7 +29,10 @@ function renderLoading() {
 function renderPage(page, body) {
   setHeader(page.title, page.subtitle, page.status);
   showAlert(page.alert);
-  document.getElementById("view").replaceChildren(...page.nodes);
+  const view = document.getElementById("view");
+  const keepEditor = page.title === "PM agent" && pmUi.node && pmUi.node.parentNode === view &&
+    (pmUi.editor || pmUi.busy || pmUi.node.contains(document.activeElement));
+  if (!keepEditor) view.replaceChildren(...page.nodes);
   const age = typeof body.age_seconds === "number"
     ? ` · data ${Math.round(body.age_seconds)} s old`
     : "";
@@ -60,6 +63,7 @@ function show() {
 }
 
 async function refresh() {
+  if (currentRoute().api === "pm" && typeof pmUi !== "undefined" && pmUi.busy) return;
   const initData = tg ? tg.initData : "";
   if (!initData) {
     renderFailure("Open this dashboard from a bot's Dashboard button in Telegram.");

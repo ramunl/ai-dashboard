@@ -15,6 +15,7 @@ from ai_dashboard.auth import InitDataError, verify_init_data
 from ai_dashboard.config import Settings
 from ai_dashboard.disk_history import record_forever
 from ai_dashboard.maintenance import CleanupService
+from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
 from ai_dashboard.telegram_api import API_BASE, set_menu_button
 from ai_dashboard.views import VIEW_PROVIDERS, WINDOWS
 
@@ -69,6 +70,11 @@ async def window_data(request: web.Request) -> web.Response:
     view = await provider(settings)
     if view is None:
         return web.json_response({"error": "window not configured"}, status=404)
+    if request.match_info["window"] == "pm":
+        view = {
+            **view,
+            "editing": await invoke_pm(settings.pm_command, {"action": "read"}),
+        }
     if request.match_info["window"] == "ops":
         view = {**view, "cleanup": request.app[CLEANUP].state()}
     return web.json_response({**view, "opened_from": viewer.bot}, headers=_NO_STORE)
@@ -127,6 +133,7 @@ def build_app(
     app = web.Application()
     app[SETTINGS] = settings
     app[CLEANUP] = CleanupService(settings.cleanup_command)
+    register_pm_routes(app, settings)
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/{window}", window_data)
     app.router.add_post("/api/ops/cleanup", cleanup_action)

@@ -49,6 +49,7 @@ class Settings:
     monitored_services: tuple[str, ...] = DEFAULT_MONITORED
     state_dir: Path = Path("/var/lib/ai-dashboard")
     cleanup_command: str = "/usr/local/sbin/ai-cleanup"
+    pm_command: str = "/usr/local/sbin/ai-pm-todos"
 
     @property
     def disk_history_file(self) -> Path:
@@ -195,6 +196,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         bots=tuple(bot for bot, _ in loaded),
         monitored_services=monitored,
         state_dir=Path(env.get("DASHBOARD_STATE_DIR", "/var/lib/ai-dashboard")),
+        pm_command=env.get("DASHBOARD_PM_COMMAND", "/usr/local/sbin/ai-pm-todos"),
         cleanup_command=env.get(
             "DASHBOARD_CLEANUP_COMMAND", "/usr/local/sbin/ai-cleanup"
         ),

@@ -40,11 +40,21 @@ function pmCards(snapshot) {
 
 function pmPage(view) {
   const snapshot = view.snapshot;
+  const active = view.editing && view.editing.ok ? view.editing.workspace.active_project : snapshot && snapshot.active_project;
   return {
     title: "PM agent",
-    subtitle: snapshot && snapshot.active_project ? `todo project: ${snapshot.active_project}` : "",
+    subtitle: active ? `todo project: ${active}` : "",
     status: view.problem ? "bad" : "ok",
     alert: view.problem ? `pm agent ${view.problem}` : "",
-    nodes: pmCards(snapshot),
+    nodes: view.editing && view.editing.ok
+      ? [pmWorkspace(view.editing.workspace), card("Rules", ...ruleRows(snapshot ? snapshot.rules : [])), pmAbout(snapshot)]
+      : [...pmCards(snapshot), muted(view.editing ? view.editing.error : "Editing is not available yet")],
   };
+}
+
+function pmAbout(snapshot) {
+  const details = el("details", null, "pm-about");
+  details.append(el("summary", "About PM agent"));
+  if (snapshot) details.append(el("pre", [snapshot.version, snapshot.core].filter(Boolean).join("\n")));
+  return details;
 }

@@ -227,3 +227,22 @@ bot share one implementation.
   window and shows the result, including any step that failed.
 - If `ai-cleanup` is not installed, the Ops window says so instead of
   showing a button.
+
+## PM Todos workspace
+
+The PM window provides project selection and creation, search, status/priority
+filters, priority sorting, add/edit/delete, completion and reopening. Long items
+use two-line previews and a full editor. Drafts, focused inputs and filter state
+survive heartbeat refreshes. Versions move into About; the existing Rules card
+remains read-only in this first phase.
+
+Editing requires the PM repository's `/usr/local/sbin/ai-pm-todos` bridge. Deploy
+ai-pm-agent and install its `deploy/ai-pm-todos` wrapper first, then deploy this
+dashboard. `DASHBOARD_PM_COMMAND` can override the trusted executable path.
+Without it, the PM snapshot remains visible with an editing-unavailable message.
+
+Owner-signed Telegram authentication is required for workspace reads and actions.
+GET only reads; POST `/api/pm/action` accepts fixed JSON operations. Task edits
+carry project, stable ID and revision. The PM service owns all parsing and Git
+publishing. Push failures display “saved locally”; Sync todos retries publication.
+Conflicts preserve the editor draft: cancel to refresh, then review and reapply.
