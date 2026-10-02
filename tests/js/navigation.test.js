@@ -557,7 +557,7 @@ test("PM add generates an identity and sends one request while busy", async () =
     return new Promise(resolve => { resolvePost = resolve; });
   } });
   await sleep(70);
-  buttonNamed(page, "+ Add todo").click();
+  buttonNamed(page, "+ Add").click();
   const text = page.doc.querySelector("textarea"); text.value = "New todo";
   text.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
   const form = page.doc.querySelector("form");
@@ -642,7 +642,7 @@ test("editor Back to todos and Cancel stay within PM", async () => {
 test("native Back also closes the Add todo and New project subviews", async () => {
   const page = await openPage("/pm", { respond: editablePM });
   await sleep(70);
-  for (const label of ["+ Add todo", "New project"]) {
+  for (const label of ["+ Add", "New project"]) {
     buttonNamed(page, label).click();
     page.back.handler();
     await sleep(20);

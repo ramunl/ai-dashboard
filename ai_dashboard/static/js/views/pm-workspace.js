@@ -46,10 +46,10 @@ function pmPaint() {
   const toolbar = el("div", null, "pm-toolbar pm-project-toolbar");
   toolbar.append(pmSelect("Active todo project", projects, workspace.project || "", project => { if (project) pmSend({ action: "select", project }); }),
     pmButton("New project", () => { pmUi.editor = { projectForm: true, name: "" }; pmPaint(); }),
-    pmButton("+ Add todo", () => {
+    pmButton("+ Add", () => {
       if (!workspace.project) { pmUi.notice = "Select or create a project first."; pmPaint(); return; }
       pmUi.editor = { id: crypto.randomUUID().replaceAll("-", ""), text: "", priority: "normal", status: "open", isNew: true, revision: workspace.revision, project: workspace.project }; pmPaint();
-    }), pmButton("Sync todos", () => pmSend({ action: "sync", project: workspace.project })));
+    }), pmButton("Sync", () => pmSend({ action: "sync", project: workspace.project })));
   node.append(toolbar);
   const search = el("input"); search.type = "search"; search.value = pmUi.search;
   search.addEventListener("input", () => { pmUi.search = search.value; pmPaintList(); });
