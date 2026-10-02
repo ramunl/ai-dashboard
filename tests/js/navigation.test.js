@@ -75,6 +75,7 @@ async function openPage(url, options = {}) {
   const back = { handler: null, visible: false };
   const errors = [];
   const posts = [];
+  const bodies = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (error) => errors.push(error.message));
   const dom = new JSDOM(PAGE, {
@@ -88,6 +89,7 @@ async function openPage(url, options = {}) {
         const name = api.split("/").pop();
         if (init && init.method === "POST") {
           posts.push(api);
+          bodies.push(init.body ? JSON.parse(init.body) : null);
           if (options.onPost) return options.onPost(api, init);
           return { ok: true, status: 202, json: async () => ({ started: true }) };
         }
@@ -110,7 +112,7 @@ async function openPage(url, options = {}) {
     }),
     text: (id) => doc.getElementById(id).textContent,
     tapAgent: (index) => doc.querySelectorAll(".nav-row")[index].click(),
-    doc, posts,
+    doc, posts, bodies,
   };
 }
 
@@ -167,7 +169,7 @@ test("Back from the coding window renders the launcher again", async () => {
   await sleep(250);
   page.tapAgent(0);
   await sleep(250);
-  assert.deepStrictEqual(page.state(), { path: "/coding", title: "repo", cards: 7, backVisible: true });
+  assert.deepStrictEqual(page.state(), { path: "/coding", title: "repo", cards: 8, backVisible: true });
   page.back.handler();
   await sleep(250);
   assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
@@ -764,4 +766,145 @@ test("failed recovery disables every rollback control and shows server recovery 
   assert.match(page.doc.querySelector("main").textContent, /ai-deploy recover/);
   assert.match(page.doc.querySelector("main").textContent, /Last health verification2026/);
   page.dom.window.close();
+});
+
+// ---------------------------------------------------------------- coding setup
+
+const SETUP = {
+  projects: [
+    { name: "repo", repository: "owner/repo", active: true },
+    { name: "channel-cast", repository: "ramunl/channelcast", active: false },
+  ],
+  planner: "codex", implementer: "codex",
+  planner_options: ["codex", "claude"], implementer_options: ["codex", "claude"],
+  busy: null,
+  models: [
+    { tool: "claude", model: "claude-sonnet-4-6", manageable: true, note: "", choices: ["claude-sonnet-4-6", "claude-opus-4-1"], choices_error: null },
+    { tool: "codex", model: "gpt-5-codex", manageable: false, note: "Set in Codex's own config.", choices: [], choices_error: null },
+  ],
+  actions: [],
+};
+// Serves the coding window with a setup; results can be swapped in later.
+function codingServer(setup = SETUP) {
+  const state = { setup };
+  const respond = async (name) => ({
+    ok: true, status: 200,
+    json: async () => (name === "coding"
+      ? { ...CODING, snapshot: { ...CODING.snapshot, setup: state.setup } }
+      : DATA[name]),
+  });
+  const onPost = async () => ({ ok: true, status: 202, json: async () => ({ id: "abc123" }) });
+  return { state, options: { latencyMs: 10, respond, onPost } };
+}
+const buttonsIn = (page, text) => [...page.doc.querySelectorAll("main button")].filter((b) => b.textContent === text);
+
+test("Coding window links to Projects and AI tools, and Back returns to Coding", async () => {
+  const server = codingServer();
+  const page = await openPage("/coding", server.options);
+  await sleep(60);
+  const links = [...page.doc.querySelectorAll("main a.nav-row")].map((a) => a.getAttribute("href"));
+  assert.deepStrictEqual(links, ["/coding/projects", "/coding/ai"]);
+  page.doc.querySelector('a[href="/coding/projects"]').click();
+  await sleep(60);
+  assert.strictEqual(page.state().path, "/coding/projects");
+  assert.strictEqual(page.state().backVisible, true);
+  page.back.handler();
+  await sleep(400);
+  assert.strictEqual(page.state().path, "/coding");
+  assert.ok(page.dom.window.history.length <= 2);
+});
+
+test("a sub-window opened directly goes Back to its parent, not the overview", async () => {
+  const page = await openPage("/coding/ai", codingServer().options);
+  await sleep(60);
+  page.back.handler();
+  await sleep(60);
+  assert.strictEqual(page.state().path, "/coding");
+});
+
+test("switching project sends the request and follows the agent's result", async () => {
+  const server = codingServer();
+  const page = await openPage("/coding/projects", server.options);
+  await sleep(60);
+  assert.match(page.doc.querySelector("main").textContent, /repoowner\/repoActive/);
+  buttonsIn(page, "Use")[0].click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "use_project", args: { name: "channel-cast" } }]);
+  assert.strictEqual(buttonsIn(page, "Switching…").length, 1);
+
+  // The agent refuses: its message is shown and the button comes back.
+  server.state.setup = { ...SETUP, actions: [{ id: "abc123", status: "failed", message: "Cannot switch projects while a task is running." }] };
+  page.dom.window.eval("refresh()");
+  await sleep(60);
+  assert.match(page.text("alert"), /Cannot switch projects while a task is running/);
+  assert.strictEqual(buttonsIn(page, "Use").length, 1);
+});
+
+test("busy agent: project buttons are disabled with the reason", async () => {
+  const page = await openPage("/coding/projects", codingServer({ ...SETUP, busy: "2 task(s) are queued" }).options);
+  await sleep(60);
+  assert.strictEqual(buttonsIn(page, "Use")[0].disabled, true);
+  assert.match(page.doc.querySelector("main").textContent, /Switching is disabled: 2 task\(s\) are queued/);
+});
+
+test("add repository: validated input, kept while typing, then sent", async () => {
+  const page = await openPage("/coding/projects", codingServer().options);
+  await sleep(60);
+  const input = page.doc.querySelector("main input");
+  const add = buttonsIn(page, "Add")[0];
+  assert.strictEqual(add.disabled, true);
+  input.focus();
+  input.value = "ramunl/ai-dashb";
+  input.dispatchEvent(new page.dom.window.Event("input"));
+  page.dom.window.eval("refresh()");  // a timer refresh while typing
+  await sleep(60);
+  assert.strictEqual(page.doc.querySelector("main input"), input, "field replaced while typing");
+  assert.strictEqual(input.value, "ramunl/ai-dashb");
+  input.value = "not a repo; rm -rf /";
+  input.dispatchEvent(new page.dom.window.Event("input"));
+  assert.strictEqual(add.disabled, true);
+  input.value = "ramunl/ai-dashboard";
+  input.dispatchEvent(new page.dom.window.Event("input"));
+  assert.strictEqual(add.disabled, false);
+  add.click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "add_repository", args: { repository: "ramunl/ai-dashboard" } }]);
+});
+
+test("planner and implementer are chosen with buttons, current one pressed", async () => {
+  const page = await openPage("/coding/ai", codingServer().options);
+  await sleep(60);
+  const groups = [...page.doc.querySelectorAll(".segmented")];
+  assert.strictEqual(groups.length, 2);
+  const [codex, claude] = groups[0].querySelectorAll("button");
+  assert.strictEqual(codex.getAttribute("aria-pressed"), "true");
+  assert.strictEqual(codex.disabled, true);
+  claude.click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "set_planner", args: { value: "claude" } }]);
+});
+
+test("switching the Claude model asks first; Codex is read-only", async () => {
+  const page = await openPage("/coding/ai", codingServer().options);
+  await sleep(60);
+  const text = page.doc.querySelector("main").textContent;
+  assert.match(text, /claude-sonnet-4-6Current/);
+  assert.match(text, /gpt-5-codex.*Read-only\. Set in Codex's own config\./s);
+
+  const asked = [];
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(false); };
+  buttonsIn(page, "Use")[0].click();
+  await sleep(30);
+  assert.deepStrictEqual(page.bodies, []);
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(true); };
+  buttonsIn(page, "Use")[0].click();
+  await sleep(60);
+  assert.match(asked[0], /restarts/);
+  assert.deepStrictEqual(page.bodies, [{ action: "switch_model", args: { tool: "claude", model: "claude-opus-4-1" } }]);
+});
+
+test("an older agent without setup data gets a clear note", async () => {
+  const page = await openPage("/coding/projects", { latencyMs: 10 });
+  await sleep(60);
+  assert.match(page.doc.querySelector("main").textContent, /Update the coding agent to manage its setup here/);
 });

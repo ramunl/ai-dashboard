@@ -34,11 +34,6 @@ function cleanupButton(cleanup) {
   return button;
 }
 
-function askConfirmation(message, onAnswer) {
-  if (tg && tg.showConfirm) tg.showConfirm(message, onAnswer);
-  else onAnswer(window.confirm(message));
-}
-
 function confirmCleanup(button, reclaimable) {
   const message =
     `Free about ${formatBytes(reclaimable)}? This removes unused packages, ` +
