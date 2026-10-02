@@ -88,7 +88,7 @@ async function openPage(url, options = {}) {
         const name = api.split("/").pop();
         if (init && init.method === "POST") {
           posts.push(api);
-          if (options.onPost) return options.onPost(api);
+          if (options.onPost) return options.onPost(api, init);
           return { ok: true, status: 202, json: async () => ({ started: true }) };
         }
         if (respond) return respond(name, init.signal);
@@ -449,4 +449,151 @@ test("page scripts never define the same top-level function twice", () => {
     }
   }
   assert.deepStrictEqual(duplicates, []);
+});
+
+
+// PM tasks: new bridge workspace, while legacy snapshots remain supported.
+const TASKS = {
+  project: "app", active_project: "app", revision: "r1",
+  projects: [{ name: "app", open: 2, done: 1 }, { name: "other", open: 0, done: 0 }],
+  items: [
+    { id: "a".repeat(32), text: "High priority task", priority: "high", status: "blocked" },
+    { id: "b".repeat(32), text: "Normal task", priority: "normal", status: "open" },
+    { id: "c".repeat(32), text: "Completed task", priority: "low", status: "done" },
+  ],
+};
+const editablePM = async () => ({ ok: true, status: 200, json: async () => ({ ...PM, editing: { ok: true, workspace: TASKS } }) });
+const fieldSelect = (page, text) => [...page.doc.querySelectorAll("label")].find(l => l.querySelector("span").textContent === text).querySelector("select");
+const selectValue = (page, select, value) => { select.value = value; select.dispatchEvent(new page.dom.window.Event("change", { bubbles: true })); };
+const buttonNamed = (page, text) => [...page.doc.querySelectorAll("button")].find(b => b.textContent === text);
+
+test("PM workspace shows priority, status and completed filters", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 2);
+  assert.match(page.text("view"), /HighBlocked/);
+  selectValue(page, fieldSelect(page, "Status"), "done");
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 1);
+  assert.match(page.text("view"), /Completed task/);
+  assert.deepStrictEqual(page.errors, []);
+});
+
+test("PM edits include stable identity, project and revision", async () => {
+  let payload;
+  const page = await openPage("/pm", { respond: editablePM, onPost: async (_api, init) => {
+    payload = JSON.parse(init.body);
+    return { ok: true, status: 200, json: async () => ({ ok: true, workspace: TASKS }) };
+  } });
+  await sleep(70);
+  buttonNamed(page, "High priority task").click();
+  selectValue(page, fieldSelect(page, "Priority"), "low");
+  selectValue(page, fieldSelect(page, "Status"), "in_progress");
+  page.doc.querySelector("form").dispatchEvent(new page.dom.window.Event("submit", { bubbles: true, cancelable: true }));
+  await sleep(30);
+  assert.deepStrictEqual(payload, { action: "update", id: "a".repeat(32), project: "app", revision: "r1", text: "High priority task", priority: "low", status: "in_progress" });
+});
+
+test("PM editor survives heartbeat without losing input or focus", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  buttonNamed(page, "Normal task").click();
+  const text = page.doc.querySelector("textarea");
+  text.value = "Unfinished draft";
+  text.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+  text.focus();
+  await page.dom.window.eval("refresh()");
+  assert.strictEqual(page.doc.querySelector("textarea"), text);
+  assert.strictEqual(text.value, "Unfinished draft");
+  assert.strictEqual(page.doc.activeElement, text);
+});
+
+test("PM deletion requires confirmation", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  buttonNamed(page, "Normal task").click();
+  confirmWith(page, false);
+  buttonNamed(page, "Delete todo").click();
+  await sleep(20);
+  assert.deepStrictEqual(page.posts, []);
+});
+
+test("PM stale edit preserves draft and shows conflict", async () => {
+  const page = await openPage("/pm", { respond: editablePM, onPost: async () => ({ ok: false, status: 409, json: async () => ({ error: "List changed; refresh first" }) }) });
+  await sleep(70);
+  buttonNamed(page, "Normal task").click();
+  const text = page.doc.querySelector("textarea"); text.value = "Keep this draft";
+  text.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+  page.doc.querySelector("form").dispatchEvent(new page.dom.window.Event("submit", { bubbles: true, cancelable: true }));
+  await sleep(30);
+  assert.match(page.text("view"), /List changed/);
+  assert.strictEqual(page.doc.querySelector("textarea").value, "Keep this draft");
+});
+
+test("PM project changes use the PM selection action", async () => {
+  let payload;
+  const page = await openPage("/pm", { respond: editablePM, onPost: async (_api, init) => {
+    payload = JSON.parse(init.body);
+    return { ok: true, status: 200, json: async () => ({ workspace: { ...TASKS, project: "other" } }) };
+  } });
+  await sleep(70);
+  selectValue(page, fieldSelect(page, "Active todo project"), "other");
+  await sleep(30);
+  assert.deepStrictEqual(payload, { action: "select", project: "other" });
+});
+
+test("PM search and filters preserve matching task identity", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  const search = page.doc.querySelector('input[type="search"]');
+  search.value = "Normal"; search.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 1);
+  assert.match(page.doc.querySelector(".pm-task").textContent, /Normal task/);
+});
+
+test("PM add generates an identity and sends one request while busy", async () => {
+  let resolvePost, payload;
+  const page = await openPage("/pm", { respond: editablePM, onPost: async (_api, init) => {
+    payload = JSON.parse(init.body);
+    return new Promise(resolve => { resolvePost = resolve; });
+  } });
+  await sleep(70);
+  buttonNamed(page, "+ Add todo").click();
+  const text = page.doc.querySelector("textarea"); text.value = "New todo";
+  text.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+  const form = page.doc.querySelector("form");
+  form.dispatchEvent(new page.dom.window.Event("submit", { bubbles: true, cancelable: true }));
+  form.dispatchEvent(new page.dom.window.Event("submit", { bubbles: true, cancelable: true }));
+  await sleep(20);
+  assert.strictEqual(page.posts.length, 1);
+  assert.match(payload.id, /^[a-f0-9]{32}$/);
+  assert.strictEqual(payload.action, "add");
+  assert.strictEqual(payload.text, "New todo");
+  resolvePost({ ok: true, status: 200, json: async () => ({ workspace: TASKS, warning: "Saved locally; GitHub sync failed" }) });
+  await sleep(20);
+  assert.match(page.text("view"), /Saved locally/);
+});
+
+test("PM completion sends task identity rather than sorted list number", async () => {
+  let payload;
+  const page = await openPage("/pm", { respond: editablePM, onPost: async (_api, init) => {
+    payload = JSON.parse(init.body);
+    return { ok: true, status: 200, json: async () => ({ workspace: TASKS }) };
+  } });
+  await sleep(70);
+  const checkbox = page.doc.querySelector('.pm-task input[type="checkbox"]');
+  checkbox.checked = true; checkbox.dispatchEvent(new page.dom.window.Event("change", { bubbles: true }));
+  await sleep(20);
+  assert.strictEqual(payload.id, "a".repeat(32));
+  assert.strictEqual(payload.status, "done");
+});
+
+test("PM new project draft survives heartbeat", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  buttonNamed(page, "New project").click();
+  const input = page.doc.querySelector("form input"); input.value = "future-project";
+  input.dispatchEvent(new page.dom.window.Event("input", { bubbles: true })); input.focus();
+  await page.dom.window.eval("refresh()");
+  assert.strictEqual(page.doc.querySelector("form input"), input);
+  assert.strictEqual(input.value, "future-project");
 });

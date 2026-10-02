@@ -37,13 +37,14 @@ async function fetchWindow(api, initData, controller) {
 
 // Ask the server to do something (POST, no body: the action is fixed by the
 // path). Resolves with the answer or rejects with a message fit for the user.
-async function postAction(path, initData) {
+async function postAction(path, initData, payload = null, timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`/api/${path}`, {
       method: "POST",
-      headers: { Authorization: "tma " + initData },
+      headers: { Authorization: "tma " + initData, "Content-Type": "application/json" },
+      body: payload === null ? undefined : JSON.stringify(payload),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -51,7 +52,7 @@ async function postAction(path, initData) {
     if (!response.ok) throw new Error((body && body.error) || `HTTP ${response.status}`);
     return body || {};
   } catch (error) {
-    if (controller.signal.aborted) throw new Error(`no answer within ${FETCH_TIMEOUT_MS / 1000} s`);
+    if (controller.signal.aborted) throw new Error(`no answer within ${timeoutMs / 1000} s; refresh before retrying`);
     throw error;
   } finally {
     clearTimeout(timer);
