@@ -1,9 +1,12 @@
 // Navigation between windows: paths, history, Telegram's Back button.
-// path -> { api window, page builder, title shown while loading }
+// path -> { api window, page builder, title shown while loading, parent }
+// Back goes to the parent window; top-level windows have the launcher ("").
 const ROUTES = {
   "": { api: "launcher", page: launcherPage, title: "AI Agents" },
   ops: { api: "ops", page: opsPage, title: "Ops agent" },
   coding: { api: "coding", page: codingPage, title: "Coding agent" },
+  "coding/projects": { api: "coding", page: projectsPage, title: "Projects", parent: "coding" },
+  "coding/ai": { api: "coding", page: aiToolsPage, title: "AI tools", parent: "coding" },
   pm: { api: "pm", page: pmPage, title: "PM agent" },
 };
 const POPSTATE_GRACE_MS = 300;
@@ -23,29 +26,34 @@ function currentRoute() {
   return ROUTES[currentPath()];
 }
 
+function parentOf(path) {
+  return (ROUTES[path] && ROUTES[path].parent) || "";
+}
+
 function navigate(path) {
   const target = normalizePath(path);
   if (target === currentPath()) return;
   if (currentPath() === "pm" && !pmUi.busy) pmUi.editor = null;
-  history.pushState({ isFromLauncher: currentPath() === "" }, "", "/" + target);
+  history.pushState({ from: currentPath() }, "", "/" + target);
   show();
 }
 
-function showLauncherInPlace() {
-  history.replaceState({}, "", "/");
+function showInPlace(path) {
+  history.replaceState({}, "", "/" + path);
   show();
 }
 
-// Back from a window: step back in history when we came from the launcher,
-// otherwise (opened straight from a bot) replace this entry with the launcher.
-// Either way history does not grow with every round trip.
+// Back from a window goes to its parent: step back in history when we came
+// from the parent, otherwise (opened straight from a bot) replace this entry
+// with the parent. Either way history does not grow with every round trip.
 function goBack() {
   if (currentPath() === "pm" && pmUi.editor) {
     pmCloseEditor();
     return;
   }
-  if (!(history.state && history.state.isFromLauncher)) {
-    showLauncherInPlace();
+  const parent = parentOf(currentPath());
+  if (!(history.state && history.state.from === parent)) {
+    showInPlace(parent);
     return;
   }
   isAwaitingPopstate = true;
@@ -54,8 +62,8 @@ function goBack() {
   setTimeout(() => {
     if (!isAwaitingPopstate) return;
     isAwaitingPopstate = false;
-    console.warn("No popstate after history.back(); showing the launcher directly");
-    showLauncherInPlace();
+    console.warn("No popstate after history.back(); showing the parent directly");
+    showInPlace(parent);
   }, POPSTATE_GRACE_MS);
 }
 

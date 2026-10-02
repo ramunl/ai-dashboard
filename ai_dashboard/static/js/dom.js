@@ -67,3 +67,9 @@ function formatDuration(seconds) {
   if (days) return `${days}d ${hours}h`;
   return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
+
+// Telegram's confirm dialog when available, the browser's otherwise.
+function askConfirmation(message, onAnswer) {
+  if (tg && tg.showConfirm) tg.showConfirm(message, onAnswer);
+  else onAnswer(window.confirm(message));
+}

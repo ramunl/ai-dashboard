@@ -27,6 +27,9 @@ WINDOWS = {
     "ops": "Ops agent",
 }
 
+# Sub-windows served at /<window>/<sub>; they read their parent's data.
+SUB_WINDOWS = {"coding/projects", "coding/ai"}
+
 
 async def _window_of(settings: Settings, name: str) -> dict | None:
     """An agent window's data, or None if that bot is not configured."""

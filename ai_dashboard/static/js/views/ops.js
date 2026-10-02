@@ -34,11 +34,6 @@ function cleanupButton(cleanup) {
   return button;
 }
 
-function askConfirmation(message, onAnswer) {
-  if (tg && tg.showConfirm) tg.showConfirm(message, onAnswer);
-  else onAnswer(window.confirm(message));
-}
-
 function confirmCleanup(button, reclaimable) {
   const message =
     `Free about ${formatBytes(reclaimable)}? This removes unused packages, ` +
@@ -88,6 +83,6 @@ function opsPage(view) {
     subtitle: serverSubtitle(view),
     status: pageStatus(view),
     alert: "",
-    nodes: [operationsCard(view), ...problemsCards(view), diskUsageCard(view), resourcesCard(view)],
+    nodes: [operationsCard(view), deploymentsCard(view), ...problemsCards(view), diskUsageCard(view), resourcesCard(view)],
   };
 }

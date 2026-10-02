@@ -40,10 +40,37 @@ function lastRunRows(execution) {
   ];
 }
 
+function setupLink(label, value, path) {
+  const node = el("a", null, "nav-row");
+  node.href = "/" + path;
+  node.addEventListener("click", (event) => {
+    event.preventDefault();
+    navigate(path);
+  });
+  const content = el("div");
+  content.append(el("div", label), el("div", value, "nav-detail"));
+  node.append(content, el("span", "›", "nav-chevron"));
+  return node;
+}
+
+function setupCard(setup) {
+  if (!setup) return setupMissingCard();
+  const active = setup.projects.find((project) => project.active);
+  const claude = setup.models.find((model) => model.tool === "claude");
+  const tools = [`planner ${setup.planner}`, `implementer ${setup.implementer}`];
+  if (claude) tools.push(claude.model);
+  return card(
+    "Setup",
+    setupLink("Project", active ? active.name : "—", "coding/projects"),
+    setupLink("AI tools", tools.join(" · "), "coding/ai"),
+  );
+}
+
 function codingCards(snapshot) {
   if (!snapshot) return [card("Coding agent", muted("No data from the agent yet."))];
   return [
     card("Now", ...runningRows(snapshot.running)),
+    setupCard(snapshot.setup || null),
     card("Queue", ...queueRows(snapshot.queue)),
     card("Plan", ...planRows(snapshot)),
     card("Last run", ...lastRunRows(snapshot.last_execution)),
@@ -59,12 +86,13 @@ function codingCards(snapshot) {
 }
 
 function codingPage(view) {
+  settleActions(setupOf(view));
   const project = view.snapshot && view.snapshot.project;
   return {
     title: project ? project.name : "Coding agent",
     subtitle: project ? `${project.repository} [${project.branch}]` : "",
     status: view.problem ? "bad" : "ok",
-    alert: view.problem ? `coding agent ${view.problem}` : "",
+    alert: view.problem ? `coding agent ${view.problem}` : actionNoticeText(),
     nodes: codingCards(view.snapshot),
   };
 }

@@ -35,6 +35,8 @@ class BotSource:
     service: str
     menu_path: str
     snapshot_file: Path | None = None
+    # Where setup requests for this agent are dropped (coding agent only).
+    inbox_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,7 @@ class Settings:
     monitored_services: tuple[str, ...] = DEFAULT_MONITORED
     state_dir: Path = Path("/var/lib/ai-dashboard")
     cleanup_command: str = "/usr/local/sbin/ai-cleanup"
+    deployment_command: str = "/usr/local/sbin/ai-deploy"
     pm_command: str = "/usr/local/sbin/ai-pm-todos"
 
     @property
@@ -77,6 +80,8 @@ class _BotSpec:
     required: bool
     snapshot_var: str | None = None
     default_snapshot: str | None = None
+    inbox_var: str | None = None
+    default_inbox: str | None = None
 
 
 _SPECS = (
@@ -91,6 +96,8 @@ _SPECS = (
         required=True,
         snapshot_var="AGENT_SNAPSHOT_FILE",
         default_snapshot="/var/lib/ai-coding-agent/snapshot.json",
+        inbox_var="AGENT_INBOX_DIR",
+        default_inbox="/var/lib/ai-coding-agent/inbox",
     ),
     _BotSpec(
         "pm",
@@ -141,12 +148,16 @@ def _load_bot(
     snapshot = None
     if spec.snapshot_var:
         snapshot = Path(agent_env.get(spec.snapshot_var, spec.default_snapshot))
+    inbox = None
+    if spec.inbox_var:
+        inbox = Path(agent_env.get(spec.inbox_var, spec.default_inbox))
     bot = BotSource(
         name=spec.name,
         token=token,
         service=environ.get(spec.service_var, spec.default_service),
         menu_path=spec.menu_path,
         snapshot_file=snapshot,
+        inbox_dir=inbox,
     )
     return bot, _chat_id(agent_env.get("YOUR_CHAT_ID", ""))
 
@@ -196,6 +207,9 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         bots=tuple(bot for bot, _ in loaded),
         monitored_services=monitored,
         state_dir=Path(env.get("DASHBOARD_STATE_DIR", "/var/lib/ai-dashboard")),
+        deployment_command=env.get(
+            "DASHBOARD_DEPLOYMENT_COMMAND", "/usr/local/sbin/ai-deploy"
+        ),
         pm_command=env.get("DASHBOARD_PM_COMMAND", "/usr/local/sbin/ai-pm-todos"),
         cleanup_command=env.get(
             "DASHBOARD_CLEANUP_COMMAND", "/usr/local/sbin/ai-cleanup"

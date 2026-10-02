@@ -255,3 +255,58 @@ In PM editors, Telegram Back returns to the Todos list first. Editors also show
 a Back to todos button near the top; Cancel has the same navigation behavior.
 A subsequent Back leaves PM for the overview. Leaving PM clears the editor
 subview so reopening PM starts at the list.
+
+### Deployment status and rollback in Ops
+
+The Ops window reads the fixed local `/usr/local/sbin/ai-deploy status` bridge
+installed from the ai-ops-agent deployment manager. It lists the coding, PM,
+Ops, and dashboard services, their recorded deployed version and commit, and
+any previous verified revision. If the manager is missing, the card explains
+that installation is needed. `DASHBOARD_DEPLOYMENT_COMMAND` can override the
+executable path for a custom installation.
+
+A **Roll back** button appears only for a recorded, verified previous revision.
+Confirmation names the service and revision. The owner-authenticated POST queues
+an independent systemd job; the dashboard never runs the restart inside its own
+HTTP process. The page polls status and shows queued/running/failure states.
+GET cannot initiate rollback, targets are fixed, and a stale confirmation is
+rejected if the rollback revision changed. Install and initialize the manager
+following the ai-ops-agent README before using these controls; Git history alone
+is not proof that a revision is safe to roll back to.
+
+## Coding setup (Coding window)
+
+The Coding window's **Setup** card opens two sub-windows; Back returns to the
+Coding window.
+
+- **Projects** (`/coding/projects`): switch the active project, or add a
+  repository (`owner/repo`; the agent clones it). Switching is disabled while
+  the agent runs or has queued tasks, with the reason shown.
+- **AI tools** (`/coding/ai`): planner and implementer (`codex` / `claude`),
+  and models. The Claude API model can be switched (after a confirmation; the
+  agent verifies it and restarts). Codex and Claude Code models are read-only,
+  because they live in those CLIs' own configs.
+
+The dashboard never changes the agent's state itself. `POST /api/coding/actions`
+(owner's signed Telegram data, JSON body, at most 4 KB) checks the request and
+writes it into the agent's inbox (`AGENT_INBOX_DIR` from the coding agent's env
+file). The agent validates it again and runs it with the same code as its
+Telegram commands; the result appears in its snapshot and the page shows it.
+Requests are refused with 503 while the agent's service is not running.
+
+A refresh never replaces the page while you type in one of its fields.
+
+## Changing an agent from the dashboard: which pattern
+
+Two patterns exist on purpose; pick by where the agent keeps the state:
+
+- **State in files** (PM todos, disk cleanup): a fixed command owned by the
+  agent's repo, JSON in and out, run by the dashboard and answered at once
+  (`pm_bridge.py`, `maintenance.py`). The running agent need not be involved.
+- **State in the running agent's memory** (coding agent: planner, implementer,
+  active project, model): only that process can change it, so the dashboard
+  drops a request into the agent's inbox and shows the result the agent
+  publishes (`agent_actions.py`; `ai_agent/inbox.py` in the coding agent).
+
+Either way the dashboard never edits an agent's state directly, every request
+needs the owner's signed Telegram data, and the agent side validates again.
