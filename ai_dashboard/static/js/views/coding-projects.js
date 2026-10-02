@@ -3,32 +3,20 @@
 const REPOSITORY_PATTERN = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
 let repositoryDraft = ""; // kept across refreshes while the user types
 
-function projectRow(project, setup) {
-  const node = el("div", null, "setup-row");
-  const label = el("div");
-  label.append(el("div", project.name), el("div", project.repository, "card-note"));
-  node.append(label);
-  if (project.active) {
-    node.append(el("span", "Active", "setup-state"));
-    return node;
-  }
-  const key = `project:${project.name}`;
-  const button = el("button", isActionPending(key) ? "Switching…" : "Use", "row-button");
-  button.type = "button";
-  button.disabled = Boolean(setup.busy) || hasPendingActions();
-  button.addEventListener("click", () => {
-    button.disabled = true;
-    button.textContent = "Switching…";
-    requestAction(key, "use_project", { name: project.name });
-  });
-  node.append(button);
-  return node;
-}
-
 function projectsCard(setup) {
-  const rows = setup.projects.map((project) => projectRow(project, setup));
-  if (setup.busy) rows.push(el("div", `Switching is disabled: ${setup.busy}.`, "card-note"));
-  return card("Projects", ...rows);
+  const active = setup.projects.find((project) => project.active);
+  const options = setup.projects.map((project) => ({
+    value: project.name,
+    note: project.repository,
+  }));
+  const list = radioList("project", options, active && active.name,
+    Boolean(setup.busy) || hasPendingActions(), (name) => {
+      requestAction(`project:${name}`, "use_project", { name });
+    });
+  const nodes = [list];
+  if (setup.busy) nodes.push(el("div", `Switching is disabled: ${setup.busy}.`, "card-note"));
+  if (hasPendingActions()) nodes.push(el("div", "Switching…", "card-note"));
+  return card("Projects", ...nodes);
 }
 
 function addRepositoryCard() {

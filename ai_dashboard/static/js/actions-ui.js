@@ -68,3 +68,25 @@ function codingSubPage(view, title, nodes) {
     nodes,
   };
 }
+
+// A group of radio buttons; onPick(value, input) runs when the user picks one.
+function radioList(name, options, current, disabled, onPick) {
+  const group = el("div", null, "radio-list");
+  group.setAttribute("role", "radiogroup");
+  for (const option of options) {
+    const label = el("label", null, "radio-row");
+    const input = el("input");
+    input.type = "radio";
+    input.name = name;
+    input.value = option.value;
+    input.checked = option.value === current;
+    input.disabled = disabled;
+    input.addEventListener("change", () => onPick(option.value, input));
+    const text = el("span");
+    text.append(el("span", option.label || option.value));
+    if (option.note) text.append(el("span", option.note, "card-note radio-note"));
+    label.append(input, text);
+    group.append(label);
+  }
+  return group;
+}

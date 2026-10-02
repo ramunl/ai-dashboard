@@ -779,8 +779,9 @@ const SETUP = {
   planner_options: ["codex", "claude"], implementer_options: ["codex", "claude"],
   busy: null,
   models: [
-    { tool: "claude", model: "claude-sonnet-4-6", manageable: true, note: "", choices: ["claude-sonnet-4-6", "claude-opus-4-1"], choices_error: null },
+    { tool: "claude", model: "claude-sonnet-4-6", manageable: true, note: "", choices: ["claude-opus-5-5", "claude-sonnet-5-5"], choices_error: null },
     { tool: "codex", model: "gpt-5-codex", manageable: false, note: "Set in Codex's own config.", choices: [], choices_error: null },
+    { tool: "claude-code", model: "opus", manageable: false, note: "Set in Claude Code's own config.", choices: [], choices_error: null },
   ],
   actions: [],
 };
@@ -822,85 +823,111 @@ test("a sub-window opened directly goes Back to its parent, not the overview", a
   assert.strictEqual(page.state().path, "/coding");
 });
 
-test("switching project sends the request and follows the agent's result", async () => {
+const radios = (page, name) => [...page.doc.querySelectorAll(`main input[type=radio][name="${name}"]`)];
+const pick = (page, radio) => { radio.checked = true; radio.dispatchEvent(new page.dom.window.Event("change")); };
+const checkedValue = (page, name) => (radios(page, name).find((r) => r.checked) || {}).value;
+
+test("projects are radios; picking one sends the switch and shows the agent's refusal", async () => {
   const server = codingServer();
   const page = await openPage("/coding/projects", server.options);
   await sleep(60);
-  assert.match(page.doc.querySelector("main").textContent, /repoowner\/repoActive/);
-  buttonsIn(page, "Use")[0].click();
+  assert.strictEqual(page.doc.querySelectorAll("main button").length, 1);  // only "Add"
+  assert.strictEqual(checkedValue(page, "project"), "repo");
+  pick(page, radios(page, "project")[1]);
   await sleep(60);
   assert.deepStrictEqual(page.bodies, [{ action: "use_project", args: { name: "channel-cast" } }]);
-  assert.strictEqual(buttonsIn(page, "Switching…").length, 1);
-
-  // The agent refuses: its message is shown and the button comes back.
   server.state.setup = { ...SETUP, actions: [{ id: "abc123", status: "failed", message: "Cannot switch projects while a task is running." }] };
   page.dom.window.eval("refresh()");
   await sleep(60);
   assert.match(page.text("alert"), /Cannot switch projects while a task is running/);
-  assert.strictEqual(buttonsIn(page, "Use").length, 1);
+  assert.strictEqual(checkedValue(page, "project"), "repo");
 });
 
-test("busy agent: project buttons are disabled with the reason", async () => {
+test("busy agent: project radios are disabled with the reason", async () => {
   const page = await openPage("/coding/projects", codingServer({ ...SETUP, busy: "2 task(s) are queued" }).options);
   await sleep(60);
-  assert.strictEqual(buttonsIn(page, "Use")[0].disabled, true);
+  assert.ok(radios(page, "project").every((r) => r.disabled));
   assert.match(page.doc.querySelector("main").textContent, /Switching is disabled: 2 task\(s\) are queued/);
+});
+
+test("a picked radio does not stop the page from refreshing", async () => {
+  const server = codingServer();
+  const page = await openPage("/coding/ai", server.options);
+  await sleep(60);
+  radios(page, "planner")[0].focus();
+  server.state.setup = { ...SETUP, planner: "claude" };
+  page.dom.window.eval("refresh()");
+  await sleep(60);
+  assert.strictEqual(checkedValue(page, "planner"), "claude");
 });
 
 test("add repository: validated input, kept while typing, then sent", async () => {
   const page = await openPage("/coding/projects", codingServer().options);
   await sleep(60);
-  const input = page.doc.querySelector("main input");
+  const input = page.doc.querySelector("main input[type=text]");
   const add = buttonsIn(page, "Add")[0];
   assert.strictEqual(add.disabled, true);
   input.focus();
   input.value = "ramunl/ai-dashb";
   input.dispatchEvent(new page.dom.window.Event("input"));
-  page.dom.window.eval("refresh()");  // a timer refresh while typing
+  page.dom.window.eval("refresh()");
   await sleep(60);
-  assert.strictEqual(page.doc.querySelector("main input"), input, "field replaced while typing");
-  assert.strictEqual(input.value, "ramunl/ai-dashb");
+  assert.strictEqual(page.doc.querySelector("main input[type=text]"), input, "field replaced while typing");
   input.value = "not a repo; rm -rf /";
   input.dispatchEvent(new page.dom.window.Event("input"));
   assert.strictEqual(add.disabled, true);
   input.value = "ramunl/ai-dashboard";
   input.dispatchEvent(new page.dom.window.Event("input"));
-  assert.strictEqual(add.disabled, false);
   add.click();
   await sleep(60);
   assert.deepStrictEqual(page.bodies, [{ action: "add_repository", args: { repository: "ramunl/ai-dashboard" } }]);
 });
 
-test("planner and implementer are chosen with buttons, current one pressed", async () => {
-  const page = await openPage("/coding/ai", codingServer().options);
+test("roles are radios and the models card follows the tools in use", async () => {
+  const server = codingServer({ ...SETUP, planner: "claude", implementer: "codex" });
+  const page = await openPage("/coding/ai", server.options);
   await sleep(60);
-  const groups = [...page.doc.querySelectorAll(".segmented")];
-  assert.strictEqual(groups.length, 2);
-  const [codex, claude] = groups[0].querySelectorAll("button");
-  assert.strictEqual(codex.getAttribute("aria-pressed"), "true");
-  assert.strictEqual(codex.disabled, true);
-  claude.click();
+  let text = page.doc.querySelector("main").textContent;
+  assert.match(text, /Claude API · planner/);
+  assert.match(text, /Codex · implementer/);
+  assert.doesNotMatch(text, /Claude Code/);
+  pick(page, radios(page, "implementer")[1]);
   await sleep(60);
-  assert.deepStrictEqual(page.bodies, [{ action: "set_planner", args: { value: "claude" } }]);
+  assert.deepStrictEqual(page.bodies, [{ action: "set_implementer", args: { value: "claude" } }]);
+
+  server.state.setup = { ...SETUP, planner: "codex", implementer: "claude" };
+  page.dom.window.eval("refresh()");
+  await sleep(60);
+  text = page.doc.querySelector("main").textContent;
+  assert.match(text, /Codex · planner/);
+  assert.match(text, /Claude Code · implementer/);
+  assert.doesNotMatch(text, /Claude API/);
+  assert.strictEqual(radios(page, "model-claude").length, 0);
 });
 
-test("switching the Claude model asks first; Codex is read-only", async () => {
-  const page = await openPage("/coding/ai", codingServer().options);
+test("the current Claude model is shown and selected even if the API list omits it", async () => {
+  const page = await openPage("/coding/ai", codingServer({ ...SETUP, planner: "claude" }).options);
   await sleep(60);
-  const text = page.doc.querySelector("main").textContent;
-  assert.match(text, /claude-sonnet-4-6Current/);
-  assert.match(text, /gpt-5-codex.*Read-only\. Set in Codex's own config\./s);
+  assert.match(page.doc.querySelector("main").textContent, /Currentclaude-sonnet-4-6/);
+  assert.deepStrictEqual(radios(page, "model-claude").map((r) => r.value),
+    ["claude-sonnet-4-6", "claude-opus-5-5", "claude-sonnet-5-5"]);
+  assert.strictEqual(checkedValue(page, "model-claude"), "claude-sonnet-4-6");
+});
 
+test("switching the model asks first; declining keeps the current one selected", async () => {
+  const page = await openPage("/coding/ai", codingServer({ ...SETUP, planner: "claude" }).options);
+  await sleep(60);
   const asked = [];
   page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(false); };
-  buttonsIn(page, "Use")[0].click();
+  pick(page, radios(page, "model-claude")[1]);
   await sleep(30);
   assert.deepStrictEqual(page.bodies, []);
+  assert.strictEqual(checkedValue(page, "model-claude"), "claude-sonnet-4-6");
   page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(true); };
-  buttonsIn(page, "Use")[0].click();
+  pick(page, radios(page, "model-claude")[1]);
   await sleep(60);
-  assert.match(asked[0], /restarts/);
-  assert.deepStrictEqual(page.bodies, [{ action: "switch_model", args: { tool: "claude", model: "claude-opus-4-1" } }]);
+  assert.match(asked[0], /Switch Claude API to claude-opus-5-5\?.*restarts/);
+  assert.deepStrictEqual(page.bodies, [{ action: "switch_model", args: { tool: "claude", model: "claude-opus-5-5" } }]);
 });
 
 test("an older agent without setup data gets a clear note", async () => {

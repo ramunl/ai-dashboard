@@ -30,7 +30,7 @@ function renderLoading() {
 // the field, wiping the text and the keyboard focus.
 function isEditing() {
   const active = document.activeElement;
-  return Boolean(active && active.matches("input, textarea")
+  return Boolean(active && active.matches("input:not([type=radio]):not([type=checkbox]), textarea")
     && document.getElementById("view").contains(active));
 }
 

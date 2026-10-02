@@ -1,80 +1,85 @@
 // Coding › AI tools (/coding/ai): who plans, who implements, which models.
 
-function choiceButtons(key, action, options, current) {
-  const group = el("div", null, "segmented");
-  group.setAttribute("role", "group");
-  for (const option of options) {
-    const button = el("button", option);
-    button.type = "button";
-    button.setAttribute("aria-pressed", String(option === current));
-    button.disabled = option === current || isActionPending(key);
-    button.addEventListener("click", () => {
-      button.disabled = true;
-      requestAction(key, action, { value: option });
-    });
-    group.append(button);
+// The tool each role runs with each choice: the planner's "claude" is the
+// Claude API (switchable model), the implementer's is Claude Code (read-only).
+const ROLE_TOOLS = {
+  planner: { codex: "codex", claude: "claude" },
+  implementer: { codex: "codex", claude: "claude-code" },
+};
+const TOOL_LABELS = { claude: "Claude API", "claude-code": "Claude Code", codex: "Codex" };
+
+function roleCard(setup, role, action, title) {
+  const key = role;
+  const list = radioList(role, setup[`${role}_options`].map((value) => ({ value })),
+    setup[role], isActionPending(key), (value) => requestAction(key, action, { value }));
+  const nodes = [list];
+  if (isActionPending(key)) nodes.push(el("div", "Switching…", "card-note"));
+  return card(title, ...nodes);
+}
+
+// Tools the current roles use, each with the roles that use it.
+function toolsInUse(setup) {
+  const uses = new Map();
+  for (const role of ["planner", "implementer"]) {
+    const tool = ROLE_TOOLS[role][setup[role]];
+    if (tool) uses.set(tool, [...(uses.get(tool) || []), role]);
   }
-  return group;
+  return uses;
 }
 
-function rolesCard(setup) {
-  const planner = el("div", null, "setup-row");
-  planner.append(el("span", "Planner"), choiceButtons("planner", "set_planner", setup.planner_options, setup.planner));
-  const implementer = el("div", null, "setup-row");
-  implementer.append(
-    el("span", "Implementer"),
-    choiceButtons("implementer", "set_implementer", setup.implementer_options, setup.implementer),
-  );
-  return card("Roles", planner, implementer);
-}
-
-function confirmModelSwitch(button, tool, model) {
-  const message = `Switch ${tool} to ${model}? The agent checks the model, then restarts.`;
-  askConfirmation(message, (isConfirmed) => {
-    if (!isConfirmed) return;
-    button.disabled = true;
-    button.textContent = "Switching…";
-    requestAction(`model:${tool}`, "switch_model", { tool, model });
-  });
-}
-
-function modelChoiceRow(entry, model) {
-  const node = el("div", null, "setup-row");
-  node.append(el("span", model));
-  if (model === entry.model) {
-    node.append(el("span", "Current", "setup-state"));
-    return node;
-  }
+function modelPicker(entry) {
   const key = `model:${entry.tool}`;
-  const button = el("button", "Use", "row-button");
-  button.type = "button";
-  button.disabled = isActionPending(key);
-  button.addEventListener("click", () => confirmModelSwitch(button, entry.tool, model));
-  node.append(button);
-  return node;
+  // The current model is always offered, even if the provider's list omits it.
+  const values = [entry.model, ...entry.choices.filter((model) => model !== entry.model)];
+  return radioList(`model-${entry.tool}`, values.map((value) => ({ value })), entry.model,
+    isActionPending(key), (model, input) => {
+      const message = `Switch ${TOOL_LABELS[entry.tool]} to ${model}? The agent checks the model, then restarts.`;
+      askConfirmation(message, (isConfirmed) => {
+        if (!isConfirmed) {
+          // Declined: show the model that is still current.
+          for (const radio of input.closest(".radio-list").querySelectorAll("input")) {
+            radio.checked = radio.value === entry.model;
+          }
+          return;
+        }
+        requestAction(key, "switch_model", { tool: entry.tool, model });
+      });
+    });
 }
 
-function modelRows(entry) {
+function toolModelNodes(entry, roles) {
+  const nodes = [
+    el("div", `${TOOL_LABELS[entry.tool] || entry.tool} · ${roles.join(" and ")}`, "card-subtitle"),
+    row("Current", entry.model || "—"),
+  ];
   if (!entry.manageable) {
-    return [row(entry.tool, entry.model || "—"), el("div", `Read-only. ${entry.note}`, "card-note")];
+    nodes.push(el("div", `Read-only. ${entry.note}`, "card-note"));
+    return nodes;
   }
-  const rows = [el("div", entry.tool, "card-subtitle")];
-  const choices = entry.choices.length ? entry.choices : [entry.model];
-  rows.push(...choices.map((model) => modelChoiceRow(entry, model)));
+  nodes.push(modelPicker(entry));
   if (isActionPending(`model:${entry.tool}`)) {
-    rows.push(el("div", "Switching; the agent restarts and comes back in a few seconds.", "card-note"));
+    nodes.push(el("div", "Switching; the agent restarts and comes back in a few seconds.", "card-note"));
   }
-  if (entry.choices_error) rows.push(el("div", `Model list unavailable: ${entry.choices_error}`, "card-note"));
-  return rows;
+  if (entry.choices_error) nodes.push(el("div", `Model list unavailable: ${entry.choices_error}`, "card-note"));
+  return nodes;
 }
 
 function modelsCard(setup) {
-  return card("Models", ...setup.models.flatMap(modelRows));
+  const nodes = [];
+  for (const [tool, roles] of toolsInUse(setup)) {
+    const entry = setup.models.find((model) => model.tool === tool);
+    if (entry) nodes.push(...toolModelNodes(entry, roles));
+  }
+  return card("Models", ...(nodes.length ? nodes : [muted("No model information from the agent.")]));
 }
 
 function aiToolsPage(view) {
   const setup = setupOf(view);
   settleActions(setup);
-  const nodes = setup ? [rolesCard(setup), modelsCard(setup)] : [setupMissingCard()];
+  const nodes = setup
+    ? [roleCard(setup, "planner", "set_planner", "Planner"),
+       roleCard(setup, "implementer", "set_implementer", "Implementer"),
+       modelsCard(setup)]
+    : [setupMissingCard()];
   return codingSubPage(view, "AI tools", nodes);
 }
