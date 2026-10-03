@@ -70,6 +70,11 @@ function modelsCard(setup) {
     const entry = setup.models.find((model) => model.tool === tool);
     if (entry) nodes.push(...toolModelNodes(entry, roles));
   }
+  const latest = (setup.actions || []).find((result) => result.action === "switch_model");
+  if (latest) {
+    nodes.push(el("div", "Last model switch", "card-subtitle"));
+    nodes.push(el("div", `${latest.status}: ${latest.message}`, "card-note"));
+  }
   return card("Models", ...(nodes.length ? nodes : [muted("No model information from the agent.")]));
 }
 
