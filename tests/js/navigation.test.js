@@ -967,3 +967,24 @@ test("an opened deployment stays open across refreshes", async () => {
   await sleep(60);
   assert.strictEqual(page.doc.querySelector("details.deploy-item").open, true);
 });
+
+test("last model switch result remains visible after its temporary notice expires", async () => {
+  const setup = { ...SETUP, actions: [{ id: "old", action: "switch_model", status: "failed", message: "Restart could not be scheduled", at: 1 }] };
+  const server = codingServer(setup);
+  const page = await openPage("/coding/ai", server.options);
+  await sleep(60);
+  assert.match(page.doc.querySelector("main").textContent, /Last model switchfailed: Restart could not be scheduled/);
+  await page.dom.window.eval("refresh()");
+  assert.match(page.doc.querySelector("main").textContent, /Restart could not be scheduled/);
+  page.dom.window.close();
+});
+
+
+test("Claude limits show age of real usage readings without claiming freshness", async () => {
+  const page = await openPage("/coding", { latencyMs: 10 });
+  await sleep(60);
+  const limits = { claude: { status: "ok", checked_at: Date.now() / 1000 - 7200, windows: [] } };
+  page.dom.window.eval(`document.getElementById("view").replaceChildren(limitsCard(${JSON.stringify(limits)}))`);
+  assert.match(page.text("view"), /Read 2h.*ago · last known reading/);
+  page.dom.window.close();
+});

@@ -41,7 +41,9 @@ function providerLimitRows(name, limits, renderRows) {
   if (limits.status === "ok" && limits.message) rows.push(muted(limits.message));
   if (limits.checked_at) {
     const age = Math.max(0, Math.round((Date.now() / 1000 - limits.checked_at) / 60));
-    rows.push(muted(`Checked ${age} min ago${age >= 10 || limits.status !== "ok" ? " · last known reading" : ""}`));
+    rows.push(muted(name.startsWith("Claude")
+      ? `Read ${formatDuration(Math.max(0, Date.now() / 1000 - limits.checked_at))} ago · last known reading`
+      : `Checked ${age} min ago${age >= 10 || limits.status !== "ok" ? " · last known reading" : ""}`));
   }
   rows.push(...renderRows(limits));
   return rows;
