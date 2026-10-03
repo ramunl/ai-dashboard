@@ -701,10 +701,10 @@ const opsDeployments = (deployments) => async () => ({ ok: true, status: 200,
 test("deployment status shows verified versions and confirms exact rollback target", async () => {
   const page = await openPage("/ops", { respond: opsDeployments(DEPLOYMENT_STATE) });
   await sleep(50);
-  assert.match(page.doc.querySelector("main").textContent, /Current revisionv2 · bbbbbbbb/);
+  assert.match(page.doc.querySelector("main").textContent, /Currentv2 · bbbbbbb/);
   let answer;
   page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => {
-    assert.match(message, /ai-pm-agent to v1 · aaaaaaaa/);
+    assert.match(message, /ai-pm-agent to v1 · aaaaaaa\?/);
     answer = callback;
   };
   let payload;
@@ -712,7 +712,7 @@ test("deployment status shows verified versions and confirms exact rollback targ
     if (init.method === "POST") payload = JSON.parse(init.body);
     return { ok: true, status: 202, json: async () => ({ ...OPS, deployments: DEPLOYMENT_STATE }) };
   };
-  const button = [...page.doc.querySelectorAll("button")].find((item) => item.textContent === "Roll back");
+  const button = [...page.doc.querySelectorAll("button")].find((item) => item.textContent.startsWith("Roll back"));
   button.click();
   button.click();
   assert.strictEqual(payload, undefined);
@@ -731,7 +731,7 @@ test("deployment manager missing and rollback failures are visible", async () =>
   await sleep(50);
   assert.match(failed.doc.querySelector("main").textContent, /rollback failed/);
   assert.match(failed.doc.querySelector("main").textContent, /Health check failed/);
-  assert.strictEqual([...failed.doc.querySelectorAll("button")].some((button) => button.textContent === "Roll back"), false);
+  assert.strictEqual([...failed.doc.querySelectorAll("button")].some((button) => button.textContent.startsWith("Roll back")), false);
   failed.dom.window.close();
 });
 
@@ -739,13 +739,13 @@ test("rollback controls disable during a job and declining confirmation sends no
   const busy = await openPage("/ops", { respond: opsDeployments({ ...DEPLOYMENT_STATE,
     targets: [{ ...DEPLOYMENT_STATE.targets[0], status: "rolling_back" }] }) });
   await sleep(50);
-  const busyButton = [...busy.doc.querySelectorAll("button")].find((button) => button.textContent === "Roll back");
+  const busyButton = [...busy.doc.querySelectorAll("button")].find((button) => button.textContent.startsWith("Roll back"));
   assert.strictEqual(busyButton.disabled, true);
   busy.dom.window.close();
   const page = await openPage("/ops", { respond: opsDeployments(DEPLOYMENT_STATE) });
   await sleep(50);
   page.dom.window.Telegram.WebApp.showConfirm = (_message, answer) => answer(false);
-  const button = [...page.doc.querySelectorAll("button")].find((item) => item.textContent === "Roll back");
+  const button = [...page.doc.querySelectorAll("button")].find((item) => item.textContent.startsWith("Roll back"));
   button.click();
   assert.strictEqual(button.disabled, false);
   assert.deepStrictEqual(page.posts, []);
@@ -760,11 +760,11 @@ test("failed recovery disables every rollback control and shows server recovery 
   ] };
   const page = await openPage("/ops", { respond: opsDeployments(state) });
   await sleep(50);
-  const buttons = [...page.doc.querySelectorAll("button")].filter(button => button.textContent === "Roll back");
+  const buttons = [...page.doc.querySelectorAll("button")].filter(button => button.textContent.startsWith("Roll back"));
   assert.strictEqual(buttons.length, 2);
   assert.strictEqual(buttons.every(button => button.disabled), true);
   assert.match(page.doc.querySelector("main").textContent, /ai-deploy recover/);
-  assert.match(page.doc.querySelector("main").textContent, /Last health verification2026/);
+  assert.match(page.doc.querySelector("main").textContent, /ai-pm-agentrollback failed/);
   page.dom.window.close();
 });
 
@@ -934,4 +934,36 @@ test("an older agent without setup data gets a clear note", async () => {
   const page = await openPage("/coding/projects", { latencyMs: 10 });
   await sleep(60);
   assert.match(page.doc.querySelector("main").textContent, /Update the coding agent to manage its setup here/);
+});
+
+test("deployments are compact rows; rollback only when there is an earlier version", async () => {
+  const now = new Date(Date.now() - 120 * 1000).toISOString();
+  const same = { commit: "c".repeat(40), version: "0.3.0", verified_at: now };
+  const state = { ok: true, targets: [
+    { name: "ai-coding-agent", status: "healthy", current: same, previous: same },
+    { name: "ai-pm-agent", status: "healthy", current: { ...same, commit: "d".repeat(40) },
+      previous: { commit: "e".repeat(40), version: "0.0.9", verified_at: now } },
+  ] };
+  const page = await openPage("/ops", { respond: opsDeployments(state) });
+  await sleep(60);
+  const items = [...page.doc.querySelectorAll("details.deploy-item")];
+  assert.strictEqual(items.length, 2);
+  assert.ok(items.every((item) => !item.open), "details start closed");
+  assert.match(items[0].querySelector("summary").textContent, /ai-coding-agentverified 2m ago0\.3\.0 · ccccccc/);
+  assert.doesNotMatch(page.doc.querySelector("main").textContent, /2026-|T\d\d:\d\d/);
+  // Same commit before and after: nothing to roll back to.
+  assert.strictEqual(items[0].querySelector("button"), null);
+  assert.match(items[0].textContent, /No earlier verified version/);
+  assert.strictEqual(items[1].querySelector("button").textContent, "Roll back to 0.0.9 · eeeeeee");
+});
+
+test("an opened deployment stays open across refreshes", async () => {
+  const page = await openPage("/ops", { respond: opsDeployments(DEPLOYMENT_STATE) });
+  await sleep(60);
+  const item = page.doc.querySelector("details.deploy-item");
+  item.open = true;
+  item.dispatchEvent(new page.dom.window.Event("toggle"));
+  page.dom.window.eval("refresh()");
+  await sleep(60);
+  assert.strictEqual(page.doc.querySelector("details.deploy-item").open, true);
 });

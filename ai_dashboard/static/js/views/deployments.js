@@ -1,13 +1,39 @@
 // Deployment reads and confirmed rollback requests; the manager executes jobs.
+// One compact row per agent; details (and rollback) open on tap.
+
 let rollbackPending = false;
+const openDeployments = new Set(); // names whose details are open, kept across refreshes
+const DEPLOY_BUSY = ["queued", "deploying", "rolling_back", "rollback_failed"];
 
 function deploymentRevision(revision) {
   if (!revision) return "Not recorded";
-  return `${revision.version || "unknown version"} · ${(revision.commit || "unknown").slice(0, 8)}`;
+  return `${revision.version || "unknown version"} · ${(revision.commit || "unknown").slice(0, 7)}`;
+}
+
+// "verified 2 min ago" from an ISO time or epoch seconds.
+function verifiedAgo(value) {
+  if (value === null || value === undefined || value === "") return "not verified";
+  const time = typeof value === "number" ? value * 1000 : Date.parse(value);
+  if (Number.isNaN(time)) return "not verified";
+  const seconds = Math.max(0, (Date.now() - time) / 1000);
+  return seconds < 60 ? "verified just now" : `verified ${formatDuration(seconds)} ago`;
+}
+
+function deploymentStatus(target) {
+  if (target.status === "healthy") return "ok";
+  if (["failed", "rollback_failed"].includes(target.status)) return "bad";
+  return "warn";
+}
+
+function canRollBack(target) {
+  const previous = target.previous;
+  return Boolean(previous && previous.commit && previous.verified_at
+    && (!target.current || previous.commit !== target.current.commit));
 }
 
 function deploymentRollbackButton(target, isBusy) {
-  const button = el("button", "Roll back", "action-button");
+  const label = `Roll back to ${deploymentRevision(target.previous)}`;
+  const button = el("button", label, "danger-button");
   button.type = "button";
   button.disabled = isBusy || rollbackPending;
   button.addEventListener("click", () => {
@@ -27,10 +53,9 @@ function deploymentRollbackButton(target, isBusy) {
           target: target.name, expected_commit: target.previous.commit,
         });
         button.textContent = "Queued";
-        refresh();
       } catch (error) {
         showAlert("Rollback request failed: " + error.message);
-        button.textContent = "Roll back";
+        button.textContent = label;
       } finally {
         rollbackPending = false;
         refresh();
@@ -40,26 +65,54 @@ function deploymentRollbackButton(target, isBusy) {
   return button;
 }
 
+function deploymentSummary(target) {
+  const summary = el("summary", null, "deploy-summary");
+  const title = el("div");
+  title.append(statusDot(deploymentStatus(target)), " ", target.name);
+  const detail = target.status === "healthy"
+    ? verifiedAgo(target.current && target.current.verified_at)
+    : target.status.replaceAll("_", " ");
+  const left = el("div");
+  left.append(title, el("div", detail, "nav-detail"));
+  summary.append(left, el("span", deploymentRevision(target.current), "deploy-revision"));
+  return summary;
+}
+
+function deploymentDetails(target, isBusy) {
+  const nodes = [
+    row("Current", `${deploymentRevision(target.current)} · ${verifiedAgo(target.current && target.current.verified_at)}`),
+  ];
+  if (canRollBack(target)) {
+    nodes.push(row("Previous", `${deploymentRevision(target.previous)} · ${verifiedAgo(target.previous.verified_at)}`));
+    nodes.push(deploymentRollbackButton(target, isBusy));
+  } else {
+    nodes.push(el("div", "No earlier verified version to roll back to.", "card-note"));
+  }
+  return nodes;
+}
+
+function deploymentItem(target, isBusy) {
+  const item = el("details", null, "deploy-item");
+  item.open = openDeployments.has(target.name);
+  item.addEventListener("toggle", () => {
+    if (item.open) openDeployments.add(target.name);
+    else openDeployments.delete(target.name);
+  });
+  item.append(deploymentSummary(target), ...deploymentDetails(target, isBusy));
+  // Problems stay visible without opening the row.
+  const outside = [];
+  if (target.error) outside.push(el("div", target.error, "card-note"));
+  if (target.status === "rollback_failed") {
+    outside.push(muted("Recovery required on the server: ai-deploy recover. Rollback controls remain disabled until recovery succeeds."));
+  }
+  return [item, ...outside];
+}
+
 function deploymentsCard(view) {
   const deployments = view.deployments;
   if (!deployments || !deployments.ok) {
     return card("Deployments", muted((deployments && deployments.error) || "Deployment status unavailable"));
   }
-  const isBusy = deployments.targets.some((target) => ["queued", "deploying", "rolling_back", "rollback_failed"].includes(target.status));
-  const rows = [];
-  for (const target of deployments.targets) {
-    rows.push(el("h3", target.name, "card-subtitle"));
-    rows.push(row("Status", target.status.replaceAll("_", " ")));
-    rows.push(row("Current revision", deploymentRevision(target.current)));
-    if (target.current) rows.push(row("Last health verification", target.current.verified_at || "Not recorded"));
-    if (target.previous) rows.push(row("Previous verified", deploymentRevision(target.previous)));
-    if (target.error) rows.push(el("div", target.error, "card-note"));
-    if (target.status === "rollback_failed") {
-      rows.push(muted("Recovery required on the server: ai-deploy recover. Rollback controls remain disabled until recovery succeeds."));
-    }
-    if (target.previous && target.previous.commit && target.previous.verified_at) {
-      rows.push(deploymentRollbackButton(target, isBusy));
-    }
-  }
-  return card("Deployments", ...rows);
+  const isBusy = deployments.targets.some((target) => DEPLOY_BUSY.includes(target.status));
+  return card("Deployments", ...deployments.targets.flatMap((target) => deploymentItem(target, isBusy)));
 }

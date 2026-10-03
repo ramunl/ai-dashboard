@@ -180,3 +180,18 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .radio-row input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); flex-shrink: 0; }
 .radio-row span { display: flex; flex-direction: column; }
 .radio-note { margin: 0; }
+
+/* Deployments: one compact row per agent, details on tap. */
+.deploy-item + .deploy-item { border-top: 1px solid var(--divider); }
+.deploy-summary {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  padding: 0.45rem 0; cursor: pointer; list-style: none;
+}
+.deploy-summary::-webkit-details-marker { display: none; }
+.deploy-revision { color: var(--hint); font-size: 0.85rem; white-space: nowrap; }
+.deploy-item[open] { padding-bottom: 0.5rem; }
+.danger-button {
+  width: 100%; margin-top: 0.5rem; padding: 0.55rem; border-radius: 0.6rem; font: inherit;
+  background: transparent; color: #d64545; border: 1px solid #d64545; cursor: pointer;
+}
+.danger-button:disabled { opacity: 0.5; cursor: default; }
