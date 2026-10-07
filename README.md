@@ -287,6 +287,12 @@ inbox; fixed action names, no free text). The agent runs its own command
 handlers, so progress and results still arrive in the bot chat. Starting a
 run asks first: it spends AI tokens and opens a pull request.
 
+When nothing is pending, the card has a text field with **Plan**, **Implement**
+and **Bugfix** (the agent's `/plan`, `/implement`, `/bugfix`). This is the one
+place the dashboard sends free text: a single line of at most 4000 characters,
+which becomes the words after the command. Each asks first, and the plan or
+the bugfix questions arrive in the bot chat.
+
 ## Coding setup (Coding window)
 
 The Coding window's **Setup** card opens two sub-windows; Back returns to the

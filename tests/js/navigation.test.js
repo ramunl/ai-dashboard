@@ -1424,11 +1424,12 @@ const codingWork = (work, extra = {}) => ({
 });
 const queuedPost = { onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "abcd1234" }) }) };
 
-test("Work card is quiet when nothing is pending", async () => {
+test("Work card offers to start new work when nothing is pending", async () => {
   const page = await openPage("/coding", codingWork({}));
   await sleep(60);
-  assert.match(workCardOf(page).textContent, /Nothing pendingQueueemptyLast runnone yet/);
-  assert.deepStrictEqual(workButtons(page), []);
+  assert.match(workCardOf(page).textContent, /QueueemptyLast runnone yet/);
+  assert.ok(workCardOf(page).querySelector("textarea.work-draft"));
+  assert.deepStrictEqual(workButtons(page), ["Plan", "Implement", "Bugfix"]);
 });
 
 test("an unapproved plan offers Approve and Cancel; Approve sends at once, only once", async () => {
@@ -1476,7 +1477,7 @@ test("Cancel and Remove ask first and send the exact target", async () => {
 test("a queue left without a runner can be started; a bugfix question points to the chat", async () => {
   const stalled = await openPage("/coding", codingWork({ queue: [{ id: 7, branch: "feat/b", label: "implementation" }] }));
   await sleep(60);
-  assert.deepStrictEqual(workButtons(stalled), ["Remove", "Run the queue"]);
+  assert.deepStrictEqual(workButtons(stalled), ["Plan", "Implement", "Bugfix", "Remove", "Run the queue"]);
   const bugfix = await openPage("/coding", codingWork({ awaiting_bugfix_answer: true }));
   await sleep(60);
   assert.match(workCardOf(bugfix).textContent, /Answer in the bot chat with \/answer\./);
@@ -1494,4 +1495,82 @@ test("a refused work request is shown and the last run keeps its PR link", async
   buttonNamed(page, "Cancel").click();
   await sleep(60);
   assert.match(page.text("alert"), /Not sent: agent inbox is not configured/);
+});
+
+// ---------------------------------------------------------------- start new work
+
+const typeDraft = (page, text) => {
+  const draft = workCardOf(page).querySelector("textarea");
+  draft.value = text;
+  draft.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+};
+
+test("starting work needs text and a confirmation, and sends one normalized line", async () => {
+  const page = await openPage("/coding", codingWork({}, queuedPost));
+  await sleep(60);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Plan").click();
+  assert.match(page.text("alert"), /Describe the feature or the bug first/);
+  assert.strictEqual(asked.length, 0);
+  typeDraft(page, "  add a login\n page  ");
+  const implement = buttonNamed(page, "Implement");
+  implement.click();
+  implement.click();  // double tap
+  await sleep(60);
+  assert.strictEqual(asked.length, 1);
+  assert.match(asked[0], /Plan and prepare "add a login page"\? This uses AI tokens/);
+  assert.deepStrictEqual(page.bodies, [{ action: "start_work", args: { kind: "implement", text: "add a login page" } }]);
+});
+
+test("declining keeps the draft; the draft survives a refresh until the agent accepts it", async () => {
+  const state = { actions: [] };
+  const page = await openPage("/coding", {
+    latencyMs: 10,
+    respond: async (name) => ({ ok: true, status: 200,
+      json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, setup: { ...SETUP, actions: state.actions } } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "abcd1234" }) }),
+  });
+  await sleep(60);
+  typeDraft(page, "fix the crash on start");
+  confirmWith(page, false);
+  buttonNamed(page, "Bugfix").click();
+  await sleep(30);
+  assert.deepStrictEqual(page.posts, []);
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.strictEqual(workCardOf(page).querySelector("textarea").value, "fix the crash on start");
+  confirmWith(page, true);
+  buttonNamed(page, "Bugfix").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "start_work", args: { kind: "bugfix", text: "fix the crash on start" } }]);
+  assert.strictEqual(workCardOf(page).querySelector("textarea").value, "fix the crash on start");
+  state.actions = [{ id: "abcd1234", action: "start_work", status: "done", message: "Checking whether the bug report is actionable..." }];
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.strictEqual(workCardOf(page).querySelector("textarea").value, "");
+  assert.match(page.text("alert"), /Checking whether the bug report is actionable\.\.\. The result will arrive in the bot chat\./);
+});
+
+test("a refused start keeps the draft and shows the agent's reason", async () => {
+  const state = { actions: [] };
+  const page = await openPage("/coding", {
+    latencyMs: 10,
+    respond: async (name) => ({ ok: true, status: 200,
+      json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, setup: { ...SETUP, actions: state.actions } } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "abcd1234" }) }),
+  });
+  await sleep(60);
+  typeDraft(page, "add search");
+  confirmWith(page, true);
+  buttonNamed(page, "Plan").click();
+  await sleep(60);
+  state.actions = [{ id: "abcd1234", action: "start_work", status: "failed", message: "A request is already being planned; wait for the bot chat." }];
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.match(page.text("alert"), /already being planned/);
+  assert.strictEqual(workCardOf(page).querySelector("textarea").value, "add search");
 });

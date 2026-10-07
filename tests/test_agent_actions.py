@@ -45,6 +45,19 @@ class CheckTests(unittest.TestCase):
             with self.assertRaises(RequestError, msg=str(task)):
                 check({"action": "remove_queued", "args": {"task": task}})
 
+    def test_start_work_takes_one_visible_line_and_a_fixed_kind(self) -> None:
+        check({"action": "start_work", "args": {"kind": "plan", "text": "add /health"}})
+        for kind, text in (
+            ("deploy", "x"),
+            ("plan", ""),
+            ("plan", "  "),
+            ("plan", "two\nlines"),
+            ("plan", "x" * 4001),
+            ("plan", ["x"]),
+        ):
+            with self.assertRaises(RequestError, msg=repr(text)):
+                check({"action": "start_work", "args": {"kind": kind, "text": text}})
+
     def test_refuses_malformed(self) -> None:
         for body in (
             [],

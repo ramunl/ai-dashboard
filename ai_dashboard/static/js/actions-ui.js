@@ -8,10 +8,11 @@ const FINAL_STATUSES = ["done", "failed", "expired", "rejected"];
 const pendingActions = new Map(); // request id -> { key, startedAt }
 let actionNotice = null; // { text, until } shown in the alert box
 
-async function requestAction(key, action, args) {
+// onDone(result), if given, runs once the agent reports the action as done.
+async function requestAction(key, action, args, onDone = null) {
   try {
     const answer = await postAction("coding/actions", tg ? tg.initData : "", { action, args });
-    pendingActions.set(answer.id, { key, startedAt: Date.now() });
+    pendingActions.set(answer.id, { key, startedAt: Date.now(), onDone });
   } catch (error) {
     actionNotice = { text: `Not sent: ${error.message}`, until: Date.now() + NOTICE_MS };
   }
@@ -35,6 +36,8 @@ function settleActions(setup) {
       pendingActions.delete(id);
       if (result.status !== "done") {
         actionNotice = { text: result.message, until: Date.now() + NOTICE_MS };
+      } else if (pending.onDone) {
+        pending.onDone(result);
       }
     } else if (Date.now() - pending.startedAt > ACTION_TIMEOUT_MS) {
       pendingActions.delete(id);
