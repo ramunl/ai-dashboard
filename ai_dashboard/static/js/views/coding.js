@@ -89,8 +89,11 @@ function codingPage(view) {
   settleActions(setupOf(view));
   const project = view.snapshot && view.snapshot.project;
   return {
-    title: project ? project.name : "Coding agent",
-    subtitle: project ? `${project.repository} [${project.branch}]` : "",
+    // Always the agent's name, like the PM and Ops windows: Telegram's own
+    // header shows whichever bot opened the dashboard, so this line is the
+    // only reliable sign of which window is open.
+    title: "Coding agent",
+    subtitle: project ? `project: ${project.name} · ${project.repository} [${project.branch}]` : "",
     status: view.problem ? "bad" : "ok",
     alert: view.problem ? `coding agent ${view.problem}` : actionNoticeText(),
     nodes: codingCards(view.snapshot),

@@ -186,7 +186,8 @@ test("Back from the coding window renders the launcher again", async () => {
   await sleep(250);
   page.tapAgent(0);
   await sleep(250);
-  assert.deepStrictEqual(page.state(), { path: "/coding", title: "repo", cards: 8, backVisible: true });
+  assert.deepStrictEqual(page.state(), { path: "/coding", title: "Coding agent", cards: 8, backVisible: true });
+  assert.match(page.text("subtitle"), /^project: repo · /);
   page.back.handler();
   await sleep(250);
   assert.deepStrictEqual(page.state(), { path: "/", title: "AI Agents", cards: 2, backVisible: false });
