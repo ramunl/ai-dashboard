@@ -17,6 +17,7 @@ from ai_dashboard.auth import InitDataError, verify_init_data
 from ai_dashboard.config import Settings
 from ai_dashboard.deployments import TARGETS, DeploymentService
 from ai_dashboard.disk_history import record_forever
+from ai_dashboard.logs import read_logs, readable_units
 from ai_dashboard.maintenance import CleanupService
 from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
 from ai_dashboard.sources import service_state
@@ -152,6 +153,27 @@ async def cleanup_action(request: web.Request) -> web.Response:
     return web.json_response({"started": True}, status=202, headers=_NO_STORE)
 
 
+async def logs_data(request: web.Request) -> web.Response:
+    """Owner-only recent journal lines for one monitored unit."""
+    settings = request.app[SETTINGS]
+    try:
+        verify_init_data(_init_data(request), settings.tokens(), settings.owner_id)
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    units = readable_units(settings)
+    # No unit given: the first one, so the card can open without a choice.
+    unit = request.query.get("unit") or (units[0] if units else "")
+    if unit not in units:
+        return web.json_response(
+            {"error": "unknown unit", "units": units}, status=400, headers=_NO_STORE
+        )
+    errors_only = request.query.get("errors") == "1"
+    result = await read_logs(unit, errors_only, settings.tokens().values())
+    return web.json_response({**result, "units": units}, headers=_NO_STORE)
+
+
 async def rollback_action(request: web.Request) -> web.Response:
     """Authenticate and queue a fixed-target rollback outside this service."""
     settings = request.app[SETTINGS]
@@ -217,6 +239,8 @@ def build_app(
     app[CLEANUP] = CleanupService(settings.cleanup_command)
     register_pm_routes(app, settings)
     app.router.add_get("/healthz", health)
+    # Before /api/{window}: aiohttp matches routes in order.
+    app.router.add_get("/api/ops/logs", logs_data)
     app.router.add_get("/api/{window}", window_data)
     app.router.add_post("/api/ops/cleanup", cleanup_action)
     app.router.add_post("/api/ops/rollback", rollback_action)

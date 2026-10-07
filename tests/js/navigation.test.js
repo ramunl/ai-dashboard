@@ -59,6 +59,11 @@ const REPORT = {
   largest: [{ path: "/root/.codex", bytes: 2.4 * 1024 ** 3 }, { path: "/var/log", bytes: 1.3 * 1024 ** 3 }],
 };
 const OPS = { ...LAUNCHER, cleanup: { report: REPORT, report_at: 1, running: false, last_run: null } };
+const LOGS = {
+  ok: true, unit: "ai-coding-agent", errors_only: false,
+  units: ["ai-coding-agent", "ai-pm-agent", "ai-ops-agent"],
+  lines: ["2026-10-07T00:00:01+0300 vps python[1]: started", "2026-10-07T00:00:02+0300 vps python[1]: idle"],
+};
 const DATA = { launcher: LAUNCHER, ops: OPS, coding: CODING, pm: PM };
 
 // A request that never answers until the page aborts it.
@@ -75,6 +80,7 @@ async function openPage(url, options = {}) {
   const back = { handler: null, visible: false };
   const errors = [];
   const posts = [];
+  const logRequests = [];
   const bodies = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (error) => errors.push(error.message));
@@ -92,6 +98,11 @@ async function openPage(url, options = {}) {
           bodies.push(init.body ? JSON.parse(init.body) : null);
           if (options.onPost) return options.onPost(api, init);
           return { ok: true, status: 202, json: async () => ({ started: true }) };
+        }
+        if (name.startsWith("logs?")) {
+          logRequests.push(name);
+          const answer = options.logs ? options.logs(name) : LOGS;
+          return { ok: true, status: 200, json: async () => answer };
         }
         if (respond) return respond(name, init.signal);
         await sleep(latencyMs);  // a slow 1-CPU server
@@ -112,7 +123,7 @@ async function openPage(url, options = {}) {
     }),
     text: (id) => doc.getElementById(id).textContent,
     tapAgent: (index) => doc.querySelectorAll(".nav-row")[index].click(),
-    doc, posts, bodies,
+    doc, posts, bodies, logRequests,
   };
 }
 
@@ -276,12 +287,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Deployments", "Needs attention", "Disk usage", "Server resources"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Deployments", "Needs attention", "Disk usage", "Server resources", "Logs"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Deployments", "Disk usage", "Server resources"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Deployments", "Disk usage", "Server resources", "Logs"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {
@@ -950,7 +961,8 @@ test("deployments are compact rows; rollback only when there is an earlier versi
   assert.strictEqual(items.length, 2);
   assert.ok(items.every((item) => !item.open), "details start closed");
   assert.match(items[0].querySelector("summary").textContent, /ai-coding-agentverified 2m ago0\.3\.0 · ccccccc/);
-  assert.doesNotMatch(page.doc.querySelector("main").textContent, /2026-|T\d\d:\d\d/);
+  const deployCard = page.doc.querySelector("details.deploy-item").closest("section");
+  assert.doesNotMatch(deployCard.textContent, /2026-|T\d\d:\d\d/);
   // Same commit before and after: nothing to roll back to.
   assert.strictEqual(items[0].querySelector("button"), null);
   assert.match(items[0].textContent, /No earlier verified version/);
@@ -1000,4 +1012,46 @@ test("cards sit in a responsive grid; alerts span the full width", async () => {
   const agents = [...page.doc.querySelectorAll("main section")]
     .find((node) => node.querySelector("h2").textContent === "Agents");
   assert.ok(!agents.classList.contains("card-wide"));
+});
+
+// ---------------------------------------------------------------- logs card
+
+const logsCardOf = (page) => [...page.doc.querySelectorAll("main section")]
+  .find((node) => node.querySelector("h2") && node.querySelector("h2").textContent === "Logs");
+
+test("Ops window loads logs once and shows the lines, full width at the end", async () => {
+  const page = await openPage("/ops", { latencyMs: 10 });
+  await sleep(80);
+  const card = logsCardOf(page);
+  assert.ok(card.classList.contains("card-wide") && card.classList.contains("card-last"));
+  assert.match(card.querySelector("pre").textContent, /started\n.*idle/s);
+  assert.deepStrictEqual(page.logRequests, ["logs?unit=&errors=0"]);
+  // The 5-second refresh redraws the window but neither reloads nor replaces the card.
+  page.dom.window.eval("refresh()");
+  await sleep(60);
+  assert.strictEqual(logsCardOf(page), card);
+  assert.strictEqual(page.logRequests.length, 1);
+});
+
+test("picking a service or the errors filter reloads with that choice", async () => {
+  const page = await openPage("/ops", {
+    latencyMs: 10,
+    logs: (name) => ({ ...LOGS, unit: new URLSearchParams(name.split("?")[1]).get("unit") || "ai-coding-agent", lines: [] }),
+  });
+  await sleep(80);
+  const pick = (label) => [...logsCardOf(page).querySelectorAll("button")].find((b) => b.textContent === label).click();
+  pick("ai-pm-agent");
+  await sleep(60);
+  pick("Errors (24 h)");
+  await sleep(60);
+  assert.deepStrictEqual(page.logRequests.slice(1), ["logs?unit=ai-pm-agent&errors=0", "logs?unit=ai-pm-agent&errors=1"]);
+  const pressed = [...logsCardOf(page).querySelectorAll('button[aria-pressed="true"]')].map((b) => b.textContent);
+  assert.deepStrictEqual(pressed, ["ai-pm-agent", "Errors (24 h)"]);
+  assert.match(logsCardOf(page).textContent, /No errors in the last 24 hours/);
+});
+
+test("a failed logs request is shown in the card", async () => {
+  const page = await openPage("/ops", { latencyMs: 10, logs: () => ({ ok: false, error: "journalctl is not available or timed out", units: [] }) });
+  await sleep(80);
+  assert.match(logsCardOf(page).textContent, /journalctl is not available/);
 });
