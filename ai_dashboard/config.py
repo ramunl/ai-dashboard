@@ -52,6 +52,7 @@ class Settings:
     state_dir: Path = Path("/var/lib/ai-dashboard")
     cleanup_command: str = "/usr/local/sbin/ai-cleanup"
     service_command: str = "/usr/local/sbin/ai-service"
+    packages_command: str = "/usr/local/sbin/ai-packages"
     deployment_command: str = "/usr/local/sbin/ai-deploy"
     pm_command: str = "/usr/local/sbin/ai-pm-todos"
 
@@ -217,5 +218,8 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         ),
         service_command=env.get(
             "DASHBOARD_SERVICE_COMMAND", "/usr/local/sbin/ai-service"
+        ),
+        packages_command=env.get(
+            "DASHBOARD_PACKAGES_COMMAND", "/usr/local/sbin/ai-packages"
         ),
     )

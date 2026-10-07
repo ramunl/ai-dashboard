@@ -19,6 +19,7 @@ from ai_dashboard.deployments import TARGETS, DeploymentService
 from ai_dashboard.disk_history import record_forever
 from ai_dashboard.logs import read_logs, readable_units
 from ai_dashboard.maintenance import CleanupService
+from ai_dashboard.package_updates import TIMEOUTS, PackageService
 from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
 from ai_dashboard.service_actions import ServiceControl
 from ai_dashboard.sources import service_state
@@ -33,6 +34,7 @@ SETTINGS = web.AppKey("settings", Settings)
 DEPLOYMENTS = web.AppKey("deployments", DeploymentService)
 CLEANUP = web.AppKey("cleanup", CleanupService)
 SERVICES = web.AppKey("services", ServiceControl)
+PACKAGES = web.AppKey("packages", PackageService)
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
@@ -94,6 +96,7 @@ async def window_data(request: web.Request) -> web.Response:
                 (view.get("resources") or {}).get("uptime_seconds"),
             ),
             "cleanup": request.app[CLEANUP].state(),
+            "packages": request.app[PACKAGES].state(),
             "deployments": await request.app[DEPLOYMENTS].state(),
         }
     return web.json_response({**view, "opened_from": viewer.bot}, headers=_NO_STORE)
@@ -157,6 +160,36 @@ async def cleanup_action(request: web.Request) -> web.Response:
             {"error": "a cleanup is already running"}, status=409, headers=_NO_STORE
         )
     return web.json_response({"started": True}, status=202, headers=_NO_STORE)
+
+
+async def packages_action(request: web.Request) -> web.Response:
+    """Owner-only start of a package check or upgrade; the page polls for it."""
+    settings = request.app[SETTINGS]
+    try:
+        viewer = verify_init_data(
+            _init_data(request), settings.tokens(), settings.owner_id
+        )
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    try:
+        payload = await request.json()
+    except ValueError:
+        payload = None
+    expected = 'expected {"action": "check" or "upgrade"}'
+    if not isinstance(payload, dict) or set(payload) != {"action"}:
+        return web.json_response({"error": expected}, status=400, headers=_NO_STORE)
+    action = payload["action"]
+    if not isinstance(action, str) or action not in TIMEOUTS:
+        return web.json_response({"error": expected}, status=400, headers=_NO_STORE)
+    if not request.app[PACKAGES].start(action, viewer.bot):
+        return web.json_response(
+            {"error": "a package run is already active"},
+            status=409,
+            headers=_NO_STORE,
+        )
+    return web.json_response({"started": action}, status=202, headers=_NO_STORE)
 
 
 async def logs_data(request: web.Request) -> web.Response:
@@ -271,6 +304,7 @@ def build_app(
     app[DEPLOYMENTS] = DeploymentService(settings.deployment_command)
     app[CLEANUP] = CleanupService(settings.cleanup_command)
     app[SERVICES] = ServiceControl(settings.service_command)
+    app[PACKAGES] = PackageService(settings.packages_command)
     register_pm_routes(app, settings)
     app.router.add_get("/healthz", health)
     # Before /api/{window}: aiohttp matches routes in order.
@@ -279,6 +313,7 @@ def build_app(
     app.router.add_post("/api/ops/cleanup", cleanup_action)
     app.router.add_post("/api/ops/rollback", rollback_action)
     app.router.add_post("/api/ops/restart", restart_action)
+    app.router.add_post("/api/ops/packages", packages_action)
 
     app.router.add_post("/api/coding/actions", coding_action)
     app.router.add_get("/static/{name:.+}", static_file)
@@ -305,6 +340,7 @@ def build_app(
 
     async def stop_cleanup(_app: web.Application) -> None:
         await app[CLEANUP].close()
+        await app[PACKAGES].close()
 
     app.on_cleanup.append(stop_cleanup)
 

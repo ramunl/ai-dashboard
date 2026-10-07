@@ -26,8 +26,11 @@ NOT_INSTALLED = (
 )
 
 
-async def invoke(command: str, mode: str, timeout: float) -> dict:
+async def invoke(
+    command: str, mode: str, timeout: float, name: str = "ai-cleanup"
+) -> dict:
     """Run ``command mode`` and return its JSON result, or an error result."""
+    not_installed = NOT_INSTALLED.replace("ai-cleanup", name)
     try:
         process = await asyncio.create_subprocess_exec(
             command,
@@ -37,7 +40,7 @@ async def invoke(command: str, mode: str, timeout: float) -> dict:
             start_new_session=True,
         )
     except (FileNotFoundError, PermissionError):
-        return {"ok": False, "error": NOT_INSTALLED}
+        return {"ok": False, "error": not_installed}
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except (asyncio.TimeoutError, asyncio.CancelledError) as error:
@@ -49,7 +52,7 @@ async def invoke(command: str, mode: str, timeout: float) -> dict:
             raise
         return {
             "ok": False,
-            "error": f"ai-cleanup {mode} timed out after {timeout:.0f} s",
+            "error": f"{name} {mode} timed out after {timeout:.0f} s",
         }
     try:
         result = json.loads(stdout.decode(errors="replace"))
@@ -57,7 +60,7 @@ async def invoke(command: str, mode: str, timeout: float) -> dict:
         detail = stderr.decode(errors="replace").strip().splitlines()[-1:] or [
             "no output"
         ]
-        return {"ok": False, "error": f"ai-cleanup {mode} failed: {detail[0]}"}
+        return {"ok": False, "error": f"{name} {mode} failed: {detail[0]}"}
     return result if isinstance(result, dict) else {"ok": False, "error": "bad output"}
 
 

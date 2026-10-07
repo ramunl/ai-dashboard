@@ -114,6 +114,7 @@ a chat still lists commands.
 | `DASHBOARD_STATE_DIR` | `/var/lib/ai-dashboard` | the dashboard's own state (disk history) |
 | `DASHBOARD_CLEANUP_COMMAND` | `/usr/local/sbin/ai-cleanup` | disk report and cleanup (from ai-ops-agent) |
 | `DASHBOARD_SERVICE_COMMAND` | `/usr/local/sbin/ai-service` | service list and restarts (from ai-ops-agent) |
+| `DASHBOARD_PACKAGES_COMMAND` | `/usr/local/sbin/ai-packages` | package check and upgrade (from ai-ops-agent) |
 
 All bots' `YOUR_CHAT_ID` must match; otherwise the dashboard refuses to start.
 
@@ -319,6 +320,10 @@ needs the owner's signed Telegram data, and the agent side validates again.
   warns when the coding agent is running a task, and when restarting the
   dashboard itself). `POST /api/ops/restart` takes only `{"service": name}`;
   the restart is queued, so the dashboard answers before it goes down.
+- **Updates**: system packages, via the ops agent's `ai-packages`. *Check for
+  updates* refreshes the package indexes and lists what is pending (security
+  updates counted separately); *Upgrade* asks first, then installs. Nothing
+  runs on its own, one run at a time, and a required reboot is shown.
 - **Logs**: the last 80 journal lines of one service, or its errors from the
   last 24 hours. Loaded on demand (not by the 5-second refresh). `GET
   /api/ops/logs?unit=&errors=` reads only units the dashboard monitors.

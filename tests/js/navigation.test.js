@@ -293,12 +293,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Services", "Deployments", "Needs attention", "Disk usage", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Services", "Deployments", "Needs attention", "Disk usage", "Updates", "Server resources", "Logs"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "Server resources", "Logs"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {
@@ -1132,4 +1132,64 @@ test("without ai-service the card explains instead of offering buttons", async (
   await sleep(60);
   assert.match(servicesCardOf(page).textContent, /ai-service is not installed/);
   assert.strictEqual(restartButtons(page).length, 0);
+});
+
+// ---------------------------------------------------------------- updates card
+
+const updatesCardOf = (page) => [...page.doc.querySelectorAll("main section")]
+  .find((node) => node.querySelector("h2") && node.querySelector("h2").textContent === "Updates");
+const updateButtons = (page) => [...updatesCardOf(page).querySelectorAll("button")];
+const PACKAGE_REPORT = { ok: true, total: 3, security: ["openssl"], stable: ["curl"], untested: ["vim"],
+  checked_at: Date.now() / 1000 - 120, reboot_required: true };
+const withPackages = (packages) => opsServer({ packages: { running: null, report: null, last_upgrade: null, ...packages } });
+
+test("Updates card offers only a check until one has run", async () => {
+  const page = await openPage("/ops", withPackages({}));
+  await sleep(60);
+  assert.match(updatesCardOf(page).textContent, /Not checked since the dashboard started/);
+  assert.deepStrictEqual(updateButtons(page).map((button) => button.textContent), ["Check for updates"]);
+  updateButtons(page)[0].click();
+  await sleep(60);
+  assert.deepStrictEqual(page.posts, ["/api/ops/packages"]);
+  assert.deepStrictEqual(page.bodies, [{ action: "check" }]);
+});
+
+test("Updates card lists what is available and asks before upgrading", async () => {
+  const page = await openPage("/ops", withPackages({ report: PACKAGE_REPORT }));
+  await sleep(60);
+  const text = updatesCardOf(page).textContent;
+  assert.match(text, /Available3Security1openssl, curl, vimChecked2m/);
+  assert.match(text, /Rebootrequired to finish updates/);
+  let asked = confirmWith(page, false);
+  updateButtons(page)[1].click();
+  await sleep(60);
+  assert.match(asked[0], /Upgrade 3 packages\?/);
+  assert.deepStrictEqual(page.posts, []);
+  asked = confirmWith(page, true);
+  updateButtons(page)[1].click();
+  updateButtons(page)[1].click();  // double tap
+  await sleep(60);
+  assert.strictEqual(asked.length, 1);
+  assert.deepStrictEqual(page.bodies, [{ action: "upgrade" }]);
+});
+
+test("Updates card is locked while a run is active and shows the last upgrade", async () => {
+  const page = await openPage("/ops", withPackages({ running: "upgrade", report: PACKAGE_REPORT,
+    last_upgrade: { ok: false, error: "E: dpkg was interrupted" } }));
+  await sleep(60);
+  assert.deepStrictEqual(updateButtons(page).map((button) => [button.textContent, button.disabled]),
+    [["Check for updates", true], ["Upgrading…", true]]);
+  assert.match(updatesCardOf(page).textContent, /Last upgradefailedE: dpkg was interrupted/);
+});
+
+test("Updates card hides Upgrade when nothing is pending and reports a refused start", async () => {
+  const page = await openPage("/ops", { ...withPackages({ report: { ...PACKAGE_REPORT, total: 0, security: [], stable: [], untested: [] } }),
+    onPost: async () => ({ ok: false, status: 409, json: async () => ({ error: "a package run is already active" }) }) });
+  await sleep(60);
+  assert.match(updatesCardOf(page).textContent, /Availableup to date/);
+  assert.strictEqual(updateButtons(page).length, 1);
+  updateButtons(page)[0].click();
+  await sleep(60);
+  assert.match(page.text("alert"), /Package check did not start: a package run is already active/);
+  assert.strictEqual(updateButtons(page)[0].disabled, false);
 });
