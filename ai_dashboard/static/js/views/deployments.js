@@ -1,5 +1,5 @@
-// Deployment reads and confirmed rollback requests; the manager executes jobs.
-// One compact row per agent; details (and rollback) open on tap.
+// Deployment reads, and confirmed deploy and rollback requests; the manager
+// executes jobs. One compact row per agent; details and actions open on tap.
 
 let rollbackPending = false;
 const openDeployments = new Set(); // names whose details are open, kept across refreshes
@@ -53,12 +53,49 @@ function deploymentRollbackButton(target, isBusy) {
           target: target.name, expected_commit: target.previous.commit,
         });
         button.textContent = "Queued";
-      } catch (error) {
-        showAlert("Rollback request failed: " + error.message);
-        button.textContent = label;
-      } finally {
         rollbackPending = false;
         refresh();
+      } catch (error) {
+        // No refresh here: redrawing the page would clear the message.
+        rollbackPending = false;
+        button.disabled = isBusy;
+        button.textContent = label;
+        showAlert("Rollback request failed: " + error.message);
+      }
+    });
+  });
+  return button;
+}
+
+function deploymentDeployButton(target, isBusy, view) {
+  const label = "Deploy latest main";
+  const button = el("button", label, "action-button deploy-button");
+  button.type = "button";
+  button.disabled = isBusy || rollbackPending;
+  button.addEventListener("click", () => {
+    if (rollbackPending) return;
+    // Reserve before showing the asynchronous Telegram confirmation dialog.
+    rollbackPending = true;
+    button.disabled = true;
+    const question = `Deploy the latest main to ${target.name}? The service will restart.${restartWarning(target.name, view)}`;
+    askConfirmation(question, async (isConfirmed) => {
+      if (!isConfirmed) {
+        rollbackPending = false;
+        button.disabled = isBusy;
+        return;
+      }
+      button.textContent = "Queuing…";
+      try {
+        await postAction("ops/deploy", tg ? tg.initData : "", { target: target.name });
+        button.textContent = "Queued";
+        rollbackPending = false;
+        refresh();
+      } catch (error) {
+        // No refresh here: redrawing the page would clear the message.
+        rollbackPending = false;
+        button.disabled = isBusy;
+        button.textContent = label;
+        showAlert("Deployment request failed: " + error.message);
       }
     });
   });
@@ -78,7 +115,7 @@ function deploymentSummary(target) {
   return summary;
 }
 
-function deploymentDetails(target, isBusy) {
+function deploymentDetails(target, isBusy, view) {
   const nodes = [
     row("Current", `${deploymentRevision(target.current)} · ${verifiedAgo(target.current && target.current.verified_at)}`),
   ];
@@ -88,17 +125,18 @@ function deploymentDetails(target, isBusy) {
   } else {
     nodes.push(el("div", "No earlier verified version to roll back to.", "card-note"));
   }
+  nodes.push(deploymentDeployButton(target, isBusy, view));
   return nodes;
 }
 
-function deploymentItem(target, isBusy) {
+function deploymentItem(target, isBusy, view) {
   const item = el("details", null, "deploy-item");
   item.open = openDeployments.has(target.name);
   item.addEventListener("toggle", () => {
     if (item.open) openDeployments.add(target.name);
     else openDeployments.delete(target.name);
   });
-  item.append(deploymentSummary(target), ...deploymentDetails(target, isBusy));
+  item.append(deploymentSummary(target), ...deploymentDetails(target, isBusy, view));
   // Problems stay visible without opening the row.
   const outside = [];
   if (target.error) outside.push(el("div", target.error, "card-note"));
@@ -114,5 +152,5 @@ function deploymentsCard(view) {
     return card("Deployments", muted((deployments && deployments.error) || "Deployment status unavailable"));
   }
   const isBusy = deployments.targets.some((target) => DEPLOY_BUSY.includes(target.status));
-  return card("Deployments", ...deployments.targets.flatMap((target) => deploymentItem(target, isBusy)));
+  return card("Deployments", ...deployments.targets.flatMap((target) => deploymentItem(target, isBusy, view)));
 }

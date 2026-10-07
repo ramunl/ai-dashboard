@@ -357,6 +357,32 @@ async def rollback_action(request: web.Request) -> web.Response:
     return web.json_response(result, status=status, headers=_NO_STORE)
 
 
+async def deploy_action(request: web.Request) -> web.Response:
+    """Owner-only: queue a deployment of the latest main for one fixed target."""
+    settings = request.app[SETTINGS]
+    try:
+        verify_init_data(_init_data(request), settings.tokens(), settings.owner_id)
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    try:
+        payload = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        payload = None
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"target"}
+        or payload["target"] not in TARGETS
+    ):
+        return web.json_response(
+            {"error": "Invalid deployment request"}, status=400, headers=_NO_STORE
+        )
+    result = await request.app[DEPLOYMENTS].deploy(payload["target"])
+    status = 202 if result.get("ok") else 409 if result.get("conflict") else 503
+    return web.json_response(result, status=status, headers=_NO_STORE)
+
+
 async def _point_menu_buttons(settings: Settings, api_base: str) -> None:
     """Point every bot's menu button at its window; retry a few times at boot."""
     async with aiohttp.ClientSession() as session:
@@ -400,6 +426,7 @@ def build_app(
     app.router.add_get("/api/{window}", window_data)
     app.router.add_post("/api/ops/cleanup", cleanup_action)
     app.router.add_post("/api/ops/rollback", rollback_action)
+    app.router.add_post("/api/ops/deploy", deploy_action)
     app.router.add_post("/api/ops/restart", restart_action)
     app.router.add_post("/api/ops/reboot", reboot_action)
     app.router.add_post("/api/ops/packages", packages_action)

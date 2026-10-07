@@ -970,9 +970,10 @@ test("deployments are compact rows; rollback only when there is an earlier versi
   const deployCard = page.doc.querySelector("details.deploy-item").closest("section");
   assert.doesNotMatch(deployCard.textContent, /2026-|T\d\d:\d\d/);
   // Same commit before and after: nothing to roll back to.
-  assert.strictEqual(items[0].querySelector("button"), null);
+  assert.strictEqual(items[0].querySelector("button.danger-button"), null);
   assert.match(items[0].textContent, /No earlier verified version/);
-  assert.strictEqual(items[1].querySelector("button").textContent, "Roll back to 0.0.9 · eeeeeee");
+  assert.strictEqual(items[1].querySelector("button.danger-button").textContent, "Roll back to 0.0.9 · eeeeeee");
+  assert.ok(items.every((item) => item.querySelector("button.deploy-button")), "every agent can be deployed");
 });
 
 test("an opened deployment stays open across refreshes", async () => {
@@ -1295,4 +1296,41 @@ test("a refused reboot says why and frees the button; no ai-service, no button",
   const missing = await openPage("/ops", opsServer({ service_control: { ok: false, error: "ai-service is not installed", services: [] } }));
   await sleep(60);
   assert.strictEqual(rebootButtonOf(missing), null);
+});
+
+// ---------------------------------------------------------------- deploy latest
+
+const deployButtonOf = (page) => page.doc.querySelector("button.deploy-button");
+
+test("Deploy latest main asks first, then sends only the target", async () => {
+  const page = await openPage("/ops", { respond: opsDeployments(DEPLOYMENT_STATE) });
+  await sleep(50);
+  let asked = confirmWith(page, false);
+  deployButtonOf(page).click();
+  await sleep(30);
+  assert.match(asked[0], /Deploy the latest main to ai-pm-agent\? The service will restart\./);
+  assert.deepStrictEqual(page.posts, []);
+  assert.strictEqual(deployButtonOf(page).disabled, false);
+  asked = confirmWith(page, true);
+  const button = deployButtonOf(page);
+  button.click();
+  button.click();  // double tap
+  await sleep(60);
+  assert.strictEqual(asked.length, 1);
+  assert.deepStrictEqual(page.posts, ["/api/ops/deploy"]);
+  assert.deepStrictEqual(page.bodies, [{ target: "ai-pm-agent" }]);
+});
+
+test("Deploy is disabled while a deployment runs and a refusal is shown", async () => {
+  const busy = await openPage("/ops", { respond: opsDeployments({ ...DEPLOYMENT_STATE,
+    targets: [{ ...DEPLOYMENT_STATE.targets[0], status: "deploying" }] }) });
+  await sleep(50);
+  assert.strictEqual(deployButtonOf(busy).disabled, true);
+  const page = await openPage("/ops", { respond: opsDeployments(DEPLOYMENT_STATE),
+    onPost: async () => ({ ok: false, status: 409, json: async () => ({ error: "A deployment operation is already running" }) }) });
+  await sleep(50);
+  confirmWith(page, true);
+  deployButtonOf(page).click();
+  await sleep(60);
+  assert.match(page.text("alert"), /Deployment request failed: A deployment operation is already running/);
 });

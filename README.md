@@ -316,6 +316,9 @@ needs the owner's signed Telegram data, and the agent side validates again.
 
 ## Services and logs (Ops window)
 
+- **Deploy latest main**: in each Deployments row, next to rollback. `POST
+  /api/ops/deploy` takes only `{"target": name}` and always deploys `main`
+  (like the bot's `/ai_update`); refused while another deployment runs.
 - **Services**: every service in the ops agent's whitelist (`ai-service list`)
   with its state and uptime, and a **Restart** button (confirmation first; it
   warns when the coding agent is running a task, and when restarting the

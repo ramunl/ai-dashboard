@@ -1,4 +1,4 @@
-"""Read deployment state and queue owner-confirmed rollback in a separate service."""
+"""Read deployment state; queue owner-confirmed deploys and rollbacks elsewhere."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import time
 from datetime import datetime
 
 TARGETS = ("ai-coding-agent", "ai-pm-agent", "ai-ops-agent", "ai-dashboard")
+DEPLOY_REF = "main"  # the only ref the dashboard deploys, like /ai_update
 BUSY = ("queued", "deploying", "rolling_back", "rollback_failed")
 NOT_INSTALLED = (
     "Deployment manager is not installed; see the Ops installation instructions"
@@ -178,5 +179,29 @@ class DeploymentService:
                     "ok": False,
                     "conflict": True,
                     "error": result.get("error", "Rollback was not queued"),
+                }
+            return {"ok": True, "target": target, "status": "queued"}
+
+    async def deploy(self, target: str) -> dict:
+        """Queue a deployment of the latest main unless an operation is running."""
+        async with self._lock:
+            state = await self._refresh(True)
+            if not state.get("ok"):
+                return state
+            if any(item["status"] in BUSY for item in state["targets"]):
+                return {
+                    "ok": False,
+                    "conflict": True,
+                    "error": "A deployment operation is already running",
+                }
+            result = await invoke_deployment(
+                self.command, "submit", "deploy", target, DEPLOY_REF
+            )
+            self._read_at = 0
+            if result.get("status") != "queued":
+                return {
+                    "ok": False,
+                    "conflict": True,
+                    "error": result.get("error", "Deployment was not queued"),
                 }
             return {"ok": True, "target": target, "status": "queued"}

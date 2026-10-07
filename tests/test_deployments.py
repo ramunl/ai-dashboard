@@ -124,3 +124,30 @@ class DeploymentTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["current"])
         self.assertIsNone(result["previous"]["verified_at"])
         self.assertNotIn("secret", str(result))
+
+    async def test_deploy_submits_only_the_fixed_ref(self):
+        queued = AsyncMock(side_effect=[STATE, {"status": "queued"}])
+        with patch("ai_dashboard.deployments.invoke_deployment", queued) as invoke:
+            result = await DeploymentService("ai-deploy").deploy("ai-pm-agent")
+        self.assertEqual(
+            result, {"ok": True, "target": "ai-pm-agent", "status": "queued"}
+        )
+        self.assertEqual(
+            invoke.await_args.args,
+            ("ai-deploy", "submit", "deploy", "ai-pm-agent", "main"),
+        )
+
+    async def test_deploy_never_submits_while_an_operation_runs(self):
+        state = {"targets": [{**STATE["targets"][0], "status": "deploying"}]}
+        with patch(
+            "ai_dashboard.deployments.invoke_deployment", AsyncMock(return_value=state)
+        ) as invoke:
+            result = await DeploymentService("ai-deploy").deploy("ai-pm-agent")
+        self.assertTrue(result["conflict"])
+        self.assertEqual(invoke.await_count, 1)
+
+    async def test_deploy_reports_a_refused_submission(self):
+        refused = AsyncMock(side_effect=[STATE, {"error": "Tests failed"}])
+        with patch("ai_dashboard.deployments.invoke_deployment", refused):
+            result = await DeploymentService("ai-deploy").deploy("ai-pm-agent")
+        self.assertEqual(result["error"], "Tests failed")

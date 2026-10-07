@@ -80,6 +80,48 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, 400)
             invoke.assert_not_awaited()
 
+    async def test_deploy_requires_the_owner_and_a_fixed_target(self) -> None:
+        route = "/api/ops/deploy"
+        payload = {"target": "ai-pm-agent"}
+        service = self.client.app[server.DEPLOYMENTS]
+        with patch.object(service, "deploy", AsyncMock()) as invoke:
+            self.assertEqual((await self.client.post(route, json=payload)).status, 401)
+            response = await self.client.post(
+                route, json=payload, headers=_auth(user_id=1)
+            )
+            self.assertEqual(response.status, 403)
+            self.assertEqual(
+                (await self.client.get(route, headers=_auth())).status, 405
+            )
+            for bad in (
+                {"target": "/tmp/custom"},
+                {"target": "ai-pm-agent", "ref": "feature"},
+                {"target": ["ai-pm-agent"]},
+                {},
+                "ai-pm-agent",
+            ):
+                response = await self.client.post(route, json=bad, headers=_auth())
+                self.assertEqual(response.status, 400, bad)
+            invoke.assert_not_awaited()
+
+    async def test_deploy_queued_and_conflict_responses(self) -> None:
+        service = self.client.app[server.DEPLOYMENTS]
+        answers = [
+            {"ok": True, "status": "queued"},
+            {"ok": False, "conflict": True, "error": "Already running"},
+        ]
+        with patch.object(service, "deploy", AsyncMock(side_effect=answers)) as invoke:
+            payload = {"target": "ai-dashboard"}
+            response = await self.client.post(
+                "/api/ops/deploy", json=payload, headers=_auth()
+            )
+            self.assertEqual(response.status, 202)
+            response = await self.client.post(
+                "/api/ops/deploy", json=payload, headers=_auth()
+            )
+            self.assertEqual(response.status, 409)
+            invoke.assert_awaited_with("ai-dashboard")
+
     async def test_rollback_queued_and_conflict_responses(self) -> None:
         service = self.client.app[server.DEPLOYMENTS]
         payload = {"target": "ai-dashboard", "expected_commit": "a" * 40}
