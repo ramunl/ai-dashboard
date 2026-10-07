@@ -27,14 +27,19 @@ NOT_INSTALLED = (
 
 
 async def invoke(
-    command: str, mode: str, timeout: float, name: str = "ai-cleanup"
+    command: str,
+    mode: str,
+    timeout: float,
+    name: str = "ai-cleanup",
+    extra: tuple[str, ...] = (),
 ) -> dict:
-    """Run ``command mode`` and return its JSON result, or an error result."""
+    """Run ``command mode [extra]``; return its JSON result or an error result."""
     not_installed = NOT_INSTALLED.replace("ai-cleanup", name)
     try:
         process = await asyncio.create_subprocess_exec(
             command,
             mode,
+            *extra,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,

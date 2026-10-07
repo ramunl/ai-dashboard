@@ -53,6 +53,7 @@ class Settings:
     cleanup_command: str = "/usr/local/sbin/ai-cleanup"
     service_command: str = "/usr/local/sbin/ai-service"
     packages_command: str = "/usr/local/sbin/ai-packages"
+    tools_command: str = "/usr/local/sbin/ai-tools"
     deployment_command: str = "/usr/local/sbin/ai-deploy"
     pm_command: str = "/usr/local/sbin/ai-pm-todos"
 
@@ -222,4 +223,5 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         packages_command=env.get(
             "DASHBOARD_PACKAGES_COMMAND", "/usr/local/sbin/ai-packages"
         ),
+        tools_command=env.get("DASHBOARD_TOOLS_COMMAND", "/usr/local/sbin/ai-tools"),
     )

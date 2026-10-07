@@ -293,12 +293,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Services", "Deployments", "Needs attention", "Disk usage", "Updates", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Services", "Deployments", "Needs attention", "Disk usage", "Updates", "AI tools", "Server resources", "Logs"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Server resources", "Logs"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {
@@ -1192,4 +1192,54 @@ test("Updates card hides Upgrade when nothing is pending and reports a refused s
   await sleep(60);
   assert.match(page.text("alert"), /Package check did not start: a package run is already active/);
   assert.strictEqual(updateButtons(page)[0].disabled, false);
+});
+
+// ---------------------------------------------------------------- AI tools card
+
+const toolsCardOf = (page) => [...page.doc.querySelectorAll("main section")]
+  .find((node) => node.querySelector("h2") && node.querySelector("h2").textContent === "AI tools");
+const toolButtons = (page) => [...toolsCardOf(page).querySelectorAll("button")];
+const TOOL_REPORT = { ok: true, checked_at: Date.now() / 1000 - 120, tools: [
+  { name: "codex", package: "@openai/codex", version: null, latest: "0.9.0", update_available: false },
+  { name: "claude", package: "@anthropic-ai/claude-code", version: "2.1.0 (Claude Code)", latest: "2.2.0", update_available: true },
+] };
+const withTools = (state) => opsServer({ ai_tools: { running: null, report: null, last_update: null, ...state } });
+
+test("AI tools card offers only a check until one has run", async () => {
+  const page = await openPage("/ops", withTools({}));
+  await sleep(60);
+  assert.deepStrictEqual(toolButtons(page).map((button) => button.textContent), ["Check versions"]);
+  toolButtons(page)[0].click();
+  await sleep(60);
+  assert.deepStrictEqual(page.posts, ["/api/ops/tools"]);
+  assert.deepStrictEqual(page.bodies, [{ action: "check" }]);
+});
+
+test("AI tools card offers Update only where a newer version exists, after a confirmation", async () => {
+  const page = await openPage("/ops", withTools({ report: TOOL_REPORT }));
+  await sleep(60);
+  const text = toolsCardOf(page).textContent;
+  assert.match(text, /codexnot installed/);
+  assert.match(text, /claude2\.1\.0 \(Claude Code\) · 2\.2\.0 availableUpdate/);
+  assert.deepStrictEqual(toolButtons(page).map((button) => button.textContent), ["Update", "Check versions"]);
+  let asked = confirmWith(page, false);
+  toolButtons(page)[0].click();
+  await sleep(60);
+  assert.match(asked[0], /Update claude to 2\.2\.0\?/);
+  assert.deepStrictEqual(page.posts, []);
+  asked = confirmWith(page, true);
+  toolButtons(page)[0].click();
+  toolButtons(page)[0].click();  // double tap
+  await sleep(60);
+  assert.strictEqual(asked.length, 1);
+  assert.deepStrictEqual(page.bodies, [{ action: "update", tool: "claude" }]);
+});
+
+test("AI tools card is locked while a run is active and shows a failed update", async () => {
+  const page = await openPage("/ops", withTools({ running: "claude", report: TOOL_REPORT,
+    last_update: { ok: false, name: "claude", error: "npm ERR! EACCES" } }));
+  await sleep(60);
+  assert.deepStrictEqual(toolButtons(page).map((button) => [button.textContent, button.disabled]),
+    [["Updating…", true], ["Check versions", true]]);
+  assert.match(toolsCardOf(page).textContent, /Last updateclaude failednpm ERR! EACCES/);
 });

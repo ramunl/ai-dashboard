@@ -24,6 +24,7 @@ from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
 from ai_dashboard.service_actions import ServiceControl
 from ai_dashboard.sources import service_state
 from ai_dashboard.telegram_api import API_BASE, set_menu_button
+from ai_dashboard.tool_updates import ToolService
 from ai_dashboard.views import SUB_WINDOWS, VIEW_PROVIDERS, WINDOWS
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ DEPLOYMENTS = web.AppKey("deployments", DeploymentService)
 CLEANUP = web.AppKey("cleanup", CleanupService)
 SERVICES = web.AppKey("services", ServiceControl)
 PACKAGES = web.AppKey("packages", PackageService)
+TOOLS = web.AppKey("tools", ToolService)
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
@@ -97,6 +99,7 @@ async def window_data(request: web.Request) -> web.Response:
             ),
             "cleanup": request.app[CLEANUP].state(),
             "packages": request.app[PACKAGES].state(),
+            "ai_tools": request.app[TOOLS].state(),
             "deployments": await request.app[DEPLOYMENTS].state(),
         }
     return web.json_response({**view, "opened_from": viewer.bot}, headers=_NO_STORE)
@@ -190,6 +193,44 @@ async def packages_action(request: web.Request) -> web.Response:
             headers=_NO_STORE,
         )
     return web.json_response({"started": action}, status=202, headers=_NO_STORE)
+
+
+async def tools_action(request: web.Request) -> web.Response:
+    """Owner-only start of an AI tools check or one tool's update."""
+    settings = request.app[SETTINGS]
+    try:
+        viewer = verify_init_data(
+            _init_data(request), settings.tokens(), settings.owner_id
+        )
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    try:
+        payload = await request.json()
+    except ValueError:
+        payload = None
+    tools = request.app[TOOLS]
+    if payload == {"action": "check"}:
+        started = tools.start_check(viewer.bot)
+    elif (
+        isinstance(payload, dict)
+        and set(payload) == {"action", "tool"}
+        and payload["action"] == "update"
+        and isinstance(payload["tool"], str)
+        and payload["tool"] in tools.known_tools()
+    ):
+        started = tools.start_update(payload["tool"], viewer.bot)
+    else:
+        expected = 'expected {"action": "check"} or {"action": "update", "tool": name}'
+        return web.json_response({"error": expected}, status=400, headers=_NO_STORE)
+    if not started:
+        return web.json_response(
+            {"error": "an AI tools run is already active"},
+            status=409,
+            headers=_NO_STORE,
+        )
+    return web.json_response({"started": True}, status=202, headers=_NO_STORE)
 
 
 async def logs_data(request: web.Request) -> web.Response:
@@ -305,6 +346,7 @@ def build_app(
     app[CLEANUP] = CleanupService(settings.cleanup_command)
     app[SERVICES] = ServiceControl(settings.service_command)
     app[PACKAGES] = PackageService(settings.packages_command)
+    app[TOOLS] = ToolService(settings.tools_command)
     register_pm_routes(app, settings)
     app.router.add_get("/healthz", health)
     # Before /api/{window}: aiohttp matches routes in order.
@@ -314,6 +356,7 @@ def build_app(
     app.router.add_post("/api/ops/rollback", rollback_action)
     app.router.add_post("/api/ops/restart", restart_action)
     app.router.add_post("/api/ops/packages", packages_action)
+    app.router.add_post("/api/ops/tools", tools_action)
 
     app.router.add_post("/api/coding/actions", coding_action)
     app.router.add_get("/static/{name:.+}", static_file)
@@ -341,6 +384,7 @@ def build_app(
     async def stop_cleanup(_app: web.Application) -> None:
         await app[CLEANUP].close()
         await app[PACKAGES].close()
+        await app[TOOLS].close()
 
     app.on_cleanup.append(stop_cleanup)
 
