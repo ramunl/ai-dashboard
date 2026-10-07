@@ -1436,7 +1436,7 @@ test("an unapproved plan offers Approve and Cancel; Approve sends at once, only 
   const page = await openPage("/coding", codingWork({ pending_plan: { id: "p", feature: "add login", revision: 2, approved: false } }, queuedPost));
   await sleep(60);
   assert.match(workCardOf(page).textContent, /Planadd login · revision 2waiting for approval/);
-  assert.deepStrictEqual(workButtons(page), ["Approve", "Cancel"]);
+  assert.deepStrictEqual(workButtons(page), ["Approve", "Revise", "Cancel"]);
   const approve = buttonNamed(page, "Approve");
   approve.click();
   approve.click();  // double tap
@@ -1449,7 +1449,7 @@ test("an approved plan runs only after a confirmation that names the cost", asyn
   const page = await openPage("/coding", codingWork({ pending_branch: "feat/login",
     pending_plan: { id: "p", feature: "add login", revision: 2, approved: true } }, queuedPost));
   await sleep(60);
-  assert.deepStrictEqual(workButtons(page), ["Confirm and run", "Cancel"]);
+  assert.deepStrictEqual(workButtons(page), ["Confirm and run", "Revise", "Cancel"]);
   let asked = confirmWith(page, false);
   buttonNamed(page, "Confirm and run").click();
   await sleep(30);
@@ -1592,7 +1592,7 @@ test("a pending plan shows its summary, with files, steps and risks under Detail
   assert.match(details.textContent, /Branchfeature\/login/);
   assert.deepStrictEqual([...details.querySelectorAll("ol li")].map((n) => n.textContent), PLAN.steps);
   assert.deepStrictEqual([...details.querySelectorAll("ul li")].map((n) => n.textContent), [...PLAN.files, ...PLAN.risks]);
-  assert.deepStrictEqual(workButtons(page), ["Approve", "Cancel"]);
+  assert.deepStrictEqual(workButtons(page), ["Approve", "Revise", "Cancel"]);
 });
 
 test("opened plan details stay open across refreshes, until the plan changes", async () => {
@@ -1623,5 +1623,61 @@ test("plan text is never treated as markup, and an older agent shows no details"
   const old = await openPage("/coding", codingWork({ pending_plan: { id: "p", feature: "add login", revision: 2, approved: false } }));
   await sleep(60);
   assert.strictEqual(workCardOf(old).querySelector(".plan-details"), null);
-  assert.deepStrictEqual(workButtons(old), ["Approve", "Cancel"]);
+  assert.deepStrictEqual(workButtons(old), ["Approve", "Revise", "Cancel"]);
+});
+
+// ---------------------------------------------------------------- revise the plan
+
+test("Revise opens a note field; the note is sent to /discuss after a confirmation", async () => {
+  const page = await openPage("/coding", codingWork({ pending_plan: PLAN }, queuedPost));
+  await sleep(60);
+  assert.strictEqual(workCardOf(page).querySelector("textarea"), null);
+  buttonNamed(page, "Revise").click();
+  await sleep(40);
+  assert.deepStrictEqual(workButtons(page), ["Approve", "Close note", "Cancel", "Send note"]);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Send note").click();
+  assert.match(page.text("alert"), /Write what should change in the plan first/);
+  assert.strictEqual(asked.length, 0);
+  typeDraft(page, " use  sqlite\ninstead ");
+  const send = buttonNamed(page, "Send note");
+  send.click();
+  send.click();  // double tap
+  await sleep(60);
+  assert.strictEqual(asked.length, 1);
+  assert.match(asked[0], /Revise the plan with this note\? This uses AI tokens/);
+  assert.deepStrictEqual(page.bodies, [{ action: "discuss_plan", args: { text: "use sqlite instead" } }]);
+});
+
+test("the note survives refreshes and closes only when the agent accepts it", async () => {
+  const state = { actions: [], sent: 0 };
+  const page = await openPage("/coding", {
+    latencyMs: 10,
+    respond: async (name) => ({ ok: true, status: 200,
+      json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, pending_plan: PLAN, setup: { ...SETUP, actions: state.actions } } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: `abcd123${++state.sent}` }) }),
+  });
+  await sleep(60);
+  buttonNamed(page, "Revise").click();
+  await sleep(40);
+  typeDraft(page, "smaller steps");
+  confirmWith(page, true);
+  buttonNamed(page, "Send note").click();
+  await sleep(60);
+  state.actions = [{ id: "abcd1231", action: "discuss_plan", status: "failed", message: "The plan is already being revised." }];
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.match(page.text("alert"), /already being revised/);
+  assert.strictEqual(workCardOf(page).querySelector("textarea").value, "smaller steps");
+  buttonNamed(page, "Send note").click();
+  await sleep(60);
+  state.actions = [{ id: "abcd1232", action: "discuss_plan", status: "done", message: "Revising plan with Claude..." }];
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.strictEqual(workCardOf(page).querySelector("textarea"), null);
+  assert.match(page.text("alert"), /Revising plan with Claude\.\.\. The new revision will arrive in the bot chat\./);
 });

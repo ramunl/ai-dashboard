@@ -15,15 +15,15 @@ function workButton(label, key, className, onClick) {
   return button;
 }
 
-function sendWork(key, action, args, button) {
+function sendWork(key, action, args, button, onDone = null) {
   button.disabled = true;  // no double send
-  requestAction(key, action, args);
+  requestAction(key, action, args, onDone);
 }
 
-function confirmedWork(question, key, action, args, button) {
+function confirmedWork(question, key, action, args, button, onDone = null) {
   button.disabled = true;
   askConfirmation(question, (isConfirmed) => {
-    if (isConfirmed) sendWork(key, action, args, button);
+    if (isConfirmed) sendWork(key, action, args, button, onDone);
     else button.disabled = false;
   });
 }
@@ -54,7 +54,8 @@ function pendingRows(snapshot) {
       ? runButton(snapshot.pending_branch || "the approved plan")
       : workButton("Approve", "work:approve", "row-button",
         (button) => sendWork("work:approve", "approve_plan", {}, button));
-    return [...rows, ...planDetails(plan), workActions(first, cancelButton("the pending plan"))];
+    return [...rows, ...planDetails(plan),
+      workActions(first, reviseButton(), cancelButton("the pending plan")), ...reviseRows()];
   }
   if (snapshot.pending_branch) {
     return [row("Ready to run", snapshot.pending_branch),

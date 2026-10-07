@@ -41,6 +41,8 @@ ACTIONS: dict[str, dict] = {
     # The only free text the dashboard sends: what to plan, build or fix. It
     # becomes the words after /plan, /implement or /bugfix, nothing else.
     "start_work": {"kind": _KINDS, "text": _TEXT},
+    # A revision note for the pending plan: the words after /discuss.
+    "discuss_plan": {"text": _TEXT},
 }
 
 

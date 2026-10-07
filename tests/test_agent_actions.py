@@ -58,6 +58,12 @@ class CheckTests(unittest.TestCase):
             with self.assertRaises(RequestError, msg=repr(text)):
                 check({"action": "start_work", "args": {"kind": kind, "text": text}})
 
+    def test_discuss_plan_takes_only_a_note(self) -> None:
+        check({"action": "discuss_plan", "args": {"text": "use sqlite"}})
+        for args in ({"text": ""}, {"text": "a\nb"}, {}, {"text": "x", "kind": "plan"}):
+            with self.assertRaises(RequestError, msg=str(args)):
+                check({"action": "discuss_plan", "args": args})
+
     def test_refuses_malformed(self) -> None:
         for body in (
             [],

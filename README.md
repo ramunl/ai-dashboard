@@ -290,6 +290,8 @@ run asks first: it spends AI tokens and opens a pull request.
 A pending plan shows its summary, with branch, files, steps and risks under
 **Details**. The agent publishes this as a bounded, redacted outline in its
 snapshot (`pending_plan`), never the generated prompt.
+**Revise** opens a note field; the note becomes the words after `/discuss`,
+and Approve and Confirm are refused until the new revision is written.
 
 When nothing is pending, the card has a text field with **Plan**, **Implement**
 and **Bugfix** (the agent's `/plan`, `/implement`, `/bugfix`). This is the one
