@@ -114,29 +114,58 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .action-button:disabled { opacity: 0.55; cursor: default; }
 
 /* PM workspace: compact task rows and accessible form controls. */
-.pm-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 0.6rem; margin-bottom: 0.8rem; }
 .pm-field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem; flex: 1; }
 .pm-field > span { color: var(--hint); font-size: 0.85rem; }
 .pm-field input, .pm-field select, .pm-field textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--hint); border-radius: 0.5rem; padding: 0.6rem; min-width: 0; width: 100%; box-sizing: border-box; }
 .pm-button { font: inherit; border: 1px solid var(--hint); border-radius: 0.5rem; padding: 0.55rem 0.8rem; background: var(--bg); color: var(--fg); cursor: pointer; }
 .pm-button:disabled { opacity: 0.6; cursor: wait; }
-.pm-task { display: flex; gap: 0.75rem; padding: 0.8rem 0; border-bottom: 1px solid var(--hint); }
+.pm-task { display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0; border-top: 1px solid var(--divider); }
 .pm-task > input { width: 1.25rem; height: 1.25rem; flex-shrink: 0; accent-color: var(--accent); }
-.pm-task-body { min-width: 0; flex: 1; }
-.pm-task-meta { display: flex; flex-wrap: wrap; gap: 0.7rem; font-size: 0.8rem; color: var(--hint); }
-.pm-priority { border-radius: 0.3rem; padding: 0.1rem 0.35rem; border: 1px solid currentColor; }
+.pm-priority, .pm-status { flex-shrink: 0; font-size: 0.72rem; border-radius: 0.3rem; padding: 0.05rem 0.35rem; border: 1px solid currentColor; }
+.pm-status { color: var(--hint); }
 .pm-priority[data-priority="high"] { color: var(--bad); }
 .pm-priority[data-priority="low"] { color: var(--accent); }
-.pm-task-title { text-align: left; font: inherit; color: var(--fg); background: none; border: 0; padding: 0.4rem 0; cursor: pointer; width: 100%; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pm-task-title { text-align: left; font: inherit; color: var(--fg); background: none; border: 0; padding: 0; cursor: pointer; flex: 1; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pm-notice { margin-bottom: 0.8rem; overflow-wrap: anywhere; }
 .pm-editor .pm-button { margin: 0.4rem 0.4rem 0 0; }
 .pm-delete { color: var(--bad); }
-.pm-about { padding: 1rem; }
+.pm-about { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--divider); color: var(--hint); }
 .pm-about summary { cursor: pointer; }
 .pm-field input:focus-visible, .pm-field select:focus-visible, .pm-field textarea:focus-visible, .pm-button:focus-visible, .pm-task-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.pm-project-toolbar > .pm-field { flex-basis: 100%; min-width: 0; }
-.pm-toolbar:not(.pm-project-toolbar) > .pm-field { min-width: 5rem; }
+/* PM page: todos fill the main area, the side card sits beside it when wide. */
+.pm-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.625rem; }
+.pm-layout > section { margin: 0; }
+@media (min-width: 52rem) { .pm-layout { grid-template-columns: minmax(0, 1fr) 17rem; align-items: start; } }
+
+/* Toolbar rows; a "bare" field keeps its label for screen readers only. */
+.pm-bar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.pm-bar > .pm-field { margin-bottom: 0; min-width: 0; }
+.pm-bar[hidden] { display: none; }
+.pm-field-bare > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.pm-project { flex: 0 1 14rem; }
+.pm-project select { font-weight: 600; }
+.pm-menu { position: relative; flex-shrink: 0; }
+.pm-menu > summary { list-style: none; display: block; min-width: 2.4rem; text-align: center; }
+.pm-menu > summary::-webkit-details-marker { display: none; }
+.pm-menu-items {
+  position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 2; display: flex; flex-direction: column; gap: 0.3rem;
+  padding: 0.4rem; background: var(--card); border: 1px solid var(--divider); border-radius: 0.6rem; white-space: nowrap;
+}
+.pm-switch { display: inline-flex; flex-shrink: 0; border: 1px solid var(--hint); border-radius: 0.5rem; overflow: hidden; }
+.pm-switch-button { font: inherit; border: 0; padding: 0.55rem 0.7rem; background: var(--bg); color: var(--hint); cursor: pointer; }
+.pm-switch-button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.pm-switch-button:focus-visible, .pm-menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pm-count { color: var(--hint); font-size: 0.8rem; margin: 0.7rem 0 0.3rem; }
+/* Phone: picker and menu share a row; add and search get a row each. */
+@media (max-width: 34rem) {
+  .pm-bar-top, .pm-bar-filters { flex-wrap: wrap; }
+  .pm-bar-top > .pm-project { flex: 1; }
+  .pm-bar-top > .pm-quick { order: 3; flex-basis: 100%; }
+  .pm-bar-filters > .pm-field { flex-basis: 100%; }
+  .pm-switch { flex: 1; }
+  .pm-switch-button { flex: 1; }
+}
 
 /* Native select painting differs in Telegram WebViews. Keep the closed control
    and its options on the same explicit palette as the surrounding inputs. */

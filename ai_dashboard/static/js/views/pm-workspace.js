@@ -1,7 +1,9 @@
 // Todos workspace. Preserve drafts, selected filters and focused inputs on polling.
 const PM_STATUSES = { open: "Open", in_progress: "In progress", blocked: "Blocked", done: "Done" };
 const PM_PRIORITIES = { high: "High", normal: "Normal", low: "Low" };
-const pmUi = { workspace: null, node: null, filter: "open", priority: "all", search: "", sort: "priority", expanded: false, editor: null, busy: false, notice: "" };
+const pmUi = { workspace: null, node: null, filter: "open", priority: "all", search: "", sort: "priority", expanded: false, editor: null, busy: false, notice: "", quick: "", filtersOpen: false, layout: null };
+const PM_ROWS_SHOWN = 10;
+const PM_SHOWN_STATUSES = ["in_progress", "blocked"];  // worth a badge; Open and Done are not
 
 function pmButton(text, action, className = "pm-button") {
   const button = el("button", text, className);
@@ -41,24 +43,8 @@ function pmPaint() {
     const notice = el("div", pmUi.notice, "pm-notice"); notice.setAttribute("role", "status"); node.append(notice);
   }
   if (pmUi.editor) { node.append(pmEditor()); return; }
-  const projects = { "": "Select a project…", ...Object.fromEntries(workspace.projects.map(p => [p.name, `${p.name} · ${p.open} open · ${p.done} done`])) };
-  if (workspace.project && !projects[workspace.project]) projects[workspace.project] = workspace.project;
-  const toolbar = el("div", null, "pm-toolbar pm-project-toolbar");
-  toolbar.append(pmSelect("Active todo project", projects, workspace.project || "", project => { if (project) pmSend({ action: "select", project }); }),
-    pmButton("New project", () => { pmUi.editor = { projectForm: true, name: "" }; pmPaint(); }),
-    pmButton("+ Add", () => {
-      if (!workspace.project) { pmUi.notice = "Select or create a project first."; pmPaint(); return; }
-      pmUi.editor = { id: crypto.randomUUID().replaceAll("-", ""), text: "", priority: "normal", status: "open", isNew: true, revision: workspace.revision, project: workspace.project }; pmPaint();
-    }), pmButton("Sync", () => pmSend({ action: "sync", project: workspace.project })));
-  node.append(toolbar);
-  const search = el("input"); search.type = "search"; search.value = pmUi.search;
-  search.addEventListener("input", () => { pmUi.search = search.value; pmPaintList(); });
-  node.append(pmField("Search todos", search));
-  const filters = el("div", null, "pm-toolbar");
-  filters.append(pmSelect("Status", { open: "Open", in_progress: "In progress", blocked: "Blocked", done: "Done", all: "All" }, pmUi.filter, value => { pmUi.filter = value; pmPaintList(); }),
-    pmSelect("Priority", { all: "All", ...PM_PRIORITIES }, pmUi.priority, value => { pmUi.priority = value; pmPaintList(); }),
-    pmSelect("Sort", { priority: "Priority", original: "Original order" }, pmUi.sort, value => { pmUi.sort = value; pmPaintList(); }));
-  node.append(filters, el("div", null, "pm-task-list")); pmPaintList();
+  node.append(...pmToolbar(workspace), el("div", null, "pm-task-list"));
+  pmPaintList();
 }
 
 function pmPaintList() {
@@ -67,11 +53,11 @@ function pmPaintList() {
     (pmUi.filter === "all" || (pmUi.filter === "open" ? item.status !== "done" : item.status === pmUi.filter)) &&
     (pmUi.priority === "all" || item.priority === pmUi.priority) && item.text.toLocaleLowerCase().includes(pmUi.search.toLocaleLowerCase()));
   if (pmUi.sort === "priority") items = [...items].sort((a, b) => Object.keys(PM_PRIORITIES).indexOf(a.priority) - Object.keys(PM_PRIORITIES).indexOf(b.priority));
-  list.replaceChildren(muted(`${pmUi.workspace.items.filter(i => i.status !== "done").length} open · ${pmUi.workspace.items.filter(i => i.status === "done").length} done`));
-  if (!items.length) list.append(muted("No matching todos."));
-  const visible = pmUi.expanded ? items : items.slice(0, 3);
+  const order = pmUi.sort === "priority" ? "sorted by priority" : "in original order";
+  list.replaceChildren(el("div", items.length ? `${items.length} shown · ${order}` : "No matching todos.", "pm-count"));
+  const visible = pmUi.expanded ? items : items.slice(0, PM_ROWS_SHOWN);
   visible.forEach(item => list.append(pmTaskRow(item)));
-  if (items.length > 3) {
+  if (items.length > PM_ROWS_SHOWN) {
     const actions = el("div", null, "pm-list-actions");
     actions.append(pmButton(pmUi.expanded ? "Show fewer" : `Show all (${items.length})`, () => {
       pmUi.expanded = !pmUi.expanded;
@@ -86,11 +72,12 @@ function pmTaskRow(item) {
   const check = el("input"); check.type = "checkbox"; check.checked = item.status === "done"; check.disabled = pmUi.busy;
   check.setAttribute("aria-label", `${check.checked ? "Reopen" : "Mark done"}: ${item.text}`);
   check.addEventListener("change", () => pmSend({ action: "update", id: item.id, status: check.checked ? "done" : "open", project: pmUi.workspace.project, revision: pmUi.workspace.revision }));
-  const body = el("div", null, "pm-task-body"), meta = el("div", null, "pm-task-meta");
-  const priority = el("span", PM_PRIORITIES[item.priority], "pm-priority"); priority.dataset.priority = item.priority;
-  meta.append(priority, el("span", PM_STATUSES[item.status]));
-  body.append(meta, pmButton(item.text, () => { pmUi.editor = { ...item, revision: pmUi.workspace.revision, project: pmUi.workspace.project }; pmPaint(); }, "pm-task-title"));
-  entry.append(check, body); return entry;
+  entry.append(check, pmButton(item.text, () => { pmUi.editor = { ...item, revision: pmUi.workspace.revision, project: pmUi.workspace.project }; pmPaint(); }, "pm-task-title"));
+  if (item.priority === "high") {
+    const priority = el("span", PM_PRIORITIES.high, "pm-priority"); priority.dataset.priority = "high"; entry.append(priority);
+  }
+  if (PM_SHOWN_STATUSES.includes(item.status)) entry.append(el("span", PM_STATUSES[item.status], "pm-status"));
+  return entry;
 }
 
 function pmEditor() {
@@ -121,8 +108,9 @@ function pmEditor() {
 }
 
 async function pmSend(payload, closeEditor = false) {
-  if (pmUi.busy) return;
+  if (pmUi.busy) return false;
   pmUi.busy = true;
+  let isSaved = false;
   const mine = generation;
   pmUi.node.querySelectorAll("button, input, select, textarea").forEach(c => { c.disabled = true; });
   pmUi.notice = "Saving…";
@@ -130,6 +118,7 @@ async function pmSend(payload, closeEditor = false) {
     const result = await postAction("pm/action", tg ? tg.initData : "", payload, 190000);
     pmUi.workspace = result.workspace; pmUi.notice = result.warning || "Saved.";
     if (closeEditor) pmUi.editor = null;
+    isSaved = true;
   } catch (error) { pmUi.notice = error.message; }
   finally {
     pmUi.busy = false;
@@ -138,6 +127,7 @@ async function pmSend(payload, closeEditor = false) {
       pmPaint();
     }
   }
+  return isSaved;
 }
 
 // An editor is a local PM subview: Back closes it before leaving the PM route.

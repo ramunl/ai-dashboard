@@ -491,7 +491,7 @@ test("PM workspace shows priority, status and completed filters", async () => {
   await sleep(70);
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 2);
   assert.match(page.text("view"), /HighBlocked/);
-  selectValue(page, fieldSelect(page, "Status"), "done");
+  buttonNamed(page, "Done 1").click();
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 1);
   assert.match(page.text("view"), /Completed task/);
   assert.deepStrictEqual(page.errors, []);
@@ -576,7 +576,7 @@ test("PM add generates an identity and sends one request while busy", async () =
     return new Promise(resolve => { resolvePost = resolve; });
   } });
   await sleep(70);
-  buttonNamed(page, "+ Add").click();
+  buttonNamed(page, "Add with details").click();
   const text = page.doc.querySelector("textarea"); text.value = "New todo";
   text.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
   const form = page.doc.querySelector("form");
@@ -625,7 +625,7 @@ test("PM select values stay present when Telegram changes its theme", async () =
     page.dom.window.Telegram.WebApp.colorScheme = theme;
     page.dom.window.eval("applyColorScheme()");
     assert.strictEqual(page.doc.documentElement.dataset.theme, theme);
-    for (const label of ["Active todo project", "Status", "Priority", "Sort"]) {
+    for (const label of ["Active todo project", "Priority", "Sort"]) {
       const select = fieldSelect(page, label);
       assert.ok(select.selectedOptions[0].textContent.trim());
     }
@@ -661,7 +661,7 @@ test("editor Back to todos and Cancel stay within PM", async () => {
 test("native Back also closes the Add todo and New project subviews", async () => {
   const page = await openPage("/pm", { respond: editablePM });
   await sleep(70);
-  for (const label of ["+ Add", "New project"]) {
+  for (const label of ["Add with details", "New project"]) {
     buttonNamed(page, label).click();
     page.back.handler();
     await sleep(20);
@@ -686,24 +686,99 @@ test("returning from the dashboard opens the TODO list rather than a cached edit
 });
 
 
-test("PM list collapses to three sorted items and expands without changing filters", async () => {
-  const workspace = { ...TASKS, items: [
-    ...TASKS.items,
-    { id: "d".repeat(32), text: "Extra low", priority: "low", status: "open" },
-    { id: "e".repeat(32), text: "Extra high", priority: "high", status: "open" },
-    { id: "f".repeat(32), text: "Extra normal", priority: "normal", status: "open" },
-  ] };
+test("PM list shows ten sorted items and expands without changing filters", async () => {
+  const extra = Array.from({ length: 11 }, (_, n) => ({ id: String(n).padStart(32, "0"), text: `Extra ${n}`, priority: n === 0 ? "high" : "low", status: "open" }));
+  const workspace = { ...TASKS, items: [...TASKS.items, ...extra] };
   const respond = async () => ({ ok: true, status: 200, json: async () => ({ ...PM, editing: { ok: true, workspace } }) });
   const page = await openPage("/pm", { respond });
   await sleep(70);
-  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 3);
-  assert.deepStrictEqual([...page.doc.querySelectorAll(".pm-task-title")].map(n => n.textContent), ["High priority task", "Extra high", "Normal task"]);
-  buttonNamed(page, "Show all (5)").click();
-  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 5);
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 10);
+  assert.deepStrictEqual([...page.doc.querySelectorAll(".pm-task-title")].slice(0, 3).map(n => n.textContent), ["High priority task", "Extra 0", "Normal task"]);
+  assert.match(page.doc.querySelector(".pm-count").textContent, /13 shown · sorted by priority/);
+  buttonNamed(page, "Show all (13)").click();
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 13);
   await page.dom.window.eval("refresh()");
-  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 5);
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 13);
   buttonNamed(page, "Show fewer").click();
+  assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 10);
+});
+
+// ---------------------------------------------------------------- PM redesign
+
+const quickAdd = (page) => page.doc.querySelector(".pm-quick input");
+const pressEnter = (page, input) => input.dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+test("PM quick add saves a normal todo on Enter, once, and keeps the field ready", async () => {
+  const bodies = [];
+  const page = await openPage("/pm", { respond: editablePM, onPost: async (_api, init) => {
+    bodies.push(JSON.parse(init.body));
+    return { ok: true, status: 200, json: async () => ({ workspace: TASKS }) };
+  } });
+  await sleep(70);
+  pressEnter(page, quickAdd(page));  // empty: nothing sent
+  const input = quickAdd(page);
+  input.value = "  buy   milk ";
+  input.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+  pressEnter(page, input);
+  pressEnter(page, input);  // double Enter
+  await sleep(40);
+  assert.strictEqual(bodies.length, 1);
+  assert.match(bodies[0].id, /^[a-f0-9]{32}$/);
+  assert.deepStrictEqual({ ...bodies[0], id: "" }, { action: "add", id: "", project: "app", revision: "r1", text: "buy milk", priority: "normal", status: "open" });
+  assert.strictEqual(quickAdd(page).value, "");
+  assert.strictEqual(page.doc.activeElement, quickAdd(page));
+});
+
+test("PM quick add keeps the text when saving fails, and survives a heartbeat", async () => {
+  const page = await openPage("/pm", { respond: editablePM, onPost: async () => ({ ok: false, status: 409, json: async () => ({ error: "List changed; refresh first" }) }) });
+  await sleep(70);
+  const input = quickAdd(page);
+  input.value = "keep me";
+  input.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+  input.focus();
+  await page.dom.window.eval("refresh()");
+  assert.strictEqual(quickAdd(page), input);
+  assert.strictEqual(page.doc.activeElement, input);
+  pressEnter(page, input);
+  await sleep(40);
+  assert.strictEqual(quickAdd(page).value, "keep me");
+  assert.match(page.text("view"), /List changed; refresh first/);
+});
+
+test("PM switch filters Open / Done / All with counts; rare filters hide behind Filter", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  const pressed = () => [...page.doc.querySelectorAll(".pm-switch-button")].map((b) => [b.textContent, b.getAttribute("aria-pressed")]);
+  assert.deepStrictEqual(pressed(), [["Open 2", "true"], ["Done 1", "false"], ["All", "false"]]);
+  buttonNamed(page, "All").click();
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 3);
+  assert.deepStrictEqual(pressed().map((item) => item[1]), ["false", "false", "true"]);
+  const panel = page.doc.querySelector(".pm-filter-panel");
+  assert.strictEqual(panel.hidden, true);
+  buttonNamed(page, "Filter").click();
+  assert.strictEqual(panel.hidden, false);
+  assert.strictEqual(buttonNamed(page, "Filter").getAttribute("aria-expanded"), "true");
+  selectValue(page, fieldSelect(page, "Priority"), "low");
+  assert.deepStrictEqual([...page.doc.querySelectorAll(".pm-task-title")].map((n) => n.textContent), ["Completed task"]);
+});
+
+test("PM rows are one line: a badge only for High and for unusual statuses", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  const rows = [...page.doc.querySelectorAll(".pm-task")].map((row) => row.textContent);
+  assert.deepStrictEqual(rows, ["High priority taskHighBlocked", "Normal task"]);
+});
+
+test("PM page puts todos and the side card in one layout; rules and About share a card", async () => {
+  const page = await openPage("/pm", { respond: editablePM });
+  await sleep(70);
+  const layout = page.doc.querySelector("main > .pm-layout");
+  assert.strictEqual(layout.children.length, 2);
+  assert.strictEqual(layout.children[1].querySelector("h2").textContent, "Rules");
+  assert.ok(layout.children[1].querySelector("details.pm-about"));
+  assert.ok(buttonNamed(page, "New project") && buttonNamed(page, "Sync"));
+  const css = fs.readFileSync(path.join(__dirname, "../../ai_dashboard/static/styles.css"), "utf8");
+  assert.match(css, /@media \(min-width: 52rem\) \{ \.pm-layout \{ grid-template-columns: minmax\(0, 1fr\) 17rem;/);
 });
 
 const DEPLOYMENT_STATE = { ok: true, targets: [{

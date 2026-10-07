@@ -42,7 +42,7 @@ function renderPage(page, body) {
   setHeader(page.title, page.subtitle, page.status);
   showAlert(page.alert);
   const view = document.getElementById("view");
-  const keepEditor = page.title === "PM agent" && pmUi.node && pmUi.node.parentNode === view &&
+  const keepEditor = page.title === "PM agent" && pmUi.node && view.contains(pmUi.node) &&
     (pmUi.editor || pmUi.busy || pmUi.node.contains(document.activeElement));
   if (!keepEditor) view.replaceChildren(...layoutOrder(page.nodes));
   const age = typeof body.age_seconds === "number"

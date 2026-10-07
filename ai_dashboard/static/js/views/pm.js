@@ -47,9 +47,24 @@ function pmPage(view) {
     status: view.problem ? "bad" : "ok",
     alert: view.problem ? `pm agent ${view.problem}` : "",
     nodes: view.editing && view.editing.ok
-      ? [pmWorkspace(view.editing.workspace), card("Rules", ...ruleRows(snapshot ? snapshot.rules : [])), pmAbout(snapshot)]
+      ? [pmLayout(view.editing.workspace, snapshot)]
       : [...pmCards(snapshot), muted(view.editing ? view.editing.error : "Editing is not available yet")],
   };
+}
+
+// Todos take the main area; rules and "About" share one narrow side card.
+// The layout node is reused while the todos card is kept (focus, drafts), so
+// a refresh only swaps the side card and never moves the focused field.
+function pmLayout(workspace, snapshot) {
+  const main = pmWorkspace(workspace);
+  const side = card("Rules", ...ruleRows(snapshot ? snapshot.rules : []), pmAbout(snapshot));
+  if (pmUi.layout && main.parentNode === pmUi.layout) {
+    pmUi.layout.lastChild.replaceWith(side);
+    return pmUi.layout;
+  }
+  pmUi.layout = el("div", null, "pm-layout");
+  pmUi.layout.append(main, side);
+  return pmUi.layout;
 }
 
 function pmAbout(snapshot) {
