@@ -51,6 +51,7 @@ class Settings:
     monitored_services: tuple[str, ...] = DEFAULT_MONITORED
     state_dir: Path = Path("/var/lib/ai-dashboard")
     cleanup_command: str = "/usr/local/sbin/ai-cleanup"
+    service_command: str = "/usr/local/sbin/ai-service"
     deployment_command: str = "/usr/local/sbin/ai-deploy"
     pm_command: str = "/usr/local/sbin/ai-pm-todos"
 
@@ -213,5 +214,8 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         pm_command=env.get("DASHBOARD_PM_COMMAND", "/usr/local/sbin/ai-pm-todos"),
         cleanup_command=env.get(
             "DASHBOARD_CLEANUP_COMMAND", "/usr/local/sbin/ai-cleanup"
+        ),
+        service_command=env.get(
+            "DASHBOARD_SERVICE_COMMAND", "/usr/local/sbin/ai-service"
         ),
     )

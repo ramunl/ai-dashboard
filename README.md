@@ -113,6 +113,7 @@ a chat still lists commands.
 | `MONITORED_SERVICES` | `ai-coding-agent,ai-pm-agent,ai-ops-agent` | units on the launcher |
 | `DASHBOARD_STATE_DIR` | `/var/lib/ai-dashboard` | the dashboard's own state (disk history) |
 | `DASHBOARD_CLEANUP_COMMAND` | `/usr/local/sbin/ai-cleanup` | disk report and cleanup (from ai-ops-agent) |
+| `DASHBOARD_SERVICE_COMMAND` | `/usr/local/sbin/ai-service` | service list and restarts (from ai-ops-agent) |
 
 All bots' `YOUR_CHAT_ID` must match; otherwise the dashboard refuses to start.
 
@@ -310,3 +311,14 @@ Two patterns exist on purpose; pick by where the agent keeps the state:
 
 Either way the dashboard never edits an agent's state directly, every request
 needs the owner's signed Telegram data, and the agent side validates again.
+
+## Services and logs (Ops window)
+
+- **Services**: every service in the ops agent's whitelist (`ai-service list`)
+  with its state and uptime, and a **Restart** button (confirmation first; it
+  warns when the coding agent is running a task, and when restarting the
+  dashboard itself). `POST /api/ops/restart` takes only `{"service": name}`;
+  the restart is queued, so the dashboard answers before it goes down.
+- **Logs**: the last 80 journal lines of one service, or its errors from the
+  last 24 hours. Loaded on demand (not by the 5-second refresh). `GET
+  /api/ops/logs?unit=&errors=` reads only units the dashboard monitors.

@@ -227,3 +227,6 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 }
 .logs-controls button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .logs-controls button:disabled { opacity: 0.55; cursor: default; }
+
+/* Restart is a deliberate action: outlined, not a filled primary button. */
+.restart-button { background: transparent; color: inherit; border: 1px solid var(--divider); }

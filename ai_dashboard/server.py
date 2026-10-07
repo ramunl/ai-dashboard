@@ -20,6 +20,7 @@ from ai_dashboard.disk_history import record_forever
 from ai_dashboard.logs import read_logs, readable_units
 from ai_dashboard.maintenance import CleanupService
 from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
+from ai_dashboard.service_actions import ServiceControl
 from ai_dashboard.sources import service_state
 from ai_dashboard.telegram_api import API_BASE, set_menu_button
 from ai_dashboard.views import SUB_WINDOWS, VIEW_PROVIDERS, WINDOWS
@@ -31,6 +32,7 @@ PAGE = STATIC_DIR / "index.html"
 SETTINGS = web.AppKey("settings", Settings)
 DEPLOYMENTS = web.AppKey("deployments", DeploymentService)
 CLEANUP = web.AppKey("cleanup", CleanupService)
+SERVICES = web.AppKey("services", ServiceControl)
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
@@ -87,6 +89,10 @@ async def window_data(request: web.Request) -> web.Response:
     if request.match_info["window"] == "ops":
         view = {
             **view,
+            "service_control": await request.app[SERVICES].state(
+                view.get("agents", []),
+                (view.get("resources") or {}).get("uptime_seconds"),
+            ),
             "cleanup": request.app[CLEANUP].state(),
             "deployments": await request.app[DEPLOYMENTS].state(),
         }
@@ -174,6 +180,33 @@ async def logs_data(request: web.Request) -> web.Response:
     return web.json_response({**result, "units": units}, headers=_NO_STORE)
 
 
+async def restart_action(request: web.Request) -> web.Response:
+    """Owner-only restart of one whitelisted service (queued, answers at once)."""
+    settings = request.app[SETTINGS]
+    try:
+        viewer = verify_init_data(
+            _init_data(request), settings.tokens(), settings.owner_id
+        )
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    try:
+        payload = await request.json()
+    except ValueError:
+        payload = None
+    if not isinstance(payload, dict) or set(payload) != {"service"}:
+        return web.json_response({"error": 'expected {"service": name}'}, status=400)
+    service = payload["service"]
+    if not isinstance(service, str):
+        return web.json_response({"error": 'expected {"service": name}'}, status=400)
+    result = await request.app[SERVICES].restart(service, viewer.bot)
+    if not result.get("ok"):
+        status = 400 if "unknown service" in result.get("error", "") else 502
+        return web.json_response(result, status=status, headers=_NO_STORE)
+    return web.json_response(result, status=202, headers=_NO_STORE)
+
+
 async def rollback_action(request: web.Request) -> web.Response:
     """Authenticate and queue a fixed-target rollback outside this service."""
     settings = request.app[SETTINGS]
@@ -237,6 +270,7 @@ def build_app(
     app[SETTINGS] = settings
     app[DEPLOYMENTS] = DeploymentService(settings.deployment_command)
     app[CLEANUP] = CleanupService(settings.cleanup_command)
+    app[SERVICES] = ServiceControl(settings.service_command)
     register_pm_routes(app, settings)
     app.router.add_get("/healthz", health)
     # Before /api/{window}: aiohttp matches routes in order.
@@ -244,6 +278,7 @@ def build_app(
     app.router.add_get("/api/{window}", window_data)
     app.router.add_post("/api/ops/cleanup", cleanup_action)
     app.router.add_post("/api/ops/rollback", rollback_action)
+    app.router.add_post("/api/ops/restart", restart_action)
 
     app.router.add_post("/api/coding/actions", coding_action)
     app.router.add_get("/static/{name:.+}", static_file)

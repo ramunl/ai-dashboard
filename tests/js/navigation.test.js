@@ -58,7 +58,13 @@ const REPORT = {
   ],
   largest: [{ path: "/root/.codex", bytes: 2.4 * 1024 ** 3 }, { path: "/var/log", bytes: 1.3 * 1024 ** 3 }],
 };
-const OPS = { ...LAUNCHER, cleanup: { report: REPORT, report_at: 1, running: false, last_run: null } };
+const SERVICE_CONTROL = { ok: true, services: [
+  { unit: "ai-coding-agent", state: "active", up_seconds: 3600 },
+  { unit: "ai-pm-agent", state: "failed", up_seconds: null },
+  { unit: "ai-dashboard", state: "active", up_seconds: 120 },
+] };
+const OPS = { ...LAUNCHER, service_control: SERVICE_CONTROL,
+  cleanup: { report: REPORT, report_at: 1, running: false, last_run: null } };
 const LOGS = {
   ok: true, unit: "ai-coding-agent", errors_only: false,
   units: ["ai-coding-agent", "ai-pm-agent", "ai-ops-agent"],
@@ -287,12 +293,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Deployments", "Needs attention", "Disk usage", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Services", "Deployments", "Needs attention", "Disk usage", "Server resources", "Logs"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Deployments", "Disk usage", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Server resources", "Logs"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {
@@ -1054,4 +1060,76 @@ test("a failed logs request is shown in the card", async () => {
   const page = await openPage("/ops", { latencyMs: 10, logs: () => ({ ok: false, error: "journalctl is not available or timed out", units: [] }) });
   await sleep(80);
   assert.match(logsCardOf(page).textContent, /journalctl is not available/);
+});
+
+// ---------------------------------------------------------------- services card
+
+const servicesCardOf = (page) => [...page.doc.querySelectorAll("main section")]
+  .find((node) => node.querySelector("h2") && node.querySelector("h2").textContent === "Services");
+const restartButtons = (page) => [...servicesCardOf(page).querySelectorAll("button")];
+const opsServer = (overrides = {}) => ({
+  latencyMs: 10,
+  respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "ops" ? { ...OPS, ...overrides } : DATA[name]) }),
+});
+
+test("Services card lists the whitelisted services with state and uptime", async () => {
+  const page = await openPage("/ops", opsServer());
+  await sleep(60);
+  const text = servicesCardOf(page).textContent;
+  assert.match(text, /ai-coding-agentactive · up 1h 0mRestart/);
+  assert.match(text, /ai-pm-agentfailedRestart/);
+  assert.strictEqual(restartButtons(page).length, 3);
+});
+
+test("restart asks first, then sends only the service name", async () => {
+  const page = await openPage("/ops", opsServer());
+  await sleep(60);
+  const asked = [];
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(false); };
+  restartButtons(page)[1].click();
+  await sleep(30);
+  assert.deepStrictEqual(page.posts, []);
+  assert.strictEqual(restartButtons(page)[1].disabled, false);
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(true); };
+  restartButtons(page)[1].click();
+  await sleep(60);
+  assert.strictEqual(asked[0], "Restart ai-pm-agent?");
+  assert.deepStrictEqual(page.posts, ["/api/ops/restart"]);
+  assert.deepStrictEqual(page.bodies, [{ service: "ai-pm-agent" }]);
+  assert.strictEqual(restartButtons(page)[1].textContent, "Restarting…");
+});
+
+test("restart warnings: a running task, and the dashboard itself", async () => {
+  const agents = LAUNCHER.agents.map((agent) => (agent.name === "coding"
+    ? { ...agent, unit: "ai-coding-agent", detail: "running feature/x · Polling CI" } : agent));
+  const page = await openPage("/ops", opsServer({ agents }));
+  await sleep(60);
+  const asked = [];
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(false); };
+  restartButtons(page)[0].click();
+  restartButtons(page)[2].click();
+  await sleep(30);
+  assert.match(asked[0], /task will be interrupted/);
+  assert.match(asked[1], /dashboard reconnects in a few seconds/);
+});
+
+test("a refused restart is shown and the button comes back", async () => {
+  const page = await openPage("/ops", {
+    ...opsServer(),
+    onPost: async () => ({ ok: false, status: 502, json: async () => ({ ok: false, error: "Unit not found" }) }),
+  });
+  await sleep(60);
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => callback(true);
+  restartButtons(page)[0].click();
+  await sleep(60);
+  assert.match(page.text("alert"), /Restart of ai-coding-agent failed: Unit not found/);
+  assert.strictEqual(restartButtons(page)[0].textContent, "Restart");
+});
+
+test("without ai-service the card explains instead of offering buttons", async () => {
+  const page = await openPage("/ops", opsServer({ service_control: { ok: false, error: "ai-service is not installed on this server", services: [] } }));
+  await sleep(60);
+  assert.match(servicesCardOf(page).textContent, /ai-service is not installed/);
+  assert.strictEqual(restartButtons(page).length, 0);
 });
