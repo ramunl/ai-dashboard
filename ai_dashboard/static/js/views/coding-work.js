@@ -61,10 +61,7 @@ function pendingRows(snapshot) {
     return [row("Ready to run", snapshot.pending_branch),
       workActions(runButton(snapshot.pending_branch), cancelButton("the pending change"))];
   }
-  if (snapshot.awaiting_bugfix_answer) {
-    return [row("Bugfix", "waiting for your answer"), el("div", "Answer in the bot chat with /answer.", "card-note"),
-      workActions(cancelButton("the pending bugfix"))];
-  }
+  if (snapshot.awaiting_bugfix_answer) return bugfixRows(snapshot);
   return startWorkRows();
 }
 

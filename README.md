@@ -293,6 +293,10 @@ snapshot (`pending_plan`), never the generated prompt.
 **Revise** opens a note field; the note becomes the words after `/discuss`,
 and Approve and Confirm are refused until the new revision is written.
 
+When a bug report needs more detail, the card shows the agent's questions
+(published as `bugfix_questions`, bounded and redacted) with an answer field;
+the answer becomes the words after `/answer`.
+
 When nothing is pending, the card has a text field with **Plan**, **Implement**
 and **Bugfix** (the agent's `/plan`, `/implement`, `/bugfix`). This is the one
 place the dashboard sends free text: a single line of at most 4000 characters,

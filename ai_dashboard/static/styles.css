@@ -279,3 +279,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .plan-details > summary { cursor: pointer; color: var(--link); padding: 0.25rem 0; }
 .plan-list { margin: 0.2rem 0 0.4rem; padding-left: 1.25rem; }
 .plan-list li { word-break: normal; overflow-wrap: anywhere; }
+
+/* Coding work card: a bug report and the agent's questions about it. */
+.bugfix-report { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.bugfix-questions { margin: 0.2rem 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }

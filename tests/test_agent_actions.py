@@ -60,6 +60,9 @@ class CheckTests(unittest.TestCase):
 
     def test_discuss_plan_takes_only_a_note(self) -> None:
         check({"action": "discuss_plan", "args": {"text": "use sqlite"}})
+        check({"action": "answer_bugfix", "args": {"text": "on Android 14"}})
+        with self.assertRaises(RequestError):
+            check({"action": "answer_bugfix", "args": {"text": "a\nb"}})
         for args in ({"text": ""}, {"text": "a\nb"}, {}, {"text": "x", "kind": "plan"}):
             with self.assertRaises(RequestError, msg=str(args)):
                 check({"action": "discuss_plan", "args": args})

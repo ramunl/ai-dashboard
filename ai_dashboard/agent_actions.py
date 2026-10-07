@@ -43,6 +43,8 @@ ACTIONS: dict[str, dict] = {
     "start_work": {"kind": _KINDS, "text": _TEXT},
     # A revision note for the pending plan: the words after /discuss.
     "discuss_plan": {"text": _TEXT},
+    # An answer to the agent's bugfix questions: the words after /answer.
+    "answer_bugfix": {"text": _TEXT},
 }
 
 

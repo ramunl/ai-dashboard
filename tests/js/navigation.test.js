@@ -1681,3 +1681,36 @@ test("the note survives refreshes and closes only when the agent accepts it", as
   assert.strictEqual(workCardOf(page).querySelector("textarea"), null);
   assert.match(page.text("alert"), /Revising plan with Claude\.\.\. The new revision will arrive in the bot chat\./);
 });
+
+// ---------------------------------------------------------------- bugfix questions
+
+const BUGFIX = { awaiting_bugfix_answer: true, bugfix_questions: { bug: "app crashes on start", questions: "1. Which screen?\n2. Which Android version?" } };
+
+test("bugfix questions are shown with an answer field; the answer goes to /answer", async () => {
+  const page = await openPage("/coding", codingWork(BUGFIX, queuedPost));
+  await sleep(60);
+  const card = workCardOf(page);
+  assert.match(card.textContent, /Bugfixneeds more detailapp crashes on startQuestions1\. Which screen\?/);
+  assert.strictEqual(card.querySelector(".bugfix-questions").textContent, BUGFIX.bugfix_questions.questions);
+  assert.deepStrictEqual(workButtons(page), ["Send answer", "Cancel"]);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Send answer").click();
+  assert.match(page.text("alert"), /Write your answer first/);
+  typeDraft(page, "home screen,\nAndroid 14");
+  const send = buttonNamed(page, "Send answer");
+  send.click();
+  send.click();  // double tap
+  await sleep(60);
+  assert.strictEqual(asked.length, 1);
+  assert.deepStrictEqual(page.bodies, [{ action: "answer_bugfix", args: { text: "home screen, Android 14" } }]);
+});
+
+test("questions are plain text, and an agent without them still points to the chat", async () => {
+  const hostile = await openPage("/coding", codingWork({ awaiting_bugfix_answer: true, bugfix_questions: { bug: "<i>x</i>", questions: "<img src=x onerror=alert(1)>" } }));
+  await sleep(60);
+  assert.strictEqual(workCardOf(hostile).querySelector("img, i"), null);
+  const old = await openPage("/coding", codingWork({ awaiting_bugfix_answer: true, bugfix_questions: null }));
+  await sleep(60);
+  assert.match(workCardOf(old).textContent, /Answer in the bot chat with \/answer\./);
+  assert.strictEqual(workCardOf(old).querySelector("textarea"), null);
+});
