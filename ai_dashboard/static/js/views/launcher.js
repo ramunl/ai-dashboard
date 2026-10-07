@@ -75,7 +75,7 @@ function healthSummary(view) {
 }
 
 function problemsCards(view) {
-  return view.problems.length ? [card("Needs attention", ...view.problems.map(problemRow))] : [];
+  return view.problems.length ? [wideCard("Needs attention", ...view.problems.map(problemRow))] : [];
 }
 
 function agentsCard(view) {

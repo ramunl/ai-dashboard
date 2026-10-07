@@ -20,6 +20,13 @@ function card(title, ...children) {
   return node;
 }
 
+// A card that spans every column of the grid (alerts, long lines).
+function wideCard(title, ...children) {
+  const node = card(title, ...children);
+  node.classList.add("card-wide");
+  return node;
+}
+
 function muted(text) {
   return el("div", text, "muted");
 }

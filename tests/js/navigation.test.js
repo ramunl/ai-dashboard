@@ -988,3 +988,16 @@ test("Claude limits show age of real usage readings without claiming freshness",
   assert.match(page.text("view"), /Read 2h.*ago · last known reading/);
   page.dom.window.close();
 });
+
+test("cards sit in a responsive grid; alerts span the full width", async () => {
+  const css = fs.readFileSync(path.join(__dirname, "../../ai_dashboard/static/styles.css"), "utf8");
+  assert.match(css, /#view \{[^}]*display: grid;[^}]*auto-fill, minmax\(min\(100%, 20rem\), 1fr\)/s);
+  const page = await openPage("/", { respond: answer(WITH_PROBLEM) });
+  await sleep(60);
+  const attention = [...page.doc.querySelectorAll("main section")]
+    .find((node) => node.querySelector("h2").textContent === "Needs attention");
+  assert.ok(attention.classList.contains("card-wide"));
+  const agents = [...page.doc.querySelectorAll("main section")]
+    .find((node) => node.querySelector("h2").textContent === "Agents");
+  assert.ok(!agents.classList.contains("card-wide"));
+});

@@ -195,3 +195,18 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   background: transparent; color: #d64545; border: 1px solid #d64545; cursor: pointer;
 }
 .danger-button:disabled { opacity: 0.5; cursor: default; }
+
+/* Cards flow into as many columns as fit: one on a phone, two or three when
+   the window is stretched. Each card keeps its natural height. */
+#view {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: 0.625rem;
+  align-items: start;
+  margin-top: 0.625rem;
+}
+#view > section { margin-top: 0; }
+/* Alerts, summaries, and anything that is not a card use the full width. */
+/* They also come first, so they never split the grid of cards. */
+#view > .card-wide,
+#view > :not(section) { grid-column: 1 / -1; order: -1; }
