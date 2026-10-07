@@ -196,22 +196,23 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 }
 .danger-button:disabled { opacity: 0.5; cursor: default; }
 
-/* Cards flow into as many columns as fit: one on a phone, two or three when
-   the window is stretched. Each card keeps its natural height. */
+/* Cards flow down as many columns as fit: one on a phone, two or three when
+   the window is stretched. Columns (not a grid) so a short card never leaves
+   a gap beside a tall one: each card sits right under the one above it. */
 #view {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
-  gap: 0.625rem;
-  align-items: start;
+  columns: 20rem;
+  column-gap: 0.625rem;
   margin-top: 0.625rem;
 }
-#view > section { margin-top: 0; }
-/* Alerts, summaries, and anything that is not a card use the full width. */
-/* They also come first, so they never split the grid of cards; a card marked
-   card-last (logs) spans the full width at the end instead. */
+#view > section { margin: 0 0 0.625rem; break-inside: avoid; }
+/* Alerts, summaries, and anything that is not a card use the full width.
+   layoutOrder() in dom.js puts them first (and the logs card last), so they
+   never split the columns of cards. */
 #view > .card-wide,
-#view > :not(section) { grid-column: 1 / -1; order: -1; }
-#view > .card-wide.card-last { order: 1; }
+#view > :not(section) { column-span: all; }
+/* With two or more columns the last card's bottom margin is dropped, so the
+   closing card adds it back (42.125rem: where a second 20rem column first fits). */
+@media (min-width: 42.125rem) { #view > .card-last { margin-top: 0.625rem; } }
 
 /* Logs card: service and filter choices, then a scrollable monospace block. */
 .logs-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }

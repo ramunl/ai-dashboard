@@ -44,7 +44,7 @@ function renderPage(page, body) {
   const view = document.getElementById("view");
   const keepEditor = page.title === "PM agent" && pmUi.node && pmUi.node.parentNode === view &&
     (pmUi.editor || pmUi.busy || pmUi.node.contains(document.activeElement));
-  if (!keepEditor) view.replaceChildren(...page.nodes);
+  if (!keepEditor) view.replaceChildren(...layoutOrder(page.nodes));
   const age = typeof body.age_seconds === "number"
     ? ` · data ${Math.round(body.age_seconds)} s old`
     : "";

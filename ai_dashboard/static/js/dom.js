@@ -27,6 +27,18 @@ function wideCard(title, ...children) {
   return node;
 }
 
+// Full-width nodes first, cards in their given order, a card-last node at the
+// end: a full-width node in the middle would cut the columns of cards in two.
+function layoutOrder(nodes) {
+  const isLast = (node) => node.classList.contains("card-last");
+  const isWide = (node) => node.tagName !== "SECTION" || node.classList.contains("card-wide");
+  return [
+    ...nodes.filter((node) => isWide(node) && !isLast(node)),
+    ...nodes.filter((node) => !isWide(node) && !isLast(node)),
+    ...nodes.filter(isLast),
+  ];
+}
+
 function muted(text) {
   return el("div", text, "muted");
 }

@@ -293,7 +293,7 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Operations", "Services", "Deployments", "Needs attention", "Disk usage", "Updates", "AI tools", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Needs attention", "Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Server resources", "Logs"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
@@ -1007,9 +1007,11 @@ test("Claude limits show age of real usage readings without claiming freshness",
   page.dom.window.close();
 });
 
-test("cards sit in a responsive grid; alerts span the full width", async () => {
+test("cards flow in columns without gaps; alerts span the full width", async () => {
   const css = fs.readFileSync(path.join(__dirname, "../../ai_dashboard/static/styles.css"), "utf8");
-  assert.match(css, /#view \{[^}]*display: grid;[^}]*auto-fill, minmax\(min\(100%, 20rem\), 1fr\)/s);
+  assert.match(css, /#view \{[^}]*columns: 20rem;/s);
+  assert.match(css, /#view > section \{[^}]*break-inside: avoid;/s);
+  assert.match(css, /#view > :not\(section\) \{ column-span: all; \}/);
   const page = await openPage("/", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
   const attention = [...page.doc.querySelectorAll("main section")]
@@ -1018,6 +1020,9 @@ test("cards sit in a responsive grid; alerts span the full width", async () => {
   const agents = [...page.doc.querySelectorAll("main section")]
     .find((node) => node.querySelector("h2").textContent === "Agents");
   assert.ok(!agents.classList.contains("card-wide"));
+  // Full-width nodes come first whatever order the page lists them in.
+  const order = page.dom.window.eval(`layoutOrder([card("A"), wideCard("W"), (() => { const n = card("L"); n.classList.add("card-wide", "card-last"); return n; })(), el("div", "note"), card("B")]).map((n) => n.textContent)`);
+  assert.deepStrictEqual([...order], ["W", "note", "A", "B", "L"]);
 });
 
 // ---------------------------------------------------------------- logs card
