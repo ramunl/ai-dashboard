@@ -35,6 +35,16 @@ class CheckTests(unittest.TestCase):
             {"action": "switch_model", "args": {"tool": "claude", "model": "claude-x"}}
         )
 
+    def test_work_actions_take_no_free_text(self) -> None:
+        for action in ("approve_plan", "confirm_work", "cancel_pending"):
+            self.assertEqual(check({"action": action, "args": {}}), (action, {}))
+            with self.assertRaises(RequestError):
+                check({"action": action, "args": {"note": "x"}})
+        check({"action": "remove_queued", "args": {"task": "12"}})
+        for task in ("", "-1", "1 2", "1;id", "abc", 3):
+            with self.assertRaises(RequestError, msg=str(task)):
+                check({"action": "remove_queued", "args": {"task": task}})
+
     def test_refuses_malformed(self) -> None:
         for body in (
             [],

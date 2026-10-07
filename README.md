@@ -277,6 +277,16 @@ rejected if the rollback revision changed. Install and initialize the manager
 following the ai-ops-agent README before using these controls; Git history alone
 is not proof that a revision is safe to roll back to.
 
+## Coding work (Coding window)
+
+The **Work** card shows the pending plan or change, the queue and the last
+run, with buttons for the agent's `/approve`, `/confirm` and `/cancel`:
+Approve, Confirm and run, Cancel, and Remove for a queued task. They travel
+the same way as the setup requests below (a request file in the agent's
+inbox; fixed action names, no free text). The agent runs its own command
+handlers, so progress and results still arrive in the bot chat. Starting a
+run asks first: it spends AI tokens and opens a pull request.
+
 ## Coding setup (Coding window)
 
 The Coding window's **Setup** card opens two sub-windows; Back returns to the

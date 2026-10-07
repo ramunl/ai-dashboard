@@ -1,4 +1,4 @@
-"""Setup requests for the coding agent: checked here, run by the agent.
+"""Setup and work requests for the coding agent: checked here, run by the agent.
 
 The dashboard never changes the agent's state itself. It writes a request
 file into the agent's inbox; the agent validates it again (it is the
@@ -20,6 +20,7 @@ _NAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _REPOSITORY = re.compile(r"^[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}$")
 _MODEL = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
 _AGENTS = ("codex", "claude")
+_TASK = re.compile(r"^[0-9]{1,9}$")
 
 # Mirrors ai_agent.inbox.ACTIONS in the coding agent.
 ACTIONS: dict[str, dict] = {
@@ -28,6 +29,12 @@ ACTIONS: dict[str, dict] = {
     "set_planner": {"value": _AGENTS},
     "set_implementer": {"value": _AGENTS},
     "switch_model": {"tool": ("claude",), "model": _MODEL},
+    # Work on plans and the queue: the agent runs its own /approve, /confirm
+    # and /cancel handlers and answers in the bot chat.
+    "approve_plan": {},
+    "confirm_work": {},
+    "cancel_pending": {},
+    "remove_queued": {"task": _TASK},
 }
 
 

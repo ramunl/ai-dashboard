@@ -186,7 +186,7 @@ test("Back from the coding window renders the launcher again", async () => {
   await sleep(250);
   page.tapAgent(0);
   await sleep(250);
-  assert.deepStrictEqual(page.state(), { path: "/coding", title: "Coding agent", cards: 8, backVisible: true });
+  assert.deepStrictEqual(page.state(), { path: "/coding", title: "Coding agent", cards: 6, backVisible: true });
   assert.match(page.text("subtitle"), /^project: repo · /);
   page.back.handler();
   await sleep(250);
@@ -1409,4 +1409,89 @@ test("Deploy is disabled while a deployment runs and a refusal is shown", async 
   deployButtonOf(page).click();
   await sleep(60);
   assert.match(page.text("alert"), /Deployment request failed: A deployment operation is already running/);
+});
+
+// ---------------------------------------------------------------- coding work card
+
+const workCardOf = (page) => [...page.doc.querySelectorAll("main section")]
+  .find((node) => node.querySelector("h2") && node.querySelector("h2").textContent === "Work");
+const workButtons = (page) => [...workCardOf(page).querySelectorAll("button")].map((button) => button.textContent);
+const codingWork = (work, extra = {}) => ({
+  latencyMs: 10,
+  respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, ...work } } : DATA[name]) }),
+  ...extra,
+});
+const queuedPost = { onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "abcd1234" }) }) };
+
+test("Work card is quiet when nothing is pending", async () => {
+  const page = await openPage("/coding", codingWork({}));
+  await sleep(60);
+  assert.match(workCardOf(page).textContent, /Nothing pendingQueueemptyLast runnone yet/);
+  assert.deepStrictEqual(workButtons(page), []);
+});
+
+test("an unapproved plan offers Approve and Cancel; Approve sends at once, only once", async () => {
+  const page = await openPage("/coding", codingWork({ pending_plan: { id: "p", feature: "add login", revision: 2, approved: false } }, queuedPost));
+  await sleep(60);
+  assert.match(workCardOf(page).textContent, /Planadd login · revision 2waiting for approval/);
+  assert.deepStrictEqual(workButtons(page), ["Approve", "Cancel"]);
+  const approve = buttonNamed(page, "Approve");
+  approve.click();
+  approve.click();  // double tap
+  await sleep(60);
+  assert.deepStrictEqual(page.posts, ["/api/coding/actions"]);
+  assert.deepStrictEqual(page.bodies, [{ action: "approve_plan", args: {} }]);
+});
+
+test("an approved plan runs only after a confirmation that names the cost", async () => {
+  const page = await openPage("/coding", codingWork({ pending_branch: "feat/login",
+    pending_plan: { id: "p", feature: "add login", revision: 2, approved: true } }, queuedPost));
+  await sleep(60);
+  assert.deepStrictEqual(workButtons(page), ["Confirm and run", "Cancel"]);
+  let asked = confirmWith(page, false);
+  buttonNamed(page, "Confirm and run").click();
+  await sleep(30);
+  assert.match(asked[0], /Queue feat\/login and run it\? This uses AI tokens and opens a pull request\./);
+  assert.deepStrictEqual(page.posts, []);
+  assert.strictEqual(buttonNamed(page, "Confirm and run").disabled, false);
+  asked = confirmWith(page, true);
+  buttonNamed(page, "Confirm and run").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "confirm_work", args: {} }]);
+});
+
+test("Cancel and Remove ask first and send the exact target", async () => {
+  const page = await openPage("/coding", codingWork({ pending_branch: "fix/crash", running: { status: "RUNNING", branch: "feat/a", phase: "tests" },
+    queue: [{ id: 7, branch: "feat/b", label: "implementation" }, { id: 8, branch: "fix/c", label: "bugfix" }] }, queuedPost));
+  await sleep(60);
+  assert.deepStrictEqual(workButtons(page), ["Confirm and run", "Cancel", "Remove", "Remove"]);
+  const asked = confirmWith(page, true);
+  [...workCardOf(page).querySelectorAll("button")][3].click();
+  await sleep(60);
+  assert.match(asked[0], /Remove queued task #8 \(fix\/c\)\?/);
+  assert.deepStrictEqual(page.bodies, [{ action: "remove_queued", args: { task: "8" } }]);
+});
+
+test("a queue left without a runner can be started; a bugfix question points to the chat", async () => {
+  const stalled = await openPage("/coding", codingWork({ queue: [{ id: 7, branch: "feat/b", label: "implementation" }] }));
+  await sleep(60);
+  assert.deepStrictEqual(workButtons(stalled), ["Remove", "Run the queue"]);
+  const bugfix = await openPage("/coding", codingWork({ awaiting_bugfix_answer: true }));
+  await sleep(60);
+  assert.match(workCardOf(bugfix).textContent, /Answer in the bot chat with \/answer\./);
+  assert.deepStrictEqual(workButtons(bugfix), ["Cancel"]);
+});
+
+test("a refused work request is shown and the last run keeps its PR link", async () => {
+  const page = await openPage("/coding", codingWork({ pending_branch: "feat/x",
+    last_execution: { branch: "feat/old", tests: "passed", files_changed: ["a", "b"], pr_url: "https://github.com/o/r/pull/1" } },
+  { onPost: async () => ({ ok: false, status: 409, json: async () => ({ error: "agent inbox is not configured" }) }) }));
+  await sleep(60);
+  assert.match(workCardOf(page).textContent, /feat\/oldpassed · 2 file\(s\)/);
+  assert.ok(workCardOf(page).querySelector("a"));
+  confirmWith(page, true);
+  buttonNamed(page, "Cancel").click();
+  await sleep(60);
+  assert.match(page.text("alert"), /Not sent: agent inbox is not configured/);
 });
