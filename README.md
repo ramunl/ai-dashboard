@@ -287,6 +287,10 @@ inbox; fixed action names, no free text). The agent runs its own command
 handlers, so progress and results still arrive in the bot chat. Starting a
 run asks first: it spends AI tokens and opens a pull request.
 
+A pending plan shows its summary, with branch, files, steps and risks under
+**Details**. The agent publishes this as a bounded, redacted outline in its
+snapshot (`pending_plan`), never the generated prompt.
+
 When nothing is pending, the card has a text field with **Plan**, **Implement**
 and **Bugfix** (the agent's `/plan`, `/implement`, `/bugfix`). This is the one
 place the dashboard sends free text: a single line of at most 4000 characters,

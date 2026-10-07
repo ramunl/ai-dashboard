@@ -1574,3 +1574,54 @@ test("a refused start keeps the draft and shows the agent's reason", async () =>
   assert.match(page.text("alert"), /already being planned/);
   assert.strictEqual(workCardOf(page).querySelector("textarea").value, "add search");
 });
+
+// ---------------------------------------------------------------- plan details
+
+const PLAN = { id: "p1", feature: "add login", revision: 2, approved: false, branch: "feature/login",
+  summary: "Add a login page with a session cookie.", files: ["app/login.py", "tests/test_login.py"],
+  steps: ["Write the form", "Check the password", "Add tests"], risks: ["Sessions are new here"] };
+
+test("a pending plan shows its summary, with files, steps and risks under Details", async () => {
+  const page = await openPage("/coding", codingWork({ pending_plan: PLAN }));
+  await sleep(60);
+  const card = workCardOf(page);
+  assert.strictEqual(card.querySelector(".plan-summary").textContent, "Add a login page with a session cookie.");
+  const details = card.querySelector("details.plan-details");
+  assert.strictEqual(details.open, false);
+  assert.strictEqual(details.querySelector("summary").textContent, "Details · 3 steps · 2 files");
+  assert.match(details.textContent, /Branchfeature\/login/);
+  assert.deepStrictEqual([...details.querySelectorAll("ol li")].map((n) => n.textContent), PLAN.steps);
+  assert.deepStrictEqual([...details.querySelectorAll("ul li")].map((n) => n.textContent), [...PLAN.files, ...PLAN.risks]);
+  assert.deepStrictEqual(workButtons(page), ["Approve", "Cancel"]);
+});
+
+test("opened plan details stay open across refreshes, until the plan changes", async () => {
+  const state = { plan: PLAN };
+  const page = await openPage("/coding", {
+    latencyMs: 10,
+    respond: async (name) => ({ ok: true, status: 200,
+      json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, pending_plan: state.plan } } : DATA[name]) }),
+  });
+  await sleep(60);
+  const details = () => workCardOf(page).querySelector("details.plan-details");
+  details().open = true;
+  details().dispatchEvent(new page.dom.window.Event("toggle"));
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.strictEqual(details().open, true);
+  state.plan = { ...PLAN, revision: 3 };
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.strictEqual(details().open, false);
+});
+
+test("plan text is never treated as markup, and an older agent shows no details", async () => {
+  const hostile = await openPage("/coding", codingWork({ pending_plan: { ...PLAN, summary: "<img src=x onerror=alert(1)>", steps: ["<b>bold</b>"] } }));
+  await sleep(60);
+  assert.strictEqual(workCardOf(hostile).querySelector("img"), null);
+  assert.strictEqual(workCardOf(hostile).querySelector("ol li").textContent, "<b>bold</b>");
+  const old = await openPage("/coding", codingWork({ pending_plan: { id: "p", feature: "add login", revision: 2, approved: false } }));
+  await sleep(60);
+  assert.strictEqual(workCardOf(old).querySelector(".plan-details"), null);
+  assert.deepStrictEqual(workButtons(old), ["Approve", "Cancel"]);
+});

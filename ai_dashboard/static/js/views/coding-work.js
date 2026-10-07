@@ -54,7 +54,7 @@ function pendingRows(snapshot) {
       ? runButton(snapshot.pending_branch || "the approved plan")
       : workButton("Approve", "work:approve", "row-button",
         (button) => sendWork("work:approve", "approve_plan", {}, button));
-    return [...rows, workActions(first, cancelButton("the pending plan"))];
+    return [...rows, ...planDetails(plan), workActions(first, cancelButton("the pending plan"))];
   }
   if (snapshot.pending_branch) {
     return [row("Ready to run", snapshot.pending_branch),
