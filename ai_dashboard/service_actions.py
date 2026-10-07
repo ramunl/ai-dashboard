@@ -77,6 +77,11 @@ class ServiceControl:
         logger.info("Restart of %s requested from the %s bot", service, requested_by)
         return await invoke(self.command, "restart", service)
 
+    async def reboot(self, requested_by: str) -> dict:
+        """Queue a reboot of the server; ai-service refuses while work is running."""
+        logger.warning("Server reboot requested from the %s bot", requested_by)
+        return await invoke(self.command, "reboot")
+
     async def state(self, agents: list[dict], server_uptime: float | None) -> dict:
         """Each allowed service with its state and uptime, for the Services card."""
         allowed = await self.services()

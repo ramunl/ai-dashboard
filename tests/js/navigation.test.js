@@ -1243,3 +1243,51 @@ test("AI tools card is locked while a run is active and shows a failed update", 
     [["Updating…", true], ["Check versions", true]]);
   assert.match(toolsCardOf(page).textContent, /Last updateclaude failednpm ERR! EACCES/);
 });
+
+// ---------------------------------------------------------------- reboot
+
+const rebootButtonOf = (page) => page.doc.querySelector("button.reboot-button");
+const answerInTurn = (page, answers) => {
+  const asked = [];
+  page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(answers[asked.length - 1]); };
+  return asked;
+};
+
+test("reboot needs two confirmations and sends only the fixed body", async () => {
+  const page = await openPage("/ops", opsServer());
+  await sleep(60);
+  let asked = answerInTurn(page, [false]);
+  rebootButtonOf(page).click();
+  await sleep(30);
+  assert.match(asked[0], /Reboot the server\?/);
+  asked = answerInTurn(page, [true, false]);
+  rebootButtonOf(page).click();
+  await sleep(30);
+  assert.deepStrictEqual(asked.length, 2);
+  assert.deepStrictEqual(page.posts, []);
+  answerInTurn(page, [true, true]);
+  const button = rebootButtonOf(page);
+  button.click();
+  button.click();  // double tap
+  await sleep(60);
+  assert.deepStrictEqual(page.posts, ["/api/ops/reboot"]);
+  assert.deepStrictEqual(page.bodies, [{ confirm: "reboot" }]);
+  assert.strictEqual(rebootButtonOf(page).textContent, "Rebooting…");
+  assert.strictEqual(rebootButtonOf(page).disabled, true);
+});
+
+test("a refused reboot says why and frees the button; no ai-service, no button", async () => {
+  const refused = await openPage("/ops", { ...opsServer({ packages: { running: null, last_upgrade: null,
+    report: { ok: true, total: 0, security: [], stable: [], untested: [], checked_at: 1, reboot_required: true } } }),
+    onPost: async () => ({ ok: false, status: 409, json: async () => ({ error: "a package upgrade is running" }) }) });
+  await sleep(60);
+  assert.match(refused.doc.querySelector("main").textContent, /A reboot is required to finish installed updates/);
+  answerInTurn(refused, [true, true]);
+  rebootButtonOf(refused).click();
+  await sleep(60);
+  assert.match(refused.text("alert"), /Reboot did not start: a package upgrade is running/);
+  assert.strictEqual(rebootButtonOf(refused).disabled, false);
+  const missing = await openPage("/ops", opsServer({ service_control: { ok: false, error: "ai-service is not installed", services: [] } }));
+  await sleep(60);
+  assert.strictEqual(rebootButtonOf(missing), null);
+});

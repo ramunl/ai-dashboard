@@ -30,6 +30,7 @@ def _fake_ai_service() -> tuple[str, Path]:
         f'case "$1" in\n'
         f"  list) echo '{json.dumps({'ok': True, 'services': ALLOWED})}' ;;\n"
         f'  restart) echo "$2" >> {calls}; echo "{{\\"ok\\": true, \\"service\\": \\"$2\\", \\"queued\\": true}}" ;;\n'
+        f'  reboot) echo REBOOT >> {calls}; echo \'{{"ok": true, "queued": true}}\' ;;\n'
         "esac\n"
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -179,3 +180,34 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         body = await (await self.client.get("/api/ops", headers=_auth())).json()
         units = [row["unit"] for row in body["service_control"]["services"]]
         self.assertEqual(units, ALLOWED)
+
+    async def reboot(self, body, headers=None):
+        return await self.client.post(
+            "/api/ops/reboot",
+            data=json.dumps(body),
+            headers=_auth() if headers is None else headers,
+        )
+
+    async def test_reboot_requires_the_owner_and_the_exact_body(self) -> None:
+        confirm = {"confirm": "reboot"}
+        self.assertEqual((await self.reboot(confirm, headers={})).status, 401)
+        self.assertEqual((await self.reboot(confirm, headers=_auth(1))).status, 403)
+        for body in ({}, {"confirm": "yes"}, {"confirm": "reboot", "x": 1}, "reboot"):
+            self.assertEqual((await self.reboot(body)).status, 400, body)
+        response = await self.client.get("/api/ops/reboot", headers=_auth())
+        self.assertNotEqual(response.status, 202)
+        self.assertFalse(self.calls.exists())
+
+    async def test_reboot_is_queued(self) -> None:
+        response = await self.reboot({"confirm": "reboot"})
+        self.assertEqual(response.status, 202)
+        self.assertEqual(self.calls.read_text().split(), ["REBOOT"])
+
+    async def test_reboot_waits_for_running_work(self) -> None:
+        self.client.app[server.PACKAGES].running = "upgrade"
+        response = await self.reboot({"confirm": "reboot"})
+        self.assertEqual(response.status, 409)
+        self.assertEqual(
+            (await response.json())["error"], "a package upgrade is running"
+        )
+        self.assertFalse(self.calls.exists())

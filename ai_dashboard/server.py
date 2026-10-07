@@ -281,6 +281,52 @@ async def restart_action(request: web.Request) -> web.Response:
     return web.json_response(result, status=202, headers=_NO_STORE)
 
 
+def _running_work(app: web.Application) -> str | None:
+    """What the dashboard itself is running that a reboot would interrupt."""
+    if app[PACKAGES].running:
+        return f"a package {app[PACKAGES].running}"
+    if app[CLEANUP].running:
+        return "a disk cleanup"
+    if app[TOOLS].running:
+        return "an AI tools run"
+    return None
+
+
+async def reboot_action(request: web.Request) -> web.Response:
+    """Owner-only server reboot (queued, answers at once).
+
+    The body must be exactly {"confirm": "reboot"}, so a stray or replayed
+    POST meant for another endpoint can never reboot the server.
+    """
+    settings = request.app[SETTINGS]
+    try:
+        viewer = verify_init_data(
+            _init_data(request), settings.tokens(), settings.owner_id
+        )
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    try:
+        payload = await request.json()
+    except ValueError:
+        payload = None
+    if payload != {"confirm": "reboot"}:
+        return web.json_response(
+            {"error": 'expected {"confirm": "reboot"}'}, status=400, headers=_NO_STORE
+        )
+    running = _running_work(request.app)
+    if running:
+        return web.json_response(
+            {"error": f"{running} is running"}, status=409, headers=_NO_STORE
+        )
+    result = await request.app[SERVICES].reboot(viewer.bot)
+    if not result.get("ok"):
+        status = 409 if result.get("busy") else 502
+        return web.json_response(result, status=status, headers=_NO_STORE)
+    return web.json_response(result, status=202, headers=_NO_STORE)
+
+
 async def rollback_action(request: web.Request) -> web.Response:
     """Authenticate and queue a fixed-target rollback outside this service."""
     settings = request.app[SETTINGS]
@@ -355,6 +401,7 @@ def build_app(
     app.router.add_post("/api/ops/cleanup", cleanup_action)
     app.router.add_post("/api/ops/rollback", rollback_action)
     app.router.add_post("/api/ops/restart", restart_action)
+    app.router.add_post("/api/ops/reboot", reboot_action)
     app.router.add_post("/api/ops/packages", packages_action)
     app.router.add_post("/api/ops/tools", tools_action)
 

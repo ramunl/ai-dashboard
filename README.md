@@ -329,6 +329,10 @@ needs the owner's signed Telegram data, and the agent side validates again.
   versions* shows the installed and the published version of each; a tool
   with a newer version gets an **Update** button (confirmation first). Only a
   tool the last check listed can be updated, one run at a time.
+- **Server**: a red **Reboot server** button, two confirmations. `POST
+  /api/ops/reboot` accepts only `{"confirm": "reboot"}`; the reboot is queued so
+  the page gets its answer, and it is refused while a package upgrade, cleanup,
+  AI tool update or deployment is running.
 - **Logs**: the last 80 journal lines of one service, or its errors from the
   last 24 hours. Loaded on demand (not by the 5-second refresh). `GET
   /api/ops/logs?unit=&errors=` reads only units the dashboard monitors.
