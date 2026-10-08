@@ -68,7 +68,7 @@ function reviseRows() {
   note.placeholder = "What should change in the plan?";
   note.maxLength = WORK_TEXT_LIMIT;
   note.value = reviseDraft;
-  note.disabled = hasPendingActions();
+  note.disabled = hasPendingActions() || isWorkBusy;
   note.setAttribute("aria-label", "Revision note");
   note.addEventListener("input", () => { reviseDraft = note.value; });
   return [note, workActions(sendReviseButton())];

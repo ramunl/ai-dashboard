@@ -3,10 +3,14 @@
 // command handlers and reports progress in the bot chat; this card only sends
 // the request and redraws from the next snapshot.
 
+// The agent is thinking (planning, revising, checking a bug report): every
+// work button waits, since the agent would refuse anyway.
+let isWorkBusy = false;
+
 function workButton(label, key, className, onClick) {
   const button = el("button", label, className);
   button.type = "button";
-  button.disabled = hasPendingActions();
+  button.disabled = hasPendingActions() || isWorkBusy;
   if (isActionPending(key)) button.textContent = "Sending…";
   button.addEventListener("click", () => {
     if (button.disabled) return;
@@ -98,5 +102,11 @@ function lastRunRows(execution) {
 }
 
 function workCard(snapshot) {
-  return card("Work", ...pendingRows(snapshot), ...queueRows(snapshot), ...lastRunRows(snapshot.last_execution));
+  const thinking = snapshot.thinking || null;
+  isWorkBusy = Boolean(thinking);
+  // Nothing pending yet while a new request is thought about: the progress
+  // row stands in for the empty form.
+  const isNewWork = thinking && !snapshot.pending_plan && !snapshot.awaiting_bugfix_answer;
+  const pending = isNewWork ? [] : pendingRows(snapshot);
+  return card("Work", ...thinkingRows(thinking), ...pending, ...queueRows(snapshot), ...lastRunRows(snapshot.last_execution));
 }

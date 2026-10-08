@@ -283,3 +283,11 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 /* Coding work card: a bug report and the agent's questions about it. */
 .bugfix-report { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .bugfix-questions { margin: 0.2rem 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Coding work card: the agent is thinking. The dot pulses unless the viewer
+   asked for less motion. */
+.thinking-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.2rem 0; }
+.thinking-dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--accent); animation: thinking-pulse 1.2s ease-in-out infinite; }
+.thinking-about { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+@keyframes thinking-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .thinking-dot { animation: none; } }

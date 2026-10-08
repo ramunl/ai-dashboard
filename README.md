@@ -297,6 +297,11 @@ When a bug report needs more detail, the card shows the agent's questions
 (published as `bugfix_questions`, bounded and redacted) with an answer field;
 the answer becomes the words after `/answer`.
 
+While the agent is planning, revising or checking a bug report (from the
+dashboard or the chat), the card shows what it is working on and for how
+long, and the work buttons wait. The agent publishes this as `thinking` only
+while the AI call runs; it is never saved, so a restart cannot leave it stuck.
+
 When nothing is pending, the card has a text field with **Plan**, **Implement**
 and **Bugfix** (the agent's `/plan`, `/implement`, `/bugfix`). This is the one
 place the dashboard sends free text: a single line of at most 4000 characters,

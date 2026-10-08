@@ -1714,3 +1714,54 @@ test("questions are plain text, and an agent without them still points to the ch
   assert.match(workCardOf(old).textContent, /Answer in the bot chat with \/answer\./);
   assert.strictEqual(workCardOf(old).querySelector("textarea"), null);
 });
+
+// ---------------------------------------------------------------- thinking state
+
+const thinkingFor = (kind, seconds = 75) => ({ kind, about: "alerts from the ops bot", started_at: Date.now() / 1000 - seconds });
+
+test("a new plan being written replaces the empty form with a progress row", async () => {
+  const page = await openPage("/coding", codingWork({ thinking: thinkingFor("plan") }));
+  await sleep(60);
+  const card = workCardOf(page);
+  assert.strictEqual(card.querySelector(".thinking-row").getAttribute("role"), "status");
+  assert.match(card.textContent, /Planning… 1m.*alerts from the ops botThe result will arrive in the bot chat and here\./);
+  assert.strictEqual(card.querySelector("textarea"), null);
+  assert.deepStrictEqual(workButtons(page), []);
+});
+
+test("while a plan is revised it stays visible but every button waits", async () => {
+  const page = await openPage("/coding", codingWork({ pending_plan: PLAN, thinking: thinkingFor("revise") }));
+  await sleep(60);
+  const card = workCardOf(page);
+  assert.match(card.textContent, /Revising the plan…/);
+  assert.ok(card.querySelector(".plan-summary"));
+  const buttons = [...card.querySelectorAll("button")];
+  assert.deepStrictEqual(buttons.map((b) => b.textContent), ["Approve", "Revise", "Cancel"]);
+  assert.ok(buttons.every((b) => b.disabled));
+});
+
+test("an answer being checked keeps the questions and locks the answer field", async () => {
+  const page = await openPage("/coding", codingWork({ ...BUGFIX, thinking: thinkingFor("answer", 5) }));
+  await sleep(60);
+  const card = workCardOf(page);
+  assert.match(card.textContent, /Checking your answer… /);
+  assert.strictEqual(card.querySelector("textarea").disabled, true);
+  assert.ok([...card.querySelectorAll("button")].every((b) => b.disabled));
+});
+
+test("when thinking ends the buttons come back, and an older agent shows no progress row", async () => {
+  const state = { thinking: thinkingFor("plan") };
+  const page = await openPage("/coding", {
+    latencyMs: 10,
+    respond: async (name) => ({ ok: true, status: 200,
+      json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, thinking: state.thinking } } : DATA[name]) }),
+  });
+  await sleep(60);
+  assert.deepStrictEqual(workButtons(page), []);
+  state.thinking = undefined;
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.strictEqual(workCardOf(page).querySelector(".thinking-row"), null);
+  assert.deepStrictEqual(workButtons(page), ["Plan", "Implement", "Bugfix"]);
+  assert.ok([...workCardOf(page).querySelectorAll("button")].every((b) => !b.disabled));
+});

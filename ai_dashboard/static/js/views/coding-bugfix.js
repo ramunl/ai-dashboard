@@ -30,7 +30,7 @@ function bugfixRows(snapshot) {
   answer.placeholder = "Your answer…";
   answer.maxLength = WORK_TEXT_LIMIT;
   answer.value = answerDraft;
-  answer.disabled = hasPendingActions();
+  answer.disabled = hasPendingActions() || isWorkBusy;
   answer.setAttribute("aria-label", "Answer to the bugfix questions");
   answer.addEventListener("input", () => { answerDraft = answer.value; });
   return [

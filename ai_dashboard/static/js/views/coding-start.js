@@ -47,7 +47,7 @@ function startWorkRows() {
   draft.placeholder = "Describe a feature or a bug…";
   draft.maxLength = WORK_TEXT_LIMIT;
   draft.value = workDraft;
-  draft.disabled = hasPendingActions();
+  draft.disabled = hasPendingActions() || isWorkBusy;
   draft.setAttribute("aria-label", "New work");
   draft.addEventListener("input", () => { workDraft = draft.value; });
   return [draft, workActions(...WORK_KINDS.map(startButton))];
