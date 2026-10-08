@@ -74,7 +74,16 @@ function diskUsageCard(view) {
     rows.push(el("div", "Largest directories", "card-subtitle"));
     for (const entry of largest) rows.push(row(entry.path, formatBytes(entry.bytes)));
   }
-  return card("Disk usage", ...rows, cleanupButton(cleanup), ...lastCleanupRows(cleanup.last_run));
+  return card("Disk usage", ...rows, ...measuredRows(cleanup.report_at), cleanupButton(cleanup), ...lastCleanupRows(cleanup.last_run));
+}
+
+// A report restored after a restart can be old; say so until a new one lands.
+const MEASURED_STALE_SECONDS = 15 * 60;
+
+function measuredRows(reportAt) {
+  if (typeof reportAt !== "number") return [];
+  const age = Math.max(0, Date.now() / 1000 - reportAt);
+  return age > MEASURED_STALE_SECONDS ? [el("div", `Measured ${formatDuration(age)} ago; measuring again…`, "card-note")] : [];
 }
 
 function opsPage(view) {

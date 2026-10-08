@@ -13,6 +13,7 @@ import logging
 import time
 
 from ai_dashboard.maintenance import invoke
+from ai_dashboard.saved_checks import SavedChecks
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,13 @@ TIMEOUTS = {"check": 480, "upgrade": 1020}  # a little above the command's own
 class PackageService:
     """Last check and last upgrade, with at most one run at a time."""
 
-    def __init__(self, command: str) -> None:
-        """Remember the command; nothing runs until asked."""
+    def __init__(self, command: str, saved: SavedChecks | None = None) -> None:
+        """Remember the command and restore the last results; nothing runs."""
         self.command = command
+        self.saved = saved or SavedChecks(None)
         self.running: str | None = None
-        self.report: dict | None = None
-        self.last_upgrade: dict | None = None
+        self.report: dict | None = self.saved.get("packages", "report")
+        self.last_upgrade: dict | None = self.saved.get("packages", "last_upgrade")
         self._task: asyncio.Task | None = None
 
     def start(self, mode: str, triggered_by: str) -> bool:
@@ -66,6 +68,9 @@ class PackageService:
                 }
         finally:
             self.running = None
+            self.saved.put(
+                "packages", {"report": self.report, "last_upgrade": self.last_upgrade}
+            )
 
     async def close(self) -> None:
         """Stop waiting for an active run during shutdown."""

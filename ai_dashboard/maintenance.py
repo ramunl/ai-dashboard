@@ -16,6 +16,8 @@ import os
 import signal
 import time
 
+from ai_dashboard.saved_checks import SavedChecks
+
 logger = logging.getLogger(__name__)
 
 REPORT_INTERVAL_SECONDS = 600
@@ -72,13 +74,16 @@ async def invoke(
 class CleanupService:
     """Cached disk report plus at most one cleanup run at a time."""
 
-    def __init__(self, command: str) -> None:
-        """Remember the cleanup command; nothing runs until asked."""
+    def __init__(self, command: str, saved: SavedChecks | None = None) -> None:
+        """Remember the command and restore the last results; nothing runs."""
         self.command = command
-        self.report: dict | None = None
-        self.report_at: float | None = None
+        self.saved = saved or SavedChecks(None)
+        self.report: dict | None = self.saved.get("cleanup", "report")
+        self.report_at: float | None = self.saved.get(
+            "cleanup", "report_at", (int, float)
+        )
         self.running = False
-        self.last_run: dict | None = None
+        self.last_run: dict | None = self.saved.get("cleanup", "last_run")
         self._task: asyncio.Task | None = None
 
     async def refresh_report(self) -> None:
@@ -87,6 +92,17 @@ class CleanupService:
             return
         self.report = await invoke(self.command, "report", REPORT_TIMEOUT_SECONDS)
         self.report_at = time.time()
+        self._save()
+
+    def _save(self) -> None:
+        self.saved.put(
+            "cleanup",
+            {
+                "report": self.report,
+                "report_at": self.report_at,
+                "last_run": self.last_run,
+            },
+        )
 
     async def refresh_forever(self, interval: float = REPORT_INTERVAL_SECONDS) -> None:
         """Keep the report fresh until cancelled."""
@@ -120,6 +136,7 @@ class CleanupService:
             self.report_at = time.time()
         finally:
             self.running = False
+            self._save()
 
     async def close(self) -> None:
         """Stop an active cleanup and its child processes during shutdown."""

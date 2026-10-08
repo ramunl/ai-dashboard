@@ -58,6 +58,11 @@ class Settings:
     pm_command: str = "/usr/local/sbin/ai-pm-todos"
 
     @property
+    def saved_checks_file(self) -> Path:
+        """Last disk, package and AI tool results, kept across restarts."""
+        return self.state_dir / "ops-checks.json"
+
+    @property
     def disk_history_file(self) -> Path:
         """Hourly disk readings behind the overview's growth trend."""
         return self.state_dir / "disk-history.json"

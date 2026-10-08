@@ -14,6 +14,7 @@ import time
 from collections.abc import Coroutine
 
 from ai_dashboard.maintenance import invoke
+from ai_dashboard.saved_checks import SavedChecks
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +25,13 @@ UPDATE_TIMEOUT_SECONDS = 420  # a little above the command's own
 class ToolService:
     """Last check and last update, with at most one run at a time."""
 
-    def __init__(self, command: str) -> None:
-        """Remember the command; nothing runs until asked."""
+    def __init__(self, command: str, saved: SavedChecks | None = None) -> None:
+        """Remember the command and restore the last results; nothing runs."""
         self.command = command
+        self.saved = saved or SavedChecks(None)
         self.running: str | None = None  # "check" or the tool being updated
-        self.report: dict | None = None
-        self.last_update: dict | None = None
+        self.report: dict | None = self.saved.get("ai_tools", "report")
+        self.last_update: dict | None = self.saved.get("ai_tools", "last_update")
         self._task: asyncio.Task | None = None
 
     def known_tools(self) -> list[str]:
@@ -62,6 +64,9 @@ class ToolService:
             await work
         finally:
             self.running = None
+            self.saved.put(
+                "ai_tools", {"report": self.report, "last_update": self.last_update}
+            )
 
     async def _check(self) -> None:
         self.report = await invoke(

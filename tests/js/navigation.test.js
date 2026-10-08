@@ -1765,3 +1765,14 @@ test("when thinking ends the buttons come back, and an older agent shows no prog
   assert.deepStrictEqual(workButtons(page), ["Plan", "Implement", "Bugfix"]);
   assert.ok([...workCardOf(page).querySelectorAll("button")].every((b) => !b.disabled));
 });
+
+// ---------------------------------------------------------------- restored disk report
+
+test("a disk report restored after a restart says how old it is", async () => {
+  const old = await openPage("/ops", opsServer({ cleanup: { ...OPS.cleanup, report_at: Date.now() / 1000 - 3 * 3600 } }));
+  await sleep(60);
+  assert.match(old.text("view"), /Measured 3h 0m ago; measuring again…/);
+  const fresh = await openPage("/ops", opsServer({ cleanup: { ...OPS.cleanup, report_at: Date.now() / 1000 - 60 } }));
+  await sleep(60);
+  assert.doesNotMatch(fresh.text("view"), /Measured/);
+});

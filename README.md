@@ -355,6 +355,12 @@ needs the owner's signed Telegram data, and the agent side validates again.
   warns when the coding agent is running a task, and when restarting the
   dashboard itself). `POST /api/ops/restart` takes only `{"service": name}`;
   the restart is queued, so the dashboard answers before it goes down.
+- **Kept across restarts**: the last disk report and cleanup, package check
+  and upgrade, and AI tool check and update are saved in
+  `<state dir>/ops-checks.json`, so a restart or deploy of the dashboard no
+  longer shows "Not checked". Only finished results are saved, never
+  "running"; an old disk report says when it was measured until a new one
+  arrives.
 - **Updates**: system packages, via the ops agent's `ai-packages`. *Check for
   updates* refreshes the package indexes and lists what is pending (security
   updates counted separately); *Upgrade* asks first, then installs. Nothing
