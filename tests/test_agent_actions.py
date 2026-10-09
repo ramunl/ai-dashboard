@@ -35,6 +35,9 @@ class CheckTests(unittest.TestCase):
             {"action": "switch_model", "args": {"tool": "claude", "model": "claude-x"}}
         )
 
+    def test_accepts_codex_model_switch(self) -> None:
+        check({"action": "switch_model", "args": {"tool": "codex", "model": "default"}})
+
     def test_work_actions_take_no_free_text(self) -> None:
         for action in ("approve_plan", "confirm_work", "cancel_pending"):
             self.assertEqual(check({"action": action, "args": {}}), (action, {}))
@@ -98,7 +101,7 @@ class CheckTests(unittest.TestCase):
             {"action": "use_project", "args": {"name": "../x"}},
             {"action": "use_project", "args": {"name": "a", "b": "c"}},
             {"action": "add_repository", "args": {"repository": "o/r && id"}},
-            {"action": "switch_model", "args": {"tool": "codex", "model": "m"}},
+            {"action": "switch_model", "args": {"tool": "claude-code", "model": "m"}},
         ):
             with self.assertRaises(RequestError, msg=str(body)):
                 check(body)

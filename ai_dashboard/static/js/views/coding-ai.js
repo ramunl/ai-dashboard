@@ -30,10 +30,14 @@ function toolsInUse(setup) {
 function modelPicker(entry) {
   const key = `model:${entry.tool}`;
   // The current model is always offered, even if the provider's list omits it.
-  const values = [entry.model, ...entry.choices.filter((model) => model !== entry.model)];
-  return radioList(`model-${entry.tool}`, values.map((value) => ({ value })), entry.model,
+  const choices = entry.tool === "codex" ? ["default", ...entry.choices] : entry.choices;
+  const values = [...new Set([entry.model, ...choices])];
+  return radioList(`model-${entry.tool}`, values.map((value) => ({ value, label: entry.tool === "codex" && value === "default" ? "CLI default" : value })), entry.model,
     isActionPending(key), (model, input) => {
-      const message = `Switch ${TOOL_LABELS[entry.tool]} to ${model}? The agent checks the model, then restarts.`;
+      const detail = entry.tool === "codex"
+        ? "Applies to the next Codex run for planning and implementation. No restart or AI request is needed."
+        : "The agent checks the model, then restarts.";
+      const message = `Switch ${TOOL_LABELS[entry.tool]} to ${model}? ${detail}`;
       askConfirmation(message, (isConfirmed) => {
         if (!isConfirmed) {
           // Declined: show the model that is still current.
@@ -50,15 +54,16 @@ function modelPicker(entry) {
 function toolModelNodes(entry, roles) {
   const nodes = [
     el("div", `${TOOL_LABELS[entry.tool] || entry.tool} · ${roles.join(" and ")}`, "card-subtitle"),
-    row("Current", entry.model || "—"),
+    row("Current", entry.tool === "codex" && entry.model === "default" ? "CLI default" : entry.model || "—"),
   ];
   if (!entry.manageable) {
     nodes.push(el("div", `Read-only. ${entry.note}`, "card-note"));
     return nodes;
   }
+  if (entry.note) nodes.push(el("div", entry.note, "card-note"));
   nodes.push(modelPicker(entry));
   if (isActionPending(`model:${entry.tool}`)) {
-    nodes.push(el("div", "Switching; the agent restarts and comes back in a few seconds.", "card-note"));
+    nodes.push(el("div", entry.tool === "codex" ? "Saving model for the next run…" : "Switching; the agent restarts and comes back in a few seconds.", "card-note"));
   }
   if (entry.choices_error) nodes.push(el("div", `Model list unavailable: ${entry.choices_error}`, "card-note"));
   return nodes;

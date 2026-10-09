@@ -34,7 +34,7 @@ ACTIONS: dict[str, dict] = {
     "add_repository": {"repository": _REPOSITORY},
     "set_planner": {"value": _AGENTS},
     "set_implementer": {"value": _AGENTS},
-    "switch_model": {"tool": ("claude",), "model": _MODEL},
+    "switch_model": {"tool": ("claude", "codex"), "model": _MODEL},
     # Work on plans and the queue: the agent runs its own /approve, /confirm
     # and /cancel handlers and answers in the bot chat.
     "approve_plan": {},

@@ -351,8 +351,10 @@ Coding window.
   the agent runs or has queued tasks, with the reason shown.
 - **AI tools** (`/coding/ai`): planner and implementer (`codex` / `claude`),
   and models. The Claude API model can be switched (after a confirmation; the
-  agent verifies it and restarts). Codex and Claude Code models are read-only,
-  because they live in those CLIs' own configs.
+  agent verifies it and restarts). Codex models come from the server CLI catalog;
+  selection applies to the next planning or implementation run without a restart
+  or inference probe. **CLI default** restores its own configuration. Claude Code
+  remains read-only.
 
 The dashboard never changes the agent's state itself. `POST /api/coding/actions`
 (owner's signed Telegram data, JSON body, at most 4 KB) checks the request and
