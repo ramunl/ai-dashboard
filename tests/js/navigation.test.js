@@ -1936,3 +1936,19 @@ test("a todo with a task shows the task's status, which opens Tasks", async () =
   await sleep(70);
   assert.strictEqual(page.dom.window.location.pathname, "/tasks");
 });
+
+test("Deploy latest main is offered only when main on GitHub differs from what runs", async () => {
+  const targets = [
+    { name: "ai-pm-agent", status: "healthy", current: { commit: "a".repeat(40), version: "v1" }, previous: null, latest: "a".repeat(40), latest_error: null },
+    { name: "ai-ops-agent", status: "healthy", current: { commit: "b".repeat(40), version: "v1" }, previous: null, latest: "c".repeat(40), latest_error: null },
+    { name: "ai-dashboard", status: "healthy", current: { commit: "d".repeat(40), version: "v1" }, previous: null, latest: null, latest_error: "Could not check GitHub" },
+  ];
+  const page = await openPage("/ops", { respond: opsDeployments({ ok: true, targets }) });
+  await sleep(60);
+  const items = [...page.doc.querySelectorAll("details.deploy-item")];
+  assert.strictEqual(items[0].querySelector("button.deploy-button"), null);
+  assert.match(items[0].textContent, /Up to date with main\./);
+  assert.strictEqual(items[1].querySelector("button.deploy-button").textContent, "Deploy latest main · ccccccc");
+  assert.strictEqual(items[2].querySelector("button.deploy-button").textContent, "Deploy latest main");
+  assert.match(page.doc.querySelector("main").textContent, /Could not check GitHub; deploying may change nothing\./);
+});

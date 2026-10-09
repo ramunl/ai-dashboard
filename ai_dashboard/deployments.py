@@ -19,7 +19,7 @@ NOT_INSTALLED = (
 )
 
 
-async def invoke_deployment(command: str, *arguments: str) -> dict:
+async def invoke_deployment(command: str, *arguments: str, timeout: float = 10) -> dict:
     """Invoke a fixed local command without a shell or exposing its stderr."""
     try:
         process = await asyncio.create_subprocess_exec(
@@ -32,7 +32,7 @@ async def invoke_deployment(command: str, *arguments: str) -> dict:
     except OSError:
         return {"ok": False, "error": NOT_INSTALLED}
     try:
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except (asyncio.TimeoutError, asyncio.CancelledError) as error:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
@@ -117,6 +117,34 @@ def deployment_state(result: dict) -> dict:
     return {"ok": True, "targets": targets}
 
 
+REMOTE_SECONDS = 180  # how old the "latest main" reading may get
+REMOTE_TIMEOUT = 60  # git ls-remote for every target, over the network
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+
+
+def with_latest(state: dict, remote: dict[str, dict]) -> dict:
+    """Add each target's latest main commit, so the page knows if a deploy helps."""
+    if not state.get("ok"):
+        return state
+    targets = []
+    for target in state["targets"]:
+        reading = remote.get(target["name"]) or {}
+        main = reading.get("main")
+        targets.append(
+            {
+                **target,
+                "latest": main
+                if isinstance(main, str) and _COMMIT.match(main)
+                else None,
+                # Never the raw git error: it may contain URLs or paths.
+                "latest_error": "Could not check GitHub"
+                if reading.get("error")
+                else None,
+            }
+        )
+    return {**state, "targets": targets}
+
+
 class DeploymentService:
     """Cache reads briefly and serialize submissions; jobs outlive the dashboard."""
 
@@ -126,11 +154,47 @@ class DeploymentService:
         self._state: dict = {}
         self._read_at = 0.0
         self._lock = asyncio.Lock()
+        self._remote: dict[str, dict] = {}
+        self._remote_at: float | None = None
+        self._remote_task: asyncio.Task | None = None
 
     async def state(self, force: bool = False) -> dict:
-        """Return a recent sanitized status, refreshing at most every five seconds."""
+        """Return a recent sanitized status, refreshing at most every five seconds.
+
+        Each target also gets "latest", the commit main points to on GitHub,
+        read in the background at most every REMOTE_SECONDS (None until then).
+        """
         async with self._lock:
-            return await self._refresh(force)
+            state = await self._refresh(force)
+        self._read_remote_soon()
+        return with_latest(state, self._remote)
+
+    def _read_remote_soon(self) -> None:
+        is_due = self._remote_at is None or (
+            time.monotonic() - self._remote_at > REMOTE_SECONDS
+        )
+        if is_due and (self._remote_task is None or self._remote_task.done()):
+            self._remote_task = asyncio.create_task(self._read_remote())
+
+    async def _read_remote(self) -> None:
+        result = await invoke_deployment(self.command, "remote", timeout=REMOTE_TIMEOUT)
+        self._remote_at = time.monotonic()
+        targets = result.get("targets")
+        if isinstance(targets, list):
+            self._remote = {
+                str(item["name"]): item
+                for item in targets
+                if isinstance(item, dict) and item.get("name") in TARGETS
+            }
+        else:  # an older manager without "remote", or it failed: offer deploys
+            self._remote = {}
+
+    async def close(self) -> None:
+        """Stop a running latest-main read during shutdown."""
+        if self._remote_task is not None:
+            self._remote_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._remote_task
 
     async def _refresh(self, force: bool) -> dict:
         if force or time.monotonic() - self._read_at > 5:

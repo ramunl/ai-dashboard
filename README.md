@@ -381,6 +381,10 @@ needs the owner's signed Telegram data, and the agent side validates again.
 - **Deploy latest main**: in each Deployments row, next to rollback. `POST
   /api/ops/deploy` takes only `{"target": name}` and always deploys `main`
   (like the bot's `/ai_update`); refused while another deployment runs.
+  It is offered only when `main` on GitHub differs from the deployed commit
+  (read with `ai-deploy remote` every few minutes); otherwise the row says
+  "Up to date with main". With an older deployment manager the button is
+  always shown, as before.
 - **Services**: every service in the ops agent's whitelist (`ai-service list`)
   with its state and uptime, and a **Restart** button (confirmation first; it
   warns when the coding agent is running a task, and when restarting the

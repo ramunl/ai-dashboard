@@ -67,8 +67,20 @@ function deploymentRollbackButton(target, isBusy) {
   return button;
 }
 
+// Nothing to deploy when the running commit already is main on GitHub.
+function isUpToDate(target) {
+  return Boolean(target.latest && target.current && target.current.commit === target.latest);
+}
+
+function deploymentDeployRows(target, isBusy, view) {
+  if (isUpToDate(target)) return [el("div", "Up to date with main.", "card-note")];
+  const rows = [deploymentDeployButton(target, isBusy, view)];
+  if (target.latest_error) rows.push(el("div", `${target.latest_error}; deploying may change nothing.`, "card-note"));
+  return rows;
+}
+
 function deploymentDeployButton(target, isBusy, view) {
-  const label = "Deploy latest main";
+  const label = target.latest ? `Deploy latest main · ${target.latest.slice(0, 7)}` : "Deploy latest main";
   const button = el("button", label, "action-button deploy-button");
   button.type = "button";
   button.disabled = isBusy || rollbackPending;
@@ -125,7 +137,7 @@ function deploymentDetails(target, isBusy, view) {
   } else {
     nodes.push(el("div", "No earlier verified version to roll back to.", "card-note"));
   }
-  nodes.push(deploymentDeployButton(target, isBusy, view));
+  nodes.push(...deploymentDeployRows(target, isBusy, view));
   return nodes;
 }
 

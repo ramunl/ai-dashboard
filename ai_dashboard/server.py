@@ -489,6 +489,7 @@ def build_app(
         await app[CLEANUP].close()
         await app[PACKAGES].close()
         await app[TOOLS].close()
+        await app[DEPLOYMENTS].close()
 
     app.on_cleanup.append(stop_cleanup)
 

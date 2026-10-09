@@ -39,7 +39,10 @@ class DeploymentTests(unittest.IsolatedAsyncioTestCase):
             "ai_dashboard.deployments.invoke_deployment", AsyncMock(return_value=STATE)
         ) as invoke:
             await asyncio.gather(service.state(), service.state())
-            self.assertEqual(invoke.await_count, 1)
+            await asyncio.sleep(0)  # let the background "latest main" read run
+            modes = [call.args[1] for call in invoke.await_args_list]
+            self.assertEqual(modes.count("status"), 1)
+            self.assertEqual(modes.count("remote"), 1)
 
     async def test_stale_confirmation_never_submits(self):
         service = DeploymentService("ai-deploy")
@@ -151,3 +154,61 @@ class DeploymentTests(unittest.IsolatedAsyncioTestCase):
         with patch("ai_dashboard.deployments.invoke_deployment", refused):
             result = await DeploymentService("ai-deploy").deploy("ai-pm-agent")
         self.assertEqual(result["error"], "Tests failed")
+
+    async def test_latest_main_is_read_in_the_background_and_compared(self):
+        status = {
+            "targets": [
+                {
+                    "name": "ai-pm-agent",
+                    "status": "healthy",
+                    "current": {"commit": "a" * 40},
+                },
+                {
+                    "name": "ai-dashboard",
+                    "status": "healthy",
+                    "current": {"commit": "c" * 40},
+                },
+            ]
+        }
+        remote = {
+            "targets": [
+                {"name": "ai-pm-agent", "main": "b" * 40, "error": None},
+                {
+                    "name": "ai-dashboard",
+                    "main": None,
+                    "error": "fatal: https://token@x",
+                },
+                {"name": "/etc/passwd", "main": "d" * 40, "error": None},
+            ]
+        }
+
+        async def fake(command, mode, timeout=10):
+            return status if mode == "status" else remote
+
+        service = DeploymentService("ai-deploy")
+        with patch("ai_dashboard.deployments.invoke_deployment", fake):
+            first = await service.state()
+            self.assertIsNone(first["targets"][0]["latest"])  # not read yet
+            await asyncio.sleep(0.01)
+            targets = (await service.state(force=True))["targets"]
+        self.assertEqual(targets[0]["latest"], "b" * 40)
+        self.assertIsNone(targets[0]["latest_error"])
+        self.assertIsNone(targets[1]["latest"])
+        self.assertEqual(targets[1]["latest_error"], "Could not check GitHub")
+        await service.close()
+
+    async def test_an_older_manager_without_remote_still_offers_deploys(self):
+        async def fake(command, mode, timeout=10):
+            if mode == "status":
+                return {"targets": [{"name": "ai-pm-agent", "status": "healthy"}]}
+            return {
+                "ok": False,
+                "error": "Deployment manager returned an unreadable response",
+            }
+
+        service = DeploymentService("ai-deploy")
+        with patch("ai_dashboard.deployments.invoke_deployment", fake):
+            await service.state()
+            await asyncio.sleep(0.01)
+            target = (await service.state(force=True))["targets"][0]
+        self.assertEqual((target["latest"], target["latest_error"]), (None, None))
