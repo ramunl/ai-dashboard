@@ -27,8 +27,9 @@ WINDOWS = {
     "ops": "Ops agent",
 }
 
-# Sub-windows served at /<window>/<sub>; they read their parent's data.
-SUB_WINDOWS = {"coding/projects", "coding/ai"}
+# More pages that read another window's data: the Coding sub-windows, and
+# Tasks (/tasks), which reads the coding agent's task list.
+SUB_WINDOWS = {"coding/projects", "coding/ai", "tasks"}
 
 
 async def _window_of(settings: Settings, name: str) -> dict | None:
@@ -129,6 +130,27 @@ def _launcher_agents(
     return rows
 
 
+# Task stages that are over, and the one that waits for the owner.
+FINISHED_STAGES = ("pr", "done", "stopped")
+
+
+def tasks_summary(bots: list[BotSource], views: list[dict | None]) -> dict | None:
+    """Counts for the launcher's Tasks row, from the coding agent's snapshot."""
+    for bot, view in zip(bots, views):
+        if bot.name != "coding" or not view:
+            continue
+        tasks = (view.get("snapshot") or {}).get("tasks")
+        if not isinstance(tasks, list):
+            return None  # an agent without tasks
+        stages = [task.get("stage") for task in tasks if isinstance(task, dict)]
+        return {
+            "active": sum(stage not in FINISHED_STAGES for stage in stages),
+            "needs_you": stages.count("planned"),
+            "total": len(stages),
+        }
+    return None
+
+
 async def launcher_view(settings: Settings) -> dict:
     """Collect server and agent readings for the overview window."""
     units = list(
@@ -162,6 +184,7 @@ async def launcher_view(settings: Settings) -> dict:
         "resources": resources,
         "services": list(services),
         "agents": rows,
+        "tasks": tasks_summary(agent_bots, list(agent_views)),
         "problems": compute_problems(resources, list(services), list(agent_views)),
     }
 

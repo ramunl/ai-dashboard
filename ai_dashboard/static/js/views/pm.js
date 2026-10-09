@@ -39,6 +39,7 @@ function pmCards(snapshot) {
 }
 
 function pmPage(view) {
+  pmTaskBadges = view.task_badges || {};
   const snapshot = view.snapshot;
   const active = view.editing && view.editing.ok ? view.editing.workspace.active_project : snapshot && snapshot.active_project;
   return {

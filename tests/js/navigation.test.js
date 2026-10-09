@@ -1776,3 +1776,163 @@ test("a disk report restored after a restart says how old it is", async () => {
   await sleep(60);
   assert.doesNotMatch(fresh.text("view"), /Measured/);
 });
+
+// ---------------------------------------------------------------- tasks
+
+const TASKS_LIST = [
+  { id: "aaaa0001", title: "backup the system", repo: "ai-ops-agent", todo: "my_ai_agents:t1", stage: "planned", plan_revision: 2, plan_approved: false, branch: "feature/backup", note: null, pr_url: null },
+  { id: "aaaa0002", title: "open PRs list", repo: "ai-dashboard", todo: null, stage: "implementing", branch: "feature/open-prs", note: null, pr_url: null },
+  { id: "aaaa0003", title: "token stats", repo: "ai-coding-agent", todo: null, stage: "pr", branch: "feature/tokens", note: null, pr_url: "https://github.com/o/r/pull/41" },
+  { id: "aaaa0004", title: "improve ui", repo: "ai-dashboard", todo: null, stage: "todo", branch: null, note: "another request is being planned", pr_url: null },
+];
+const TASK_SETUP = { ...SETUP, projects: [
+  { name: "ai-dashboard", repository: "o/ai-dashboard", active: true },
+  { name: "ai-ops-agent", repository: "o/ai-ops-agent", active: false },
+] };
+const tasksServer = (state, extra = {}) => ({
+  latencyMs: 10,
+  respond: async (name) => ({ ok: true, status: 200, json: async () => {
+    if (name === "coding") return { ...CODING, snapshot: { ...CODING.snapshot, tasks: state.tasks, setup: { ...TASK_SETUP, actions: state.actions || [] } } };
+    if (name === "pm") return { ...PM, editing: { ok: true, workspace: TASKS } };
+    return DATA[name];
+  } }),
+  onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: `beef000${++state.sent}` }) }),
+  ...extra,
+});
+const taskRows = (page) => [...page.doc.querySelectorAll("article.task")];
+const taskStatuses = (page) => taskRows(page).map((row) => row.querySelector(".task-status").textContent);
+
+test("Tasks lists active work newest first, with a status, meta and the right buttons", async () => {
+  const page = await openPage("/tasks", tasksServer({ tasks: TASKS_LIST, sent: 0 }));
+  await sleep(60);
+  assert.strictEqual(page.state().title, "Tasks");
+  assert.match(page.text("subtitle"), /^4 tasks · 1 needs you$/);
+  assert.deepStrictEqual(taskStatuses(page), ["To do", "Implementing", "Needs approval"]);
+  const [todo, implementing, planned] = taskRows(page);
+  assert.match(planned.textContent, /ai-ops-agent · plan revision 2 · from todo my_ai_agents/);
+  assert.deepStrictEqual([...planned.querySelectorAll("button")].map((b) => b.textContent), ["Open plan"]);
+  assert.strictEqual(implementing.querySelector("button"), null);
+  assert.match(todo.textContent, /another request is being planned/);
+  assert.deepStrictEqual([...todo.querySelectorAll("button")].map((b) => b.textContent), ["Start planning", "Remove"]);
+  buttonNamed(page, "Finished 1").click();
+  await sleep(40);
+  assert.deepStrictEqual(taskStatuses(page), ["PR open"]);
+  assert.ok(taskRows(page)[0].querySelector("a"));
+});
+
+test("Start planning and Remove ask first and send only the task id", async () => {
+  const state = { tasks: TASKS_LIST, sent: 0 };
+  const page = await openPage("/tasks", tasksServer(state));
+  await sleep(60);
+  let asked = confirmWith(page, false);
+  buttonNamed(page, "Start planning").click();
+  await sleep(30);
+  assert.match(asked[0], /Plan "improve ui" in ai-dashboard\? This uses AI tokens\./);
+  assert.deepStrictEqual(page.posts, []);
+  asked = confirmWith(page, true);
+  buttonNamed(page, "Remove").click();
+  await sleep(60);
+  assert.match(asked[0], /Remove the task "improve ui"\? Its todo stays as it is\./);
+  assert.deepStrictEqual(page.bodies, [{ action: "remove_task", args: { task: "aaaa0004" } }]);
+});
+
+test("Make task in a todo opens a repository choice in Tasks and sends the todo reference", async () => {
+  const state = { tasks: [], sent: 0, actions: [] };
+  const page = await openPage("/pm", tasksServer(state));
+  await sleep(70);
+  buttonNamed(page, "Normal task").click();
+  buttonNamed(page, "Make task").click();
+  await sleep(70);
+  assert.strictEqual(page.dom.window.location.pathname, "/tasks");
+  const sheet = [...page.doc.querySelectorAll("main section")].find((node) => node.querySelector("h2").textContent === "Make a task");
+  assert.strictEqual(sheet.querySelector(".plan-summary").textContent, "Normal task");
+  const checked = sheet.querySelector('input[type="radio"]:checked');
+  assert.strictEqual(checked.value, "ai-dashboard");  // the active project by default
+  sheet.querySelector('input[value="ai-ops-agent"]').click();
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Make task and plan").click();
+  await sleep(60);
+  assert.match(asked[0], /Make a task in ai-ops-agent and start planning it\?/);
+  assert.deepStrictEqual(page.bodies, [{ action: "create_task", args: { repo: "ai-ops-agent", text: "Normal task", todo: `app:${"b".repeat(32)}` } }]);
+  state.actions = [{ id: "beef0001", action: "create_task", status: "done", message: "Task added as To do: a plan is waiting for approval or confirmation." }];
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  await page.dom.window.eval("refresh()");
+  await sleep(40);
+  assert.strictEqual([...page.doc.querySelectorAll("main section h2")].some((h) => h.textContent === "Make a task"), false);
+  assert.match(page.text("alert"), /Task added as To do/);
+});
+
+test("a done todo offers no Make task; an agent without tasks says to update it", async () => {
+  const page = await openPage("/pm", tasksServer({ tasks: [], sent: 0 }));
+  await sleep(70);
+  buttonNamed(page, "Done 1").click();
+  buttonNamed(page, "Completed task").click();
+  assert.strictEqual(buttonNamed(page, "Make task"), undefined);
+  const old = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200, json: async () => DATA[name] }) });
+  await sleep(60);
+  assert.match(old.text("view"), /Update the coding agent to keep tasks here\./);
+});
+
+test("the launcher links to Tasks with how many need you", async () => {
+  const page = await openPage("/", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "launcher" ? { ...LAUNCHER, tasks: { active: 3, needs_you: 1, total: 5 } } : DATA[name]) }) });
+  await sleep(60);
+  const link = [...page.doc.querySelectorAll("a.nav-row")].find((node) => /Tasks/.test(node.textContent));
+  assert.match(link.textContent, /Tasks3 active · 1 needs you/);
+  link.click();
+  await sleep(60);
+  assert.strictEqual(page.dom.window.location.pathname, "/tasks");
+  page.back.handler();
+  await sleep(60);
+  assert.strictEqual(page.dom.window.location.pathname, "/");
+});
+
+test("a merged task shows Done with when it was merged, under Finished", async () => {
+  const merged = { id: "aaaa0005", title: "fetch timeouts", repo: "ai-dashboard", todo: null, stage: "done", branch: "feature/timeouts",
+    note: null, pr_url: "https://github.com/o/r/pull/9", merged_at: Date.now() / 1000 - 7200 };
+  const page = await openPage("/tasks", tasksServer({ tasks: [...TASKS_LIST, merged], sent: 0 }));
+  await sleep(60);
+  assert.strictEqual(buttonNamed(page, "Finished 2").getAttribute("aria-pressed"), "false");
+  buttonNamed(page, "Finished 2").click();
+  await sleep(40);
+  assert.deepStrictEqual(taskStatuses(page), ["Done", "PR open"]);
+  assert.match(taskRows(page)[0].textContent, /ai-dashboard · feature\/timeouts · merged 2h 0m ago/);
+  assert.deepStrictEqual([...taskRows(page)[0].querySelectorAll("button")].map((b) => b.textContent), ["Remove"]);
+});
+
+test("a done task becomes Deployed from the dashboard's deployment data, and shows its closed todo", async () => {
+  const done = { id: "aaaa0006", title: "fetch timeouts", repo: "ai-dashboard", todo: "my_ai_agents:t6", stage: "done", branch: "feature/timeouts", note: null, pr_url: null, merged_at: Date.now() / 1000 - 7200 };
+  const app = { id: "aaaa0007", title: "app tweak", repo: "com.randrgames.channelcast", todo: null, stage: "done", branch: "feature/x", note: null, pr_url: null, merged_at: Date.now() / 1000 - 60 };
+  const waiting = { ...done, id: "aaaa0008", title: "waiting one" };
+  const progress = { deployed: { aaaa0006: Date.now() / 1000 - 3600 }, deployable: ["ai-dashboard"], closed: ["aaaa0006"] };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, task_progress: progress, snapshot: { ...CODING.snapshot, tasks: [done, app, waiting], setup: TASK_SETUP } } : DATA[name]) }) });
+  await sleep(60);
+  buttonNamed(page, "All").click();
+  await sleep(40);
+  assert.deepStrictEqual(taskStatuses(page), ["Done", "Done", "Deployed"]);
+  const [waitingRow, appRow, deployedRow] = taskRows(page);
+  assert.match(deployedRow.textContent, /deployed 1h 0m ago · todo closed/);
+  assert.match(waitingRow.textContent, /merged 2h 0m ago · waiting for a deployment/);
+  assert.match(appRow.textContent, /no deployment for this repo/);
+});
+
+test("a todo with a task shows the task's status, which opens Tasks", async () => {
+  const badges = { [`app:${"b".repeat(32)}`]: "implementing", [`other:${"a".repeat(32)}`]: "deployed" };
+  const state = { tasks: TASKS_LIST, sent: 0 };
+  const page = await openPage("/pm", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200, json: async () => {
+    if (name === "pm") return { ...PM, task_badges: badges, editing: { ok: true, workspace: TASKS } };
+    if (name === "coding") return { ...CODING, snapshot: { ...CODING.snapshot, tasks: state.tasks, setup: TASK_SETUP } };
+    return DATA[name];
+  } }) });
+  await sleep(70);
+  const rows = [...page.doc.querySelectorAll(".pm-task")];
+  const badge = rows[1].querySelector(".pm-task-badge");
+  assert.strictEqual(badge.textContent, "Task: Implementing");
+  assert.strictEqual(badge.dataset.tone, "progress");
+  assert.strictEqual(rows[0].querySelector(".pm-task-badge"), null);  // a badge from another project does not leak in
+  badge.click();
+  await sleep(70);
+  assert.strictEqual(page.dom.window.location.pathname, "/tasks");
+});

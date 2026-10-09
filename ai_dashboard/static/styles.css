@@ -291,3 +291,19 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .thinking-about { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 @keyframes thinking-pulse { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .thinking-dot { animation: none; } }
+
+/* Tasks window: one row per task with a coloured status. */
+.task { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 0.7rem; padding: 0.65rem 0; border-top: 1px solid var(--divider); }
+.task-switch { display: flex; margin-bottom: 0.4rem; }
+.task-switch .pm-switch-button { flex: 1; }
+.task-title { overflow-wrap: anywhere; }
+.task-meta { grid-column: 1 / -1; color: var(--hint); font-size: 0.8rem; overflow-wrap: anywhere; }
+.task > .work-actions { grid-column: 1 / -1; margin-bottom: 0; }
+.task-status { align-self: start; font-size: 0.75rem; border-radius: 1rem; padding: 0.15rem 0.55rem; white-space: nowrap; border: 1px solid currentColor; color: var(--hint); }
+.task-status[data-tone="progress"] { color: var(--link); }
+.task-status[data-tone="attention"] { color: var(--warn); }
+.task-status[data-tone="review"] { color: #b18cff; }
+.task-status[data-tone="done"] { color: var(--ok); }
+.task-status[data-tone="deployed"] { color: #fff; background: var(--ok); border-color: var(--ok); }
+.task-sheet { border: 1px solid var(--accent); }
+.pm-task-badge { align-self: center; flex-shrink: 0; font: inherit; font-size: 0.72rem; background: none; cursor: pointer; }

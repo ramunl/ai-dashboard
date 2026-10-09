@@ -277,6 +277,37 @@ rejected if the rollback revision changed. Install and initialize the manager
 following the ai-ops-agent README before using these controls; Git history alone
 is not proof that a revision is safe to roll back to.
 
+## Tasks (Tasks window)
+
+A task is a todo turned into work. In the PM window, open a todo and tap
+**Make task**; the Tasks window asks for the repository and the coding agent
+starts planning it there (switching to that project if nothing is running or
+queued). The agent plans one thing at a time, so a task that cannot start yet
+waits as **To do** with the reason, and has **Start planning** and **Remove**.
+
+The coding agent keeps the list (`tasks` in its snapshot) and moves each task
+by what happens to its plan and branch, whether that was done here or in the
+chat: To do → Planning → Needs approval → Implementing → PR open → Done, or
+Stopped when the plan was cancelled, the run ended without a pull request, or
+the pull request was closed without merging. PR open and Done come from
+GitHub: the agent checks each open task's pull request every five minutes.
+
+**Deployed** comes from the dashboard: a Done task is deployed once its
+repository (one of the four the deployment manager handles) has a healthy
+deployment verified after the merge, with the merge commit present in the
+deployed commit history. The dashboard verifies ancestry in `/opt/<repository>`;
+a later verification timestamp alone is insufficient (for example after a
+rollback). Missing commit evidence leaves the task pending. A repository
+without deployments ends at Done.
+When a task made from a todo reaches its end (Deployed, or Done without
+deployments), the dashboard ticks the todo off through the PM bridge, checking
+every five minutes; it does this once per task, so a todo you reopen stays
+open. Closed task ids are kept in `ops-checks.json`.
+
+In the PM window, a todo with a task shows the task's status as a small badge
+("Task: Implementing"); tapping it opens Tasks. The
+launcher shows how many tasks are active and how many need you.
+
 ## Coding work (Coding window)
 
 The **Work** card shows the pending plan or change, the queue and the last

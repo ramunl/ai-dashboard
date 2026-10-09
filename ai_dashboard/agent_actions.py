@@ -24,6 +24,9 @@ _TASK = re.compile(r"^[0-9]{1,9}$")
 # Free text for a plan or bug report: one line, something visible in it.
 _TEXT = re.compile(r"^(?=.*\S)[^\x00-\x1f\x7f]{1,4000}$")
 _KINDS = ("plan", "implement", "bugfix")
+_TASK_ID = re.compile(r"^[0-9a-f]{8}$")
+# Where a task came from: "<todo project>:<todo id>", or "-" for none.
+_TODO_REF = re.compile(r"^(-|[A-Za-z0-9._-]{1,64}:[A-Za-z0-9]{1,64})$")
 
 # Mirrors ai_agent.inbox.ACTIONS in the coding agent.
 ACTIONS: dict[str, dict] = {
@@ -45,6 +48,10 @@ ACTIONS: dict[str, dict] = {
     "discuss_plan": {"text": _TEXT},
     # An answer to the agent's bugfix questions: the words after /answer.
     "answer_bugfix": {"text": _TEXT},
+    # Tasks: made from a todo (or not), planned in their repository.
+    "create_task": {"repo": _NAME, "text": _TEXT, "todo": _TODO_REF},
+    "start_task": {"task": _TASK_ID},
+    "remove_task": {"task": _TASK_ID},
 }
 
 

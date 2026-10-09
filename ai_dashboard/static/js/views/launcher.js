@@ -83,6 +83,26 @@ function agentsCard(view) {
   return card("Agents", ...rows);
 }
 
+// A row to the Tasks window, when the coding agent keeps tasks.
+function tasksLinkCards(view) {
+  const tasks = view.tasks;
+  if (!tasks) return [];
+  const detail = tasks.total ? [`${tasks.active} active`] : ["none yet · make one from a todo"];
+  if (tasks.needs_you) detail.push(`${tasks.needs_you} need${tasks.needs_you === 1 ? "s" : ""} you`);
+  const node = el("a", null, "nav-row");
+  node.href = "/tasks";
+  node.addEventListener("click", (event) => {
+    event.preventDefault();
+    navigate("tasks");
+  });
+  const text = el("div");
+  const title = el("div");
+  title.append(statusDot(tasks.needs_you ? "warn" : "ok"), " Tasks");
+  text.append(title, el("div", detail.join(" · "), "nav-detail"));
+  node.append(text, el("span", "›", "nav-chevron"));
+  return [card("Work", node)];
+}
+
 function resourcesCard(view) {
   return card("Server resources", ...resourceRows(view.resources));
 }
@@ -98,6 +118,6 @@ function launcherPage(view) {
     subtitle: serverSubtitle(view),
     status: pageStatus(view),
     alert: "",
-    nodes: [healthSummary(view), ...problemsCards(view), agentsCard(view), resourcesCard(view)],
+    nodes: [healthSummary(view), ...problemsCards(view), agentsCard(view), ...tasksLinkCards(view), resourcesCard(view)],
   };
 }

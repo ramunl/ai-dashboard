@@ -24,6 +24,14 @@ from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
 from ai_dashboard.saved_checks import SavedChecks
 from ai_dashboard.service_actions import ServiceControl
 from ai_dashboard.sources import service_state
+from ai_dashboard.task_progress import (
+    TaskCloser,
+    close_forever,
+    deployed_at,
+    snapshot_tasks,
+    task_progress,
+    todo_badges,
+)
 from ai_dashboard.telegram_api import API_BASE, set_menu_button
 from ai_dashboard.tool_updates import ToolService
 from ai_dashboard.views import SUB_WINDOWS, VIEW_PROVIDERS, WINDOWS
@@ -38,6 +46,7 @@ CLEANUP = web.AppKey("cleanup", CleanupService)
 SERVICES = web.AppKey("services", ServiceControl)
 PACKAGES = web.AppKey("packages", PackageService)
 TOOLS = web.AppKey("tools", ToolService)
+CLOSER = web.AppKey("closer", TaskCloser)
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
@@ -86,10 +95,19 @@ async def window_data(request: web.Request) -> web.Response:
     view = await provider(settings)
     if view is None:
         return web.json_response({"error": "window not configured"}, status=404)
+    if request.match_info["window"] == "coding":
+        tasks = snapshot_tasks(view)
+        if tasks:
+            deployments = await request.app[DEPLOYMENTS].state()
+            view = {
+                **view,
+                "task_progress": task_progress(tasks, deployments, request.app[CLOSER]),
+            }
     if request.match_info["window"] == "pm":
         view = {
             **view,
             "editing": await invoke_pm(settings.pm_command, {"action": "read"}),
+            "task_badges": await _task_badges(request.app, settings),
         }
     if request.match_info["window"] == "ops":
         view = {
@@ -232,6 +250,15 @@ async def tools_action(request: web.Request) -> web.Response:
             headers=_NO_STORE,
         )
     return web.json_response({"started": True}, status=202, headers=_NO_STORE)
+
+
+async def _task_badges(app: web.Application, settings: Settings) -> dict:
+    """Stage of the task made from each todo, read from the coding agent."""
+    provider = VIEW_PROVIDERS.get("coding")
+    tasks = snapshot_tasks(await provider(settings)) if provider else []
+    if not tasks:
+        return {}
+    return todo_badges(tasks, deployed_at(tasks, await app[DEPLOYMENTS].state()))
 
 
 async def logs_data(request: web.Request) -> web.Response:
@@ -421,6 +448,7 @@ def build_app(
     app[SERVICES] = ServiceControl(settings.service_command)
     app[PACKAGES] = PackageService(settings.packages_command, saved)
     app[TOOLS] = ToolService(settings.tools_command, saved)
+    app[CLOSER] = TaskCloser(settings.pm_command, saved)
     register_pm_routes(app, settings)
     app.router.add_get("/healthz", health)
     # Before /api/{window}: aiohttp matches routes in order.
@@ -471,8 +499,21 @@ def build_app(
         with contextlib.suppress(asyncio.CancelledError):
             await task
 
+    async def todo_closer(_app: web.Application) -> AsyncIterator[None]:
+        async def read_tasks() -> list:
+            return snapshot_tasks(await VIEW_PROVIDERS["coding"](settings))
+
+        task = asyncio.create_task(
+            close_forever(read_tasks, app[DEPLOYMENTS].state, app[CLOSER])
+        )
+        yield
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
     if record_disk:
         app.cleanup_ctx.append(disk_recorder)
+        app.cleanup_ctx.append(todo_closer)
     # Background work follows record_disk unless set explicitly (tests: off).
     if record_disk if refresh_cleanup is None else refresh_cleanup:
         app.cleanup_ctx.append(cleanup_reports)

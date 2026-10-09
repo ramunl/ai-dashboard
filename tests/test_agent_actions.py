@@ -67,6 +67,30 @@ class CheckTests(unittest.TestCase):
             with self.assertRaises(RequestError, msg=str(args)):
                 check({"action": "discuss_plan", "args": args})
 
+    def test_task_requests_name_a_project_and_a_todo_or_none(self) -> None:
+        check(
+            {
+                "action": "create_task",
+                "args": {"repo": "repo", "text": "x", "todo": "my_ai_agents:3f2a"},
+            }
+        )
+        check(
+            {
+                "action": "create_task",
+                "args": {"repo": "repo", "text": "x", "todo": "-"},
+            }
+        )
+        check({"action": "remove_task", "args": {"task": "0a1b2c3d"}})
+        for action, args in (
+            ("create_task", {"repo": "../x", "text": "x", "todo": "-"}),
+            ("create_task", {"repo": "repo", "text": "x", "todo": "a:b:c"}),
+            ("create_task", {"repo": "repo", "text": "x", "todo": ""}),
+            ("start_task", {"task": "0A1B2C3D"}),
+            ("start_task", {"task": "1"}),
+        ):
+            with self.assertRaises(RequestError, msg=str(args)):
+                check({"action": action, "args": args})
+
     def test_refuses_malformed(self) -> None:
         for body in (
             [],

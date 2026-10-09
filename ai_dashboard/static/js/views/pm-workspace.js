@@ -77,6 +77,8 @@ function pmTaskRow(item) {
     const priority = el("span", PM_PRIORITIES.high, "pm-priority"); priority.dataset.priority = "high"; entry.append(priority);
   }
   if (PM_SHOWN_STATUSES.includes(item.status)) entry.append(el("span", PM_STATUSES[item.status], "pm-status"));
+  const taskBadge = pmTaskBadge(item);
+  if (taskBadge) entry.append(taskBadge);
   return entry;
 }
 
@@ -97,6 +99,11 @@ function pmEditor() {
       event.preventDefault();
       pmSend({ action: draft.isNew ? "add" : "update", id: draft.id, project: draft.project, revision: draft.revision, text: draft.text.replace(/\s*[\r\n]+\s*/g, " ").trim(), priority: draft.priority, status: draft.status }, true);
     });
+    // Make task: hand the todo to the Tasks window, which asks for the repository.
+    if (!draft.isNew && draft.status !== "done") form.append(pmButton("Make task", () => {
+      taskDraft = { text: draft.text, todo: `${draft.project}:${draft.id}` };
+      navigate("tasks");
+    }));
     if (!draft.isNew) form.append(pmButton("Delete todo", () => {
       askConfirmation(`Delete this todo?\n${draft.text}`, answer => { if (answer) pmSend({ action: "delete", id: draft.id, project: draft.project, revision: draft.revision }, true); });
     }, "pm-button pm-delete"), muted(`Task ID: ${draft.id}`));
@@ -141,4 +148,17 @@ function pmCloseEditor() {
   showAlert("");
   pmPaint();
   refresh();
+}
+
+// The task made from this todo, if any: its status, linking to the Tasks window.
+let pmTaskBadges = {};  // "<project>:<todo id>" -> task stage, from the dashboard
+
+function pmTaskBadge(item) {
+  const stage = pmTaskBadges[`${pmUi.workspace.project}:${item.id}`];
+  const status = stage && TASK_STATUS[stage];
+  if (!status) return null;
+  const badge = pmButton(`Task: ${status.label}`, () => navigate("tasks"), "task-status pm-task-badge");
+  badge.dataset.tone = status.tone;
+  badge.setAttribute("aria-label", `Task ${status.label}; open Tasks`);
+  return badge;
 }
