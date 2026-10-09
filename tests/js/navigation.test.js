@@ -1952,3 +1952,30 @@ test("Deploy latest main is offered only when main on GitHub differs from what r
   assert.strictEqual(items[2].querySelector("button.deploy-button").textContent, "Deploy latest main");
   assert.match(page.doc.querySelector("main").textContent, /Could not check GitHub; deploying may change nothing\./);
 });
+
+test("limit readings whose window has reset no longer look like current usage", async () => {
+  const page = await openPage("/coding", { latencyMs: 10 });
+  await sleep(60);
+  const now = Date.now() / 1000;
+  const iso = (seconds) => new Date(seconds * 1000).toISOString().replace(/\.\d+Z$/, "Z");
+  const limits = {
+    codex: { status: "ok", checked_at: now - 300, windows: [
+      { bucket: "codex", remaining_percent: 8, window_minutes: 300, resets_at: now - 60 },
+      { bucket: "codex", remaining_percent: 59, window_minutes: 10080, resets_at: now + 86400 },
+    ] },
+    claude: { status: "ok", checked_at: now - 120, windows: [
+      { bucket: "Requests", remaining: 9999, limit: 10000, reset: iso(now - 90) },
+      { bucket: "Output tokens", remaining: 1500000, limit: 2000000, reset: iso(now + 30) },
+    ] },
+  };
+  page.dom.window.eval(`document.getElementById("view").replaceChildren(limitsCard(${JSON.stringify(limits)}))`);
+  const text = page.text("view");
+  assert.match(text, /codex · 5-hourreset since this reading/);
+  assert.doesNotMatch(text, /8% remaining/);
+  assert.match(text, /59% remaining/);
+  assert.strictEqual(page.doc.querySelectorAll("progress").length, 1);  // no meter for the expired window
+  assert.match(text, /Per-minute rate limits from the last API call, not spending/);
+  assert.match(text, /Requestsfull \(10000 per minute\)/);
+  assert.match(text, /Output tokens1500000\/2000000 remainingResets at /);
+  assert.doesNotMatch(text, /\d{4}-\d\d-\d\dT/);  // no raw ISO times
+});

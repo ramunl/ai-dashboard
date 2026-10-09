@@ -15,9 +15,24 @@ function limitReset(timestamp) {
     : `Resets ${date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
 }
 
+// A reading describes its window only until that window resets; after that the
+// numbers are history, not what is left now.
+function hasResetSince(resetSeconds) {
+  return Number.isFinite(resetSeconds) && resetSeconds * 1000 <= Date.now();
+}
+
+function clockTime(seconds) {
+  return new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function quotaLimitRows(limits) {
   const rows = [];
   for (const window of limits.windows || []) {
+    if (hasResetSince(window.resets_at)) {
+      rows.push(row(quotaWindowLabel(window), "reset since this reading"),
+        muted(`Window reset at ${clockTime(window.resets_at)}; the next check shows the new numbers`));
+      continue;
+    }
     rows.push(row(quotaWindowLabel(window), `${window.remaining_percent}% remaining`));
     const meter = el("progress", null, "usage-meter");
     meter.max = 100;
@@ -28,11 +43,23 @@ function quotaLimitRows(limits) {
   return rows;
 }
 
+// Claude API headers are per-minute rate limits from the agent's last API call
+// (reset given as an ISO time), not spending: once the minute is over they are
+// full again, so an old reading must not look like current usage.
 function claudeLimitRows(limits) {
-  return (limits.windows || []).flatMap((window) => [
-    row(window.bucket, `${window.remaining ?? "—"}/${window.limit ?? "—"} remaining`),
-    muted(window.reset ? `Resets ${window.reset}` : "Reset time unavailable"),
-  ]);
+  const windows = limits.windows || [];
+  if (!windows.length) return [];
+  const rows = [muted("Per-minute rate limits from the last API call, not spending")];
+  for (const window of windows) {
+    const reset = Date.parse(window.reset) / 1000;
+    if (hasResetSince(reset)) {
+      rows.push(row(window.bucket, `full (${window.limit ?? "—"} per minute)`));
+      continue;
+    }
+    rows.push(row(window.bucket, `${window.remaining ?? "—"}/${window.limit ?? "—"} remaining`),
+      muted(Number.isFinite(reset) ? `Resets at ${clockTime(reset)}` : "Reset time unavailable"));
+  }
+  return rows;
 }
 
 function providerLimitRows(name, limits, renderRows) {
