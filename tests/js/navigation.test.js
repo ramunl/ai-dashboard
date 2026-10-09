@@ -1979,3 +1979,13 @@ test("limit readings whose window has reset no longer look like current usage", 
   assert.match(text, /Output tokens1500000\/2000000 remainingResets at /);
   assert.doesNotMatch(text, /\d{4}-\d\d-\d\dT/);  // no raw ISO times
 });
+
+test("a run that ended unseen shows Run ended, not PR open", async () => {
+  const ended = { id: "aaaa0009", title: "split server.py", repo: "ai-dashboard", todo: "my_ai_agents:t9", stage: "ended",
+    branch: "feature/refactor-oversized", note: "run finished; checking GitHub for a pull request", pr_url: null };
+  const page = await openPage("/tasks", tasksServer({ tasks: [ended], sent: 0 }));
+  await sleep(60);
+  assert.deepStrictEqual(taskStatuses(page), ["Run ended"]);
+  assert.match(taskRows(page)[0].textContent, /checking GitHub for a pull request/);
+  assert.strictEqual(taskRows(page)[0].querySelector("button"), null);
+});

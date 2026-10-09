@@ -8,6 +8,7 @@ const TASK_STATUS = {
   planning: { label: "Planning", tone: "progress" },
   planned: { label: "Needs approval", tone: "attention" },
   implementing: { label: "Implementing", tone: "progress" },
+  ended: { label: "Run ended", tone: "todo" },
   pr: { label: "PR open", tone: "review" },
   done: { label: "Done", tone: "done" },
   deployed: { label: "Deployed", tone: "deployed" },

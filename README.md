@@ -289,7 +289,9 @@ The coding agent keeps the list (`tasks` in its snapshot) and moves each task
 by what happens to its plan and branch, whether that was done here or in the
 chat: To do → Planning → Needs approval → Implementing → PR open → Done, or
 Stopped when the plan was cancelled, the run ended without a pull request, or
-the pull request was closed without merging. PR open and Done come from
+the pull request was closed without merging. A run whose result the agent did not see
+shows **Run ended** until GitHub says whether a pull request exists (checked
+within about 30 seconds). PR open and Done come from
 GitHub: the agent checks each open task's pull request every five minutes.
 
 **Deployed** comes from the dashboard: a Done task is deployed once its
