@@ -34,12 +34,22 @@ function setupCard(setup) {
   );
 }
 
+function runOutcomeCard(outcome) {
+  if (!outcome) return [];
+  const title = outcome.status === "ops_required" ? "Needs Ops action" : "Blocked run";
+  return [card(title, row("Branch", outcome.branch),
+    el("pre", outcome.report, "card-note"),
+    row("Reported", new Date(outcome.at * 1000).toLocaleString()),
+    setupLink("Open Ops", "Review diagnostics and confirm server actions", "ops"))];
+}
+
 function codingCards(snapshot) {
   if (!snapshot) return [card("Coding agent", muted("No data from the agent yet."))];
   return [
     card("Now", ...runningRows(snapshot.running)),
     setupCard(snapshot.setup || null),
     workCard(snapshot),
+    ...runOutcomeCard(snapshot.last_run_outcome),
     card(
       "Providers",
       row("Planner", snapshot.planning_agent),

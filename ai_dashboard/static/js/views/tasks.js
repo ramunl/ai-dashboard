@@ -8,6 +8,8 @@ const TASK_STATUS = {
   planning: { label: "Planning", tone: "progress" },
   planned: { label: "Needs approval", tone: "attention" },
   implementing: { label: "Implementing", tone: "progress" },
+  blocked: { label: "Blocked", tone: "attention" },
+  ops_required: { label: "Needs Ops action", tone: "attention" },
   ended: { label: "Run ended", tone: "todo" },
   pr: { label: "PR open", tone: "review" },
   done: { label: "Done", tone: "done" },
@@ -73,10 +75,13 @@ function taskMeta(task) {
 
 function taskActions(task) {
   const actions = [];
+  if (task.stage === "ops_required") {
+    actions.push(taskButton("Open Ops", `task:ops:${task.id}`, "row-button", () => navigate("ops")));
+  }
   if (task.stage === "planned") {
     actions.push(taskButton("Open plan", `task:open:${task.id}`, "row-button", () => navigate("coding")));
   }
-  if (task.stage === "todo" || task.stage === "stopped") {
+  if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage)) {
     const key = `task:start:${task.id}`;
     actions.push(taskButton("Start planning", key, "row-button", (button) => {
       button.disabled = true;
@@ -86,7 +91,7 @@ function taskActions(task) {
       });
     }));
   }
-  if (["todo", "stopped", "pr", "done"].includes(task.stage)) {
+  if (["todo", "stopped", "pr", "done", "blocked", "ops_required"].includes(task.stage)) {
     const key = `task:remove:${task.id}`;
     actions.push(taskButton("Remove", key, "row-button work-secondary", (button) => {
       button.disabled = true;

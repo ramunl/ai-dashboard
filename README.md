@@ -415,3 +415,8 @@ needs the owner's signed Telegram data, and the agent side validates again.
 - **Logs**: the last 80 journal lines of one service, or its errors from the
   last 24 hours. Loaded on demand (not by the 5-second refresh). `GET
   /api/ops/logs?unit=&errors=` reads only units the dashboard monitors.
+
+Coding now shows persistent **Blocked run** / **Needs Ops action** reports with
+an **Open Ops** link. Linked tasks remain active and offer Start planning again
+when the blocker is resolved. Opening Ops only navigates: server actions retain
+their existing confirmations and guards. No-code reports never auto-close todos.
