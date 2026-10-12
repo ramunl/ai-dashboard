@@ -54,10 +54,14 @@ ACTIONS: dict[str, dict] = {
     "create_task": {"repo": _NAME, "text": _TEXT, "todo": _TODO_REF},
     "start_task": {"task": _TASK_ID},
     "remove_task": {"task": _TASK_ID},
+    # Tasks the worker proposed from the server logs: keep or drop.
+    "accept_task": {"task": _TASK_ID},
+    "dismiss_task": {"task": _TASK_ID},
     # The autonomous worker: on/off and its budget.
     "worker_switch": {"value": ("on", "off")},
     "worker_settings": {"max_runs": _COUNT, "reserve": _PERCENT},
     "worker_tools": {"value": ("auto", "fixed")},
+    "worker_scan": {},
 }
 
 

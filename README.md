@@ -321,6 +321,11 @@ Codex and Claude when one has no room (a tool that hit its limit shows "out
 until …"). The card shows what it is doing ("waiting for your
 approval: …", "waiting: codex has 20% left…") and today's runs.
 
+Once a day, while idle, the worker reads the services' error logs and adds
+recurring errors as **Proposed** tasks, with example log lines. Proposals never
+start by themselves: **Accept** makes one To do, **Dismiss** drops it and that
+error is not proposed again for 30 days. **Scan logs now** scans at once.
+
 ## Coding work (Coding window)
 
 The **Work** card shows the pending plan or change, the queue and the last

@@ -81,6 +81,14 @@ function workerToolsRow(worker) {
   return label;
 }
 
+function workerScanButton() {
+  const key = "worker:scan";
+  return taskButton("Scan logs now", key, "row-button work-secondary", (button) => {
+    button.disabled = true;
+    requestAction(key, "worker_scan", {});
+  });
+}
+
 function workerCard(worker) {
   const cap = worker.max_runs ? `${worker.runs_today} of ${worker.max_runs} runs today` : `${worker.runs_today} runs today · no cap`;
   const title = el("div");
@@ -92,7 +100,8 @@ function workerCard(worker) {
   for (const [tool, until] of Object.entries(worker.out_until || {})) {
     rows.push(row(`${tool[0].toUpperCase()}${tool.slice(1)}`, `out until ${clockTime(until)}`));
   }
-  rows.push(workActions(workerSwitchButton(worker)), ...workerBudgetRows(worker), workerToolsRow(worker),
+  rows.push(workActions(workerSwitchButton(worker), workerScanButton()), ...workerBudgetRows(worker), workerToolsRow(worker),
+    el("div", "Once a day while idle it reads the services' error logs and proposes tasks for recurring errors.", "card-note"),
     el("div", "Claude Code's limits can't be read from the server: the worker learns Claude is out when a run hits its limit.", "card-note"));
   return card("Worker", ...rows);
 }

@@ -4,6 +4,7 @@
 // window's data and sends create / start / remove requests to the agent.
 
 const TASK_STATUS = {
+  proposed: { label: "Proposed", tone: "attention" },
   todo: { label: "To do", tone: "todo" },
   planning: { label: "Planning", tone: "progress" },
   planned: { label: "Needs approval", tone: "attention" },
@@ -73,7 +74,34 @@ function taskMeta(task) {
   return meta;
 }
 
+// A task the worker proposed from the server logs: accept it or drop it.
+function proposalActions(task) {
+  const acceptKey = `task:accept:${task.id}`;
+  const accept = taskButton("Accept", acceptKey, "row-button", (button) => {
+    button.disabled = true;
+    requestAction(acceptKey, "accept_task", { task: task.id });
+  });
+  const dismissKey = `task:dismiss:${task.id}`;
+  const dismiss = taskButton("Dismiss", dismissKey, "row-button work-secondary", (button) => {
+    button.disabled = true;
+    askConfirmation("Dismiss this proposal? That error won't be proposed again for 30 days.", (isConfirmed) => {
+      if (isConfirmed) requestAction(dismissKey, "dismiss_task", { task: task.id });
+      else button.disabled = false;
+    });
+  });
+  const nodes = [];
+  if (Array.isArray(task.evidence) && task.evidence.length) {
+    const details = el("details", null, "task-evidence");
+    details.append(el("summary", "Log lines"));
+    for (const line of task.evidence) details.append(el("pre", line, "log-line"));
+    nodes.push(details);
+  }
+  nodes.push(workActions(accept, dismiss));
+  return nodes;
+}
+
 function taskActions(task) {
+  if (task.stage === "proposed") return proposalActions(task);
   const actions = [];
   if (task.stage === "ops_required") {
     actions.push(taskButton("Open Ops", `task:ops:${task.id}`, "row-button", () => navigate("ops")));
@@ -188,7 +216,7 @@ function tasksPage(view) {
   if (!tasks || !setup) {
     return { ...page, nodes: [card("Tasks", muted("Update the coding agent to keep tasks here."))] };
   }
-  const waiting = tasks.filter((task) => task.stage === "planned").length;
+  const waiting = tasks.filter((task) => ["planned", "proposed"].includes(task.stage)).length;
   page.subtitle = `${tasks.length} task${tasks.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} need${waiting === 1 ? "s" : ""} you` : ""}`;
   const nodes = taskDraft ? [makeTaskCard(setup), tasksCard(tasks)] : [tasksCard(tasks)];
   if (snapshot.worker) nodes.push(workerCard(snapshot.worker));

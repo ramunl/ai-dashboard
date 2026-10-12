@@ -298,6 +298,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .task-switch .pm-switch-button { flex: 1; }
 .task-title { overflow-wrap: anywhere; }
 .task-meta { grid-column: 1 / -1; color: var(--hint); font-size: 0.8rem; overflow-wrap: anywhere; }
+.task-evidence { grid-column: 1 / -1; font-size: 0.8rem; color: var(--hint); }
+.task-evidence pre { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; }
 .task > .work-actions { grid-column: 1 / -1; margin-bottom: 0; }
 .task-status { align-self: start; font-size: 0.75rem; border-radius: 1rem; padding: 0.15rem 0.55rem; white-space: nowrap; border: 1px solid currentColor; color: var(--hint); }
 .task-status[data-tone="progress"] { color: var(--link); }

@@ -2055,3 +2055,42 @@ test("the worker shows a tool that is out, and switching tools sends auto/fixed"
   await sleep(60);
   assert.deepStrictEqual(page.bodies, [{ action: "worker_tools", args: { value: "fixed" } }]);
 });
+
+test("a proposed task shows its log lines and is accepted or dismissed", async () => {
+  const proposal = { id: "0a1b2c3d", title: "Fix error in ai-ops-agent: KeyError <id>", repo: "ai-ops-agent", stage: "proposed",
+    source: "logs", evidence: ["KeyError: 'host'"], note: "seen 4\u00d7 in 24 h in ai-ops-agent" };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: [proposal], setup: TASK_SETUP, worker: WORKER } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: `beef00${page.bodies.length + 10}` }) }) });
+  await sleep(60);
+  const row = page.doc.querySelector(".task");
+  assert.match(row.textContent, /Proposed/);
+  assert.match(row.querySelector(".task-evidence").textContent, /KeyError: 'host'/);
+  assert.strictEqual(buttonNamed(page, "Start planning"), undefined);
+  buttonNamed(page, "Accept").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "accept_task", args: { task: "0a1b2c3d" } }]);
+});
+
+test("dismissing a proposal asks first", async () => {
+  const proposal = { id: "0a1b2c3d", title: "Fix error", repo: "ai-ops-agent", stage: "proposed", evidence: [] };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: [proposal], setup: TASK_SETUP, worker: WORKER } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0021" }) }) });
+  await sleep(60);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Dismiss").click();
+  await sleep(60);
+  assert.match(asked[0], /won't be proposed again for 30 days/);
+  assert.deepStrictEqual(page.bodies, [{ action: "dismiss_task", args: { task: "0a1b2c3d" } }]);
+});
+
+test("Scan logs now sends the scan request", async () => {
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: [], setup: TASK_SETUP, worker: WORKER } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0022" }) }) });
+  await sleep(60);
+  buttonNamed(page, "Scan logs now").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "worker_scan", args: {} }]);
+});
