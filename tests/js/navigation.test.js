@@ -2037,3 +2037,21 @@ test("the budget is changed with two choices and saved explicitly", async () => 
   await sleep(60);
   assert.deepStrictEqual(page.bodies, [{ action: "worker_settings", args: { max_runs: "0", reserve: "15" } }]);
 });
+
+test("the worker shows a tool that is out, and switching tools sends auto/fixed", async () => {
+  const worker = { ...WORKER, enabled: true, auto_tool: true, out_until: { claude: Date.now() / 1000 + 3600 },
+    status: "planning improve ui with codex (claude hit its usage limit; out until 18:11)" };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: [], setup: TASK_SETUP, worker } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0003" }) }) });
+  await sleep(60);
+  const card = workerCardOf(page);
+  assert.match(card.textContent, /Claudeout until \d\d:\d\d/);
+  assert.match(card.textContent, /Uses the other tool when one has no room/);
+  const box = card.querySelector(".worker-tools input");
+  assert.strictEqual(box.checked, true);
+  box.checked = false;
+  box.dispatchEvent(new page.dom.window.Event("change", { bubbles: true }));
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "worker_tools", args: { value: "fixed" } }]);
+});

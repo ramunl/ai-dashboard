@@ -316,7 +316,9 @@ The Tasks window's **Worker** card switches the coding agent's autonomous
 worker on and off and sets its budget (runs per day, and the share of Codex
 limits it must leave you). The worker takes To do tasks one at a time, plans
 them, waits for your approval, and runs approved plans to a pull request; it
-never merges or deploys. The card shows what it is doing ("waiting for your
+never merges or deploys. **Switch tools by limits** lets it use the other of
+Codex and Claude when one has no room (a tool that hit its limit shows "out
+until …"). The card shows what it is doing ("waiting for your
 approval: …", "waiting: codex has 20% left…") and today's runs.
 
 ## Coding work (Coding window)

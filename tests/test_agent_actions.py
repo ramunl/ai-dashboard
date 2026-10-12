@@ -96,6 +96,9 @@ class CheckTests(unittest.TestCase):
 
     def test_worker_requests_are_bounded(self) -> None:
         check({"action": "worker_switch", "args": {"value": "on"}})
+        check({"action": "worker_tools", "args": {"value": "fixed"}})
+        with self.assertRaises(RequestError):
+            check({"action": "worker_tools", "args": {"value": "claude"}})
         check({"action": "worker_settings", "args": {"max_runs": "0", "reserve": "90"}})
         for action, args in (
             ("worker_switch", {"value": "1"}),

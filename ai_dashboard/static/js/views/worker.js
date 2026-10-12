@@ -62,6 +62,25 @@ function workerBudgetRows(worker) {
   return rows;
 }
 
+// Switch between Codex and Claude by their limits, or keep the chosen ones.
+function workerToolsRow(worker) {
+  const isAuto = worker.auto_tool !== false;
+  const label = el("label", null, "radio-row worker-tools");
+  const box = el("input");
+  box.type = "checkbox";
+  box.checked = isAuto;
+  box.disabled = hasPendingActions();
+  box.addEventListener("change", () => {
+    box.disabled = true;
+    requestAction("worker:tools", "worker_tools", { value: box.checked ? "auto" : "fixed" });
+  });
+  const text = el("span");
+  text.append(el("span", "Switch tools by limits"),
+    el("span", isAuto ? "Uses the other tool when one has no room" : "Uses only your chosen planner and implementer", "card-note radio-note"));
+  label.append(box, text);
+  return label;
+}
+
 function workerCard(worker) {
   const cap = worker.max_runs ? `${worker.runs_today} of ${worker.max_runs} runs today` : `${worker.runs_today} runs today · no cap`;
   const title = el("div");
@@ -70,7 +89,10 @@ function workerCard(worker) {
   head.append(title, el("span", cap));
   const rows = [head, el("div", worker.status, "card-note worker-status")];
   if (worker.failures) rows.push(el("div", `${worker.failures} failed task(s) in a row; it stops after 3.`, "card-note"));
-  rows.push(workActions(workerSwitchButton(worker)), ...workerBudgetRows(worker),
-    el("div", "Claude Code's limits can't be read from the server, so only Codex's are kept.", "card-note"));
+  for (const [tool, until] of Object.entries(worker.out_until || {})) {
+    rows.push(row(`${tool[0].toUpperCase()}${tool.slice(1)}`, `out until ${clockTime(until)}`));
+  }
+  rows.push(workActions(workerSwitchButton(worker)), ...workerBudgetRows(worker), workerToolsRow(worker),
+    el("div", "Claude Code's limits can't be read from the server: the worker learns Claude is out when a run hits its limit.", "card-note"));
   return card("Worker", ...rows);
 }

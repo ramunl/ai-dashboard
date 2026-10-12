@@ -57,6 +57,7 @@ ACTIONS: dict[str, dict] = {
     # The autonomous worker: on/off and its budget.
     "worker_switch": {"value": ("on", "off")},
     "worker_settings": {"max_runs": _COUNT, "reserve": _PERCENT},
+    "worker_tools": {"value": ("auto", "fixed")},
 }
 
 
