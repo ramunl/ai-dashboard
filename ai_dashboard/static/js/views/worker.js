@@ -89,6 +89,39 @@ function workerScanButton() {
   });
 }
 
+const WORKER_OUTCOMES = { planned: "plan ready", pr: "PR opened", failed: "failed", limit: "hit a limit" };
+
+function dayLabel(day, index) {
+  if (index === 0) return "Today";
+  if (index === 1) return "Yesterday";
+  return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric" });
+}
+
+// The last 7 days, only those with finished steps, then the latest five.
+function workerStatsRows(worker) {
+  const days = (worker.stats || []).map((day, index) => ({ ...day, label: dayLabel(day.day, index) }))
+    .filter((day) => day.planned || day.pr || day.failed || day.limit);
+  if (!days.length && !(worker.recent || []).length) return [];
+  const rows = [el("div", "Last 7 days", "card-subtitle")];
+  if (!days.length) rows.push(muted("No finished steps."));
+  for (const day of days) {
+    const parts = [];
+    if (day.planned) parts.push(`${day.planned} planned`);
+    if (day.pr) parts.push(`${day.pr} PR${day.pr === 1 ? "" : "s"}`);
+    if (day.failed) parts.push(`${day.failed} failed`);
+    if (day.limit) parts.push(`${day.limit} limit stop${day.limit === 1 ? "" : "s"}`);
+    const tools = Object.entries(day.tools || {}).map(([tool, n]) => `${tool} ${n}`).join(", ");
+    rows.push(row(day.label, parts.join(" · ") + (tools ? ` (${tools})` : "")));
+  }
+  for (const item of worker.recent || []) {
+    const outcome = WORKER_OUTCOMES[item.outcome] || item.outcome;
+    const isOld = Date.now() / 1000 - item.at > 20 * 3600;
+    const when = isOld ? new Date(item.at * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : clockTime(item.at);
+    rows.push(el("div", `${when} ${item.title} — ${outcome}${item.tool ? ` with ${item.tool}` : ""}`, "card-note worker-recent"));
+  }
+  return rows;
+}
+
 function workerCard(worker) {
   const cap = worker.max_runs ? `${worker.runs_today} of ${worker.max_runs} runs today` : `${worker.runs_today} runs today · no cap`;
   const title = el("div");
@@ -100,7 +133,7 @@ function workerCard(worker) {
   for (const [tool, until] of Object.entries(worker.out_until || {})) {
     rows.push(row(`${tool[0].toUpperCase()}${tool.slice(1)}`, `out until ${clockTime(until)}`));
   }
-  rows.push(workActions(workerSwitchButton(worker), workerScanButton()), ...workerBudgetRows(worker), workerToolsRow(worker),
+  rows.push(workActions(workerSwitchButton(worker), workerScanButton()), ...workerBudgetRows(worker), workerToolsRow(worker), ...workerStatsRows(worker),
     el("div", "Once a day while idle it reads the services' error logs and proposes tasks for recurring errors.", "card-note"),
     el("div", "Claude Code's limits can't be read from the server: the worker learns Claude is out when a run hits its limit.", "card-note"));
   return card("Worker", ...rows);

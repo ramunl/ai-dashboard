@@ -101,12 +101,25 @@ function lastRunRows(execution) {
   return rows;
 }
 
+// The autonomous worker, when on: what it does, so its work isn't mistaken
+// for yours. While it starts planning, new work waits.
+function workerRows(worker) {
+  if (!worker || !worker.enabled) return [];
+  const link = el("button", "Open Tasks", "link-button");
+  link.type = "button";
+  link.addEventListener("click", () => navigate("tasks"));
+  const value = el("span");
+  value.append(worker.status, " · ", link);
+  return [row("Worker", value)];
+}
+
 function workCard(snapshot) {
   const thinking = snapshot.thinking || null;
-  isWorkBusy = Boolean(thinking);
+  const worker = snapshot.worker || null;
+  isWorkBusy = Boolean(thinking) || Boolean(worker && worker.enabled && worker.current_phase === "planning");
   // Nothing pending yet while a new request is thought about: the progress
   // row stands in for the empty form.
   const isNewWork = thinking && !snapshot.pending_plan && !snapshot.awaiting_bugfix_answer;
   const pending = isNewWork ? [] : pendingRows(snapshot);
-  return card("Work", ...thinkingRows(thinking), ...pending, ...queueRows(snapshot), ...lastRunRows(snapshot.last_execution));
+  return card("Work", ...workerRows(worker), ...thinkingRows(thinking), ...pending, ...queueRows(snapshot), ...lastRunRows(snapshot.last_execution));
 }

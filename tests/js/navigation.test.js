@@ -2094,3 +2094,34 @@ test("Scan logs now sends the scan request", async () => {
   await sleep(60);
   assert.deepStrictEqual(page.bodies, [{ action: "worker_scan", args: {} }]);
 });
+
+test("the Worker card shows the last 7 days and the latest steps", async () => {
+  const now = Date.now() / 1000;
+  const stats = [{ day: "2026-10-13", planned: 1, pr: 2, failed: 1, limit: 0, tools: { codex: 3, claude: 1 } },
+    ...Array.from({ length: 6 }, (_, i) => ({ day: `2026-10-0${i + 1}`, planned: 0, pr: 0, failed: 0, limit: 0, tools: {} }))];
+  const recent = [{ at: now - 60, title: "add login", outcome: "pr", tool: "claude", phase: "running" }];
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: [], setup: TASK_SETUP, worker: { ...WORKER, stats, recent } } } : DATA[name]) }) });
+  await sleep(60);
+  const text = workerCardOf(page).textContent;
+  assert.match(text, /Last 7 days/);
+  assert.match(text, /Today1 planned · 2 PRs · 1 failed \(codex 3, claude 1\)/);
+  assert.doesNotMatch(text, /Yesterday/);
+  assert.match(text, /\d\d:\d\d( [AP]M)? add login — PR opened with claude/);
+});
+
+test("the Coding window says what the worker does and waits while it starts planning", async () => {
+  const worker = { ...WORKER, enabled: true, status: "planning add login with codex", current_phase: "planning" };
+  const page = await openPage("/coding", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, worker } } : DATA[name]) }) });
+  await sleep(60);
+  const work = [...page.doc.querySelectorAll("main section")].find((node) => node.querySelector("h2").textContent === "Work");
+  assert.match(work.textContent, /Workerplanning add login with codex · Open Tasks/);
+  for (const name of ["Plan", "Implement", "Bugfix"]) {
+    const button = buttonNamed(page, name);
+    if (button) assert.strictEqual(button.disabled, true);
+  }
+  buttonNamed(page, "Open Tasks").click();
+  await sleep(60);
+  assert.match(page.doc.querySelector("h1").textContent, /Tasks/);
+});

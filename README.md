@@ -326,6 +326,11 @@ recurring errors as **Proposed** tasks, with example log lines. Proposals never
 start by themselves: **Accept** makes one To do, **Dismiss** drops it and that
 error is not proposed again for 30 days. **Scan logs now** scans at once.
 
+Below its settings the card shows the last 7 days (plans made, PRs, failures
+and limit stops, with the tool) and its latest five steps. While the worker is
+on, the Coding window's Work card shows what it is doing, with a link to
+Tasks; new work waits while the worker starts planning.
+
 ## Coding work (Coding window)
 
 The **Work** card shows the pending plan or change, the queue and the last
