@@ -94,6 +94,18 @@ class CheckTests(unittest.TestCase):
             with self.assertRaises(RequestError, msg=str(args)):
                 check({"action": action, "args": args})
 
+    def test_worker_requests_are_bounded(self) -> None:
+        check({"action": "worker_switch", "args": {"value": "on"}})
+        check({"action": "worker_settings", "args": {"max_runs": "0", "reserve": "90"}})
+        for action, args in (
+            ("worker_switch", {"value": "1"}),
+            ("worker_settings", {"max_runs": "51", "reserve": "10"}),
+            ("worker_settings", {"max_runs": "3", "reserve": "91"}),
+            ("worker_settings", {"max_runs": "3"}),
+        ):
+            with self.assertRaises(RequestError, msg=str(args)):
+                check({"action": action, "args": args})
+
     def test_refuses_malformed(self) -> None:
         for body in (
             [],

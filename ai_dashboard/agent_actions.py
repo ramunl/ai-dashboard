@@ -25,6 +25,8 @@ _TASK = re.compile(r"^[0-9]{1,9}$")
 _TEXT = re.compile(r"^(?=.*\S)[^\x00-\x1f\x7f]{1,4000}$")
 _KINDS = ("plan", "implement", "bugfix")
 _TASK_ID = re.compile(r"^[0-9a-f]{8}$")
+_COUNT = re.compile(r"^([0-9]|[1-4][0-9]|50)$")  # runs per day, 0 = no cap
+_PERCENT = re.compile(r"^([0-9]|[1-8][0-9]|90)$")  # reserve, 0-90 %
 # Where a task came from: "<todo project>:<todo id>", or "-" for none.
 _TODO_REF = re.compile(r"^(-|[A-Za-z0-9._-]{1,64}:[A-Za-z0-9]{1,64})$")
 
@@ -52,6 +54,9 @@ ACTIONS: dict[str, dict] = {
     "create_task": {"repo": _NAME, "text": _TEXT, "todo": _TODO_REF},
     "start_task": {"task": _TASK_ID},
     "remove_task": {"task": _TASK_ID},
+    # The autonomous worker: on/off and its budget.
+    "worker_switch": {"value": ("on", "off")},
+    "worker_settings": {"max_runs": _COUNT, "reserve": _PERCENT},
 }
 
 

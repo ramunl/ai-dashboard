@@ -191,5 +191,6 @@ function tasksPage(view) {
   const waiting = tasks.filter((task) => task.stage === "planned").length;
   page.subtitle = `${tasks.length} task${tasks.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} need${waiting === 1 ? "s" : ""} you` : ""}`;
   const nodes = taskDraft ? [makeTaskCard(setup), tasksCard(tasks)] : [tasksCard(tasks)];
+  if (snapshot.worker) nodes.push(workerCard(snapshot.worker));
   return { ...page, nodes };
 }

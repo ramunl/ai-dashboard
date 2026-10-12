@@ -307,3 +307,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .task-status[data-tone="deployed"] { color: #fff; background: var(--ok); border-color: var(--ok); }
 .task-sheet { border: 1px solid var(--accent); }
 .pm-task-badge { align-self: center; flex-shrink: 0; font: inherit; font-size: 0.72rem; background: none; cursor: pointer; }
+
+/* Tasks › Worker card. */
+.worker-status { overflow-wrap: anywhere; }
+.worker-budget { flex-wrap: wrap; margin-top: 0.4rem; }
+.worker-budget > .pm-field { flex: 1 1 9rem; }

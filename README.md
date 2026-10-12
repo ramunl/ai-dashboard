@@ -310,6 +310,15 @@ In the PM window, a todo with a task shows the task's status as a small badge
 ("Task: Implementing"); tapping it opens Tasks. The
 launcher shows how many tasks are active and how many need you.
 
+### Worker
+
+The Tasks window's **Worker** card switches the coding agent's autonomous
+worker on and off and sets its budget (runs per day, and the share of Codex
+limits it must leave you). The worker takes To do tasks one at a time, plans
+them, waits for your approval, and runs approved plans to a pull request; it
+never merges or deploys. The card shows what it is doing ("waiting for your
+approval: …", "waiting: codex has 20% left…") and today's runs.
+
 ## Coding work (Coding window)
 
 The **Work** card shows the pending plan or change, the queue and the last

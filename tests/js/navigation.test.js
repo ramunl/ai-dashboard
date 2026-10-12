@@ -1989,3 +1989,51 @@ test("a run that ended unseen shows Run ended, not PR open", async () => {
   assert.match(taskRows(page)[0].textContent, /checking GitHub for a pull request/);
   assert.strictEqual(taskRows(page)[0].querySelector("button"), null);
 });
+
+// ---------------------------------------------------------------- worker
+
+const WORKER = { enabled: false, max_runs: 3, reserve: 30, runs_today: 0, failures: 0, status: "off", current_task: null };
+const workerPage = (worker, extra = {}) => tasksServer({ tasks: TASKS_LIST, sent: 0, worker }, extra);
+const workerCardOf = (page) => [...page.doc.querySelectorAll("main section")].find((node) => node.querySelector("h2").textContent === "Worker");
+
+test("the Worker card shows on/off, what it does and today's runs", async () => {
+  const state = { tasks: TASKS_LIST, sent: 0 };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: state.tasks, setup: TASK_SETUP,
+      worker: { ...WORKER, enabled: true, runs_today: 1, failures: 1, status: "waiting for your approval: backup the system" } } } : DATA[name]) }) });
+  await sleep(60);
+  const text = workerCardOf(page).textContent;
+  assert.match(text, /On1 of 3 runs today/);
+  assert.match(text, /waiting for your approval: backup the system/);
+  assert.match(text, /1 failed task\(s\) in a row; it stops after 3\./);
+  assert.ok(buttonNamed(page, "Switch off"));
+});
+
+test("switching the worker on asks first and sends only on/off", async () => {
+  const state = { tasks: [], sent: 0 };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: state.tasks, setup: TASK_SETUP, worker: WORKER } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0001" }) }) });
+  await sleep(60);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Switch on").click();
+  await sleep(60);
+  assert.match(asked[0], /Switch the worker on\? It plans To do tasks by itself/);
+  assert.deepStrictEqual(page.bodies, [{ action: "worker_switch", args: { value: "on" } }]);
+});
+
+test("the budget is changed with two choices and saved explicitly", async () => {
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: [], setup: TASK_SETUP, worker: WORKER } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0002" }) }) });
+  await sleep(60);
+  assert.strictEqual(buttonNamed(page, "Save budget"), undefined);
+  selectValue(page, fieldSelect(page, "Runs per day"), "0");
+  await sleep(40);
+  selectValue(page, fieldSelect(page, "Keep for me (Codex)"), "15");
+  await sleep(40);
+  assert.strictEqual(fieldSelect(page, "Runs per day").selectedOptions[0].textContent, "No cap");
+  buttonNamed(page, "Save budget").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "worker_settings", args: { max_runs: "0", reserve: "15" } }]);
+});
