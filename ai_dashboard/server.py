@@ -14,6 +14,7 @@ from aiohttp import web
 
 from ai_dashboard.agent_actions import RequestError, check, submit
 from ai_dashboard.auth import InitDataError, verify_init_data
+from ai_dashboard.backups import BACKUPS, register_backups
 from ai_dashboard.config import Settings
 from ai_dashboard.deployments import TARGETS, DeploymentService
 from ai_dashboard.disk_history import record_forever
@@ -118,6 +119,7 @@ async def window_data(request: web.Request) -> web.Response:
             ),
             "cleanup": request.app[CLEANUP].state(),
             "packages": request.app[PACKAGES].state(),
+            "backups": await request.app[BACKUPS].state(),
             "ai_tools": request.app[TOOLS].state(),
             "deployments": await request.app[DEPLOYMENTS].state(),
         }
@@ -311,6 +313,8 @@ async def restart_action(request: web.Request) -> web.Response:
 
 def _running_work(app: web.Application) -> str | None:
     """What the dashboard itself is running that a reboot would interrupt."""
+    if app[BACKUPS].running:
+        return "a backup"
     if app[PACKAGES].running:
         return f"a package {app[PACKAGES].running}"
     if app[CLEANUP].running:
@@ -450,6 +454,7 @@ def build_app(
     app[TOOLS] = ToolService(settings.tools_command, saved)
     app[CLOSER] = TaskCloser(settings.pm_command, saved)
     register_pm_routes(app, settings)
+    register_backups(app, settings)
     app.router.add_get("/healthz", health)
     # Before /api/{window}: aiohttp matches routes in order.
     app.router.add_get("/api/ops/logs", logs_data)

@@ -294,12 +294,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Needs attention", "Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Needs attention", "Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Backups", "Server resources", "Logs"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Backups", "Server resources", "Logs"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {

@@ -420,3 +420,14 @@ Coding now shows persistent **Blocked run** / **Needs Ops action** reports with
 an **Open Ops** link. Linked tasks remain active and offer Start planning again
 when the blocker is resolved. Opening Ops only navigates: server actions retain
 their existing confirmations and guards. No-code reports never auto-close todos.
+
+### Backups in Ops
+
+The Backups card reads `ai-backup status`, including nightly and chat-triggered
+backups. **Back up now** creates an encrypted archive and sends it to the owner's
+Ops bot chat. Install `ai-backup` and its key using the ai-ops-agent instructions
+first. The card distinguishes archive creation from Telegram delivery, shows
+missing files, and warns when the last successful archive is over two days old.
+The signed owner-only POST accepts no paths or options. The CLI lock also protects
+against simultaneous nightly/chat backups. Dashboard delivery results survive
+restarts in `backup-delivery.json`; the last saved archive is not proof of delivery.
