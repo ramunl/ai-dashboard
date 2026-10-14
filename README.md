@@ -347,6 +347,10 @@ snapshot (`pending_plan`), never the generated prompt.
 **Revise** opens a note field; the note becomes the words after `/discuss`,
 and Approve and Confirm are refused until the new revision is written.
 
+A plan that needs several repositories (or not the active one) lists them in
+order above Details, with what approving runs; the coding agent decides this
+from its map of all repositories.
+
 When a bug report needs more detail, the card shows the agent's questions
 (published as `bugfix_questions`, bounded and redacted) with an answer field;
 the answer becomes the words after `/answer`.

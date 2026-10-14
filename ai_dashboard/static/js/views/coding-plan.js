@@ -18,6 +18,23 @@ function planCount(count, word) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
+// The repositories a plan needs, in order, and what approving it runs. Shown
+// outside Details: a plan for the wrong or several repositories is the thing
+// to catch before approving.
+function planRepositories(plan) {
+  const repositories = Array.isArray(plan.repositories) ? plan.repositories : [];
+  if (repositories.length < 2 && !plan.repository_note) return [];
+  const list = el("ol", null, "plan-list plan-repositories");
+  for (const repository of repositories) {
+    const item = el("li");
+    item.append(el("strong", repository.name), repository.changes ? ` — ${repository.changes}` : "");
+    list.append(item);
+  }
+  const nodes = [el("div", "Repositories, in order", "card-subtitle"), list];
+  if (plan.repository_note) nodes.push(el("div", plan.repository_note, "card-note plan-repository-note"));
+  return nodes;
+}
+
 function planDetails(plan) {
   if (typeof plan.summary !== "string") return [];  // an agent that predates the outline
   const steps = plan.steps || [];
@@ -36,7 +53,7 @@ function planDetails(plan) {
     ...planList("Implementation", steps, "ol"),
     ...planList("Risks", plan.risks, "ul"),
   );
-  return [el("p", plan.summary, "plan-summary"), details];
+  return [el("p", plan.summary, "plan-summary"), ...planRepositories(plan), details];
 }
 
 function reviseButton() {

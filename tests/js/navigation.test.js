@@ -2125,3 +2125,21 @@ test("the Coding window says what the worker does and waits while it starts plan
   await sleep(60);
   assert.match(page.doc.querySelector("h1").textContent, /Tasks/);
 });
+
+test("a plan for several repositories lists them in order with what approving runs", async () => {
+  const plan = { ...PLAN, repositories: [{ name: "ai-pm-agent", changes: "move op in task_cli" }, { name: "ai-dashboard", changes: "drag the PM list" }],
+    repository_note: "Approving runs only ai-pm-agent; ai-dashboard need their own task, in the order above." };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan }));
+  await sleep(60);
+  const card = workCardOf(page);
+  assert.deepStrictEqual([...card.querySelectorAll(".plan-repositories li")].map((n) => n.textContent),
+    ["ai-pm-agent — move op in task_cli", "ai-dashboard — drag the PM list"]);
+  assert.match(card.querySelector(".plan-repository-note").textContent, /Approving runs only ai-pm-agent/);
+});
+
+test("a one-repository plan shows no repository list", async () => {
+  const plan = { ...PLAN, repositories: [{ name: "ai-pm-agent", changes: "x" }], repository_note: "" };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan }));
+  await sleep(60);
+  assert.strictEqual(workCardOf(page).querySelector(".plan-repositories"), null);
+});
