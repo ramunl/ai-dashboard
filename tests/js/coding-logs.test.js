@@ -237,7 +237,8 @@ test("leaving the window cancels the poll and ignores its late answer", async ()
   assert.ok(page.requests[page.requests.length - 1].signal.aborted, "the poll was not cancelled");
   await pending;
   assert.deepStrictEqual([...box.querySelectorAll(".log-tail-line")].map((n) => n.textContent), lines("a", 1, 5));
-  assert.strictEqual(box.querySelector(".log-tail-error").hidden, true);
+  // The error note sits next to the box, in the (now detached) log tail.
+  assert.strictEqual(box.closest(".log-tail").querySelector(".log-tail-error").hidden, true);
   const count = page.requests.length;
   await page.tick(); // a timer tick after leaving does not poll
   assert.strictEqual(page.requests.length, count);
