@@ -54,12 +54,18 @@ function pendingRows(snapshot) {
   if (plan) {
     const state = plan.approved ? "approved" : "waiting for approval";
     const rows = [row("Plan", `${plan.feature} · revision ${plan.revision}`), el("div", state, "card-note")];
-    const first = plan.approved
-      ? runButton(snapshot.pending_branch || "the approved plan")
-      : workButton("Approve", "work:approve", "row-button",
-        (button) => sendWork("work:approve", "approve_plan", {}, button));
+    const names = planRepositoryNames(plan);
+    const active = snapshot.project && snapshot.project.name;
+    const isElsewhere = names.length > 0 && Boolean(active) && !names.includes(active);
+    const buttons = [];
+    if (plan.approved) buttons.push(runButton(snapshot.pending_branch || "the approved plan"));
+    else if (!isElsewhere) {
+      buttons.push(workButton("Approve", "work:approve", "row-button",
+        (button) => sendWork("work:approve", "approve_plan", {}, button)));
+    }
+    if (!plan.approved && names.length > 1) buttons.push(splitButton(isElsewhere ? "row-button" : "row-button work-secondary"));
     return [...rows, ...planDetails(plan),
-      workActions(first, reviseButton(), cancelButton("the pending plan")), ...reviseRows()];
+      workActions(...buttons, reviseButton(), cancelButton("the pending plan")), ...reviseRows()];
   }
   if (snapshot.pending_branch) {
     return [row("Ready to run", snapshot.pending_branch),
