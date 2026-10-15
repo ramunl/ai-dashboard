@@ -2176,3 +2176,17 @@ test("a part that waits for the one before it shows Waiting and cannot start", a
   assert.match(row.textContent, /starts after: drag todos \(ai-pm-agent, part 1\/2\)/);
   assert.strictEqual(buttonNamed(page, "Start planning"), undefined);
 });
+
+test("a plan for one other repository offers Move to it instead of Approve", async () => {
+  const plan = { ...PLAN, repositories: [{ name: "ai-dashboard", changes: "logs scroll" }],
+    repository_note: "This plan is for ai-dashboard, not ai-coding-agent, the active project." };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan, project: { name: "ai-coding-agent", repository: "o/c", branch: "main" } },
+    { onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0041" }) }) }));
+  await sleep(60);
+  assert.deepStrictEqual(workButtons(page), ["Move to ai-dashboard", "Revise", "Cancel"]);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Move to ai-dashboard").click();
+  await sleep(60);
+  assert.match(asked[0], /To do task is made there/);
+  assert.deepStrictEqual(page.bodies, [{ action: "split_plan", args: {} }]);
+});

@@ -57,9 +57,11 @@ function planDetails(plan) {
 }
 
 // A plan for several repositories: one To do task per repository, in order.
-function splitButton(className) {
-  const question = "Split into one task per repository? The plan is dropped; each part is planned again in its own repository when it starts (AI tokens).";
-  return workButton("Split into tasks", "work:split", className,
+function splitButton(className, label = "Split into tasks") {
+  const question = label === "Split into tasks"
+    ? "Split into one task per repository? The plan is dropped; each part is planned again in its own repository when it starts (AI tokens)."
+    : `${label}? The plan is dropped and a To do task is made there, planned again in that repository when it starts (AI tokens).`;
+  return workButton(label, "work:split", className,
     (button) => confirmedWork(question, "work:split", "split_plan", {}, button,
       (result) => { actionNotice = { text: `${result.message.split("\n")[0]} See Tasks.`, until: Date.now() + NOTICE_MS }; }));
 }

@@ -352,7 +352,8 @@ order above Details, with what approving runs; the coding agent decides this
 from its map of all repositories. **Split into tasks** turns such a plan into one task
 per repository, in order (shown instead of Approve when the plan doesn't change
 the active project); in Tasks a later part shows **Waiting** until the part
-before it has a pull request.
+before it has a pull request. A plan for one other repository (the task was made in
+the wrong project) shows **Move to <repository>** instead.
 
 When a bug report needs more detail, the card shows the agent's questions
 (published as `bugfix_questions`, bounded and redacted) with an answer field;
