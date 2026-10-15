@@ -86,6 +86,20 @@ class PMEndpointTests(unittest.IsolatedAsyncioTestCase):
             self.bridge.await_args.args, ("/usr/local/sbin/ai-pm-todos", payload)
         )
 
+    async def test_move_passes_the_saved_index_to_the_bridge(self):
+        payload = {
+            "action": "move",
+            "project": "app",
+            "id": "a" * 32,
+            "revision": "rev",
+            "index": 3,
+        }
+        response = await self.client.post(
+            "/api/pm/action", headers=self.auth(), json=payload
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.bridge.await_args.args[1], payload)
+
     async def test_conflict_is_visible_and_unknown_action_rejected(self):
         self.bridge.return_value = {
             "ok": False,

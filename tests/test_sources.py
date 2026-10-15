@@ -63,6 +63,20 @@ class ReadSnapshotTests(unittest.TestCase):
         self.assertEqual(data["queue"], [])
         self.assertIsNone(problem)
 
+    def test_pm_todo_sort_fields_pass_through_unchanged(self) -> None:
+        # The page sorts by these; a todo from before dates has no "created".
+        items = [
+            {"id": "a", "created": "2026-10-01T09:00:00+00:00", "priority": "high"},
+            {"id": "b", "created": 1791800000, "priority": "low", "index": 1},
+            {"id": "c", "priority": "normal", "index": 2},
+        ]
+        self.path.write_text(
+            json.dumps({"format": 1, "updated_at": NOW, "todos": {"items": items}})
+        )
+        data, problem = sources.read_snapshot(self.path)
+        self.assertIsNone(problem)
+        self.assertEqual(data["todos"]["items"], items)
+
 
 class AgentViewTests(unittest.IsolatedAsyncioTestCase):
     async def test_combines_service_and_snapshot(self) -> None:

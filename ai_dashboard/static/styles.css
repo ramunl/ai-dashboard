@@ -157,6 +157,25 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .pm-switch-button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
 .pm-switch-button:focus-visible, .pm-menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .pm-count { color: var(--hint); font-size: 0.8rem; margin: 0.7rem 0 0.3rem; }
+/* Sort order is the browser's view only; the saved order stays Manual. */
+.todo-sort-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+.todo-sort-button {
+  font: inherit; font-size: 0.85rem; padding: 0.4rem 0.75rem; border-radius: 1rem; cursor: pointer;
+  border: 1px solid var(--tg-theme-hint-color, var(--hint)); background: var(--tg-theme-bg-color, var(--bg)); color: var(--tg-theme-text-color, var(--fg));
+}
+.todo-sort-button[aria-pressed="true"] {
+  border-color: var(--tg-theme-button-color, var(--accent)); background: var(--tg-theme-button-color, var(--accent));
+  color: var(--tg-theme-button-text-color, var(--accent-text));
+}
+.todo-sort-button:focus-visible { outline: 2px solid var(--tg-theme-link-color, var(--link)); outline-offset: 2px; }
+.todo-sort-hint { color: var(--hint); font-size: 0.8rem; margin-bottom: 0.3rem; }
+.pm-drag-handle {
+  flex-shrink: 0; font: inherit; font-size: 1.1rem; line-height: 1; padding: 0.3rem 0.4rem; border: 0; border-radius: 0.3rem;
+  background: none; color: var(--hint); cursor: grab; touch-action: none;
+}
+.pm-drag-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pm-dragging { opacity: 0.5; }
+.pm-drop-target { box-shadow: inset 0 2px 0 var(--accent); }
 /* Phone: picker and menu share a row; add and search get a row each. */
 @media (max-width: 34rem) {
   .pm-bar-top, .pm-bar-filters { flex-wrap: wrap; }

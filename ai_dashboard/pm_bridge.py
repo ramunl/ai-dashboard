@@ -77,6 +77,7 @@ def register_pm_routes(app: web.Application, settings: Settings) -> None:
                     "add",
                     "update",
                     "delete",
+                    "move",
                     "sync",
                 ):
                     raise ValueError("Unknown PM action")
