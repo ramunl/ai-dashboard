@@ -56,6 +56,18 @@ function planDetails(plan) {
   return [el("p", plan.summary, "plan-summary"), ...planRepositories(plan), details];
 }
 
+// A plan for several repositories: one To do task per repository, in order.
+function splitButton(className) {
+  const question = "Split into one task per repository? The plan is dropped; each part is planned again in its own repository when it starts (AI tokens).";
+  return workButton("Split into tasks", "work:split", className,
+    (button) => confirmedWork(question, "work:split", "split_plan", {}, button,
+      (result) => { actionNotice = { text: `${result.message.split("\n")[0]} See Tasks.`, until: Date.now() + NOTICE_MS }; }));
+}
+
+function planRepositoryNames(plan) {
+  return (Array.isArray(plan.repositories) ? plan.repositories : []).map((repository) => repository.name);
+}
+
 function reviseButton() {
   return workButton(isReviseOpen ? "Close note" : "Revise", "work:revise", "row-button work-secondary", () => {
     isReviseOpen = !isReviseOpen;

@@ -66,6 +66,7 @@ function taskMeta(task) {
     parts.push(isDeployable ? "waiting for a deployment" : "no deployment for this repo");
   }
   if (taskProgress.closed.includes(task.id)) parts.push("todo closed");
+  if (task.waiting_for) parts.push(`starts after: ${task.waiting_for}`);
   if (task.note) parts.push(task.note);
   if (task.todo) parts.push(`from todo ${task.todo.split(":")[0]}`);
   const meta = el("div", null, "task-meta");
@@ -109,7 +110,7 @@ function taskActions(task) {
   if (task.stage === "planned") {
     actions.push(taskButton("Open plan", `task:open:${task.id}`, "row-button", () => navigate("coding")));
   }
-  if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage)) {
+  if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !task.waiting_for) {
     const key = `task:start:${task.id}`;
     actions.push(taskButton("Start planning", key, "row-button", (button) => {
       button.disabled = true;
@@ -133,7 +134,9 @@ function taskActions(task) {
 }
 
 function taskRow(task) {
-  const status = TASK_STATUS[taskStage(task)] || { label: task.stage, tone: "todo" };
+  const isWaiting = task.stage === "todo" && Boolean(task.waiting_for);
+  const status = isWaiting ? { label: "Waiting", tone: "todo" }
+    : TASK_STATUS[taskStage(task)] || { label: task.stage, tone: "todo" };
   const node = el("article", null, "task");
   const badge = el("span", status.label, "task-status");
   badge.dataset.tone = status.tone;

@@ -349,7 +349,10 @@ and Approve and Confirm are refused until the new revision is written.
 
 A plan that needs several repositories (or not the active one) lists them in
 order above Details, with what approving runs; the coding agent decides this
-from its map of all repositories.
+from its map of all repositories. **Split into tasks** turns such a plan into one task
+per repository, in order (shown instead of Approve when the plan doesn't change
+the active project); in Tasks a later part shows **Waiting** until the part
+before it has a pull request.
 
 When a bug report needs more detail, the card shows the agent's questions
 (published as `bugfix_questions`, bounded and redacted) with an answer field;

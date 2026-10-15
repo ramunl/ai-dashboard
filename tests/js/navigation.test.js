@@ -2143,3 +2143,36 @@ test("a one-repository plan shows no repository list", async () => {
   await sleep(60);
   assert.strictEqual(workCardOf(page).querySelector(".plan-repositories"), null);
 });
+
+test("a plan for other repositories offers Split instead of Approve and sends split_plan", async () => {
+  const plan = { ...PLAN, repositories: [{ name: "ai-pm-agent", changes: "move op" }, { name: "ai-dashboard", changes: "drag" }],
+    repository_note: "This plan does not change ai-coding-agent." };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan, project: { name: "ai-coding-agent", repository: "o/c", branch: "main" } },
+    { onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0031" }) }) }));
+  await sleep(60);
+  assert.deepStrictEqual(workButtons(page), ["Split into tasks", "Revise", "Cancel"]);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Split into tasks").click();
+  await sleep(60);
+  assert.match(asked[0], /one task per repository/);
+  assert.deepStrictEqual(page.bodies, [{ action: "split_plan", args: {} }]);
+});
+
+test("a multi-repository plan that includes the active project offers Approve and Split", async () => {
+  const plan = { ...PLAN, repositories: [{ name: "ai-pm-agent", changes: "move op" }, { name: "ai-dashboard", changes: "drag" }] };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan, project: { name: "ai-pm-agent", repository: "o/p", branch: "main" } }));
+  await sleep(60);
+  assert.deepStrictEqual(workButtons(page), ["Approve", "Split into tasks", "Revise", "Cancel"]);
+});
+
+test("a part that waits for the one before it shows Waiting and cannot start", async () => {
+  const tasks = [{ id: "0a1b2c3d", title: "drag todos (ai-dashboard, part 2/2)", repo: "ai-dashboard", stage: "todo",
+    part: 2, parts: 2, waiting_for: "drag todos (ai-pm-agent, part 1/2)" }];
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks, setup: TASK_SETUP } } : DATA[name]) }) });
+  await sleep(60);
+  const row = page.doc.querySelector(".task");
+  assert.strictEqual(row.querySelector(".task-status").textContent, "Waiting");
+  assert.match(row.textContent, /starts after: drag todos \(ai-pm-agent, part 1\/2\)/);
+  assert.strictEqual(buttonNamed(page, "Start planning"), undefined);
+});

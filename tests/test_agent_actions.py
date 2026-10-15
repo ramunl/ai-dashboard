@@ -98,6 +98,7 @@ class CheckTests(unittest.TestCase):
         check({"action": "worker_switch", "args": {"value": "on"}})
         check({"action": "worker_tools", "args": {"value": "fixed"}})
         check({"action": "worker_scan", "args": {}})
+        check({"action": "split_plan", "args": {}})
         check({"action": "accept_task", "args": {"task": "0a1b2c3d"}})
         check({"action": "dismiss_task", "args": {"task": "0a1b2c3d"}})
         with self.assertRaises(RequestError):
