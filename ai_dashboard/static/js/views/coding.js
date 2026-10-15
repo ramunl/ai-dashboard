@@ -31,6 +31,7 @@ function setupCard(setup) {
     "Setup",
     setupLink("Project", active ? active.name : "—", "coding/projects"),
     setupLink("AI tools", tools.join(" · "), "coding/ai"),
+    setupLink("Logs", "The agent's journal, live", "coding/logs"),
   );
 }
 

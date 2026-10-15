@@ -221,7 +221,7 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.inbox.exists())
 
     async def test_sub_window_pages_are_served(self) -> None:
-        for path in ("/coding/projects", "/coding/ai"):
+        for path in ("/coding/projects", "/coding/ai", "/coding/logs"):
             self.assertEqual((await self.client.get(path)).status, 200, path)
         self.assertEqual((await self.client.get("/coding/nope")).status, 404)
         self.assertEqual((await self.client.get("/pm/projects")).status, 404)

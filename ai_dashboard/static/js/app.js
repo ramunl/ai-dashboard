@@ -44,7 +44,12 @@ function renderPage(page, body) {
   const view = document.getElementById("view");
   const keepEditor = page.title === "PM agent" && pmUi.node && view.contains(pmUi.node) &&
     (pmUi.editor || pmUi.busy || pmUi.node.contains(document.activeElement));
-  if (!keepEditor) view.replaceChildren(...layoutOrder(page.nodes));
+  const nodes = layoutOrder(page.nodes);
+  // A window that reuses its nodes (Coding logs) stays attached: detaching
+  // and re-adding a scroll box would reset its scroll position.
+  const isSameNodes = nodes.length === view.children.length &&
+    nodes.every((node, index) => view.children[index] === node);
+  if (!keepEditor && !isSameNodes) view.replaceChildren(...nodes);
   const age = typeof body.age_seconds === "number"
     ? ` · data ${Math.round(body.age_seconds)} s old`
     : "";
@@ -69,6 +74,7 @@ function show() {
   generation++;
   hasData = false;
   cancelRequest();
+  stopCodingLogs();
   syncBackButton();
   renderLoading();
   refresh();
