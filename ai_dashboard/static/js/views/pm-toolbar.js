@@ -90,8 +90,7 @@ function pmFilterPanel() {
   const panel = el("div", null, "pm-bar pm-filter-panel");
   panel.hidden = !pmUi.filtersOpen;
   panel.append(
-    pmSelect("Priority", { all: "All", ...PM_PRIORITIES }, pmUi.priority, (value) => { pmUi.priority = value; pmPaintList(); }),
-    pmSelect("Sort", { priority: "Priority", original: "Original order" }, pmUi.sort, (value) => { pmUi.sort = value; pmPaintList(); }));
+    pmSelect("Priority", { all: "All", ...PM_PRIORITIES }, pmUi.priority, (value) => { pmUi.priority = value; pmPaintList(); }));
   return panel;
 }
 

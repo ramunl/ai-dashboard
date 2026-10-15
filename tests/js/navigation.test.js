@@ -626,7 +626,7 @@ test("PM select values stay present when Telegram changes its theme", async () =
     page.dom.window.Telegram.WebApp.colorScheme = theme;
     page.dom.window.eval("applyColorScheme()");
     assert.strictEqual(page.doc.documentElement.dataset.theme, theme);
-    for (const label of ["Active todo project", "Priority", "Sort"]) {
+    for (const label of ["Active todo project", "Priority"]) {
       const select = fieldSelect(page, label);
       assert.ok(select.selectedOptions[0].textContent.trim());
     }

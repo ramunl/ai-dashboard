@@ -1,7 +1,10 @@
 // Todos workspace. Preserve drafts, selected filters and focused inputs on polling.
 const PM_STATUSES = { open: "Open", in_progress: "In progress", blocked: "Blocked", done: "Done" };
 const PM_PRIORITIES = { high: "High", normal: "Normal", low: "Low" };
-const pmUi = { workspace: null, node: null, filter: "open", priority: "all", search: "", sort: "priority", expanded: false, editor: null, busy: false, notice: "", quick: "", filtersOpen: false, layout: null };
+// One of SORT_MODES. Kept across polls and project changes; never saved.
+let todoSortMode = "priority";
+const pmUi = { workspace: null, node: null, filter: "open", priority: "all", search: "", expanded: false, editor: null, busy: false, dragging: false, notice: "", quick: "", filtersOpen: false, layout: null };
+const PM_SORT_ORDERS = { manual: "in manual order", created: "newest first", priority: "sorted by priority" };
 const PM_ROWS_SHOWN = 10;
 const PM_SHOWN_STATUSES = ["in_progress", "blocked"];  // worth a badge; Open and Done are not
 
@@ -29,7 +32,7 @@ function pmSelect(label, choices, value, change) {
 }
 
 function pmWorkspace(workspace) {
-  if (pmUi.node && (pmUi.editor || pmUi.busy || pmUi.node.contains(document.activeElement))) return pmUi.node;
+  if (pmUi.node && (pmUi.editor || pmUi.busy || pmUi.dragging || pmUi.node.contains(document.activeElement))) return pmUi.node;
   pmUi.workspace = workspace;
   pmUi.node = card("Todos");
   pmPaint();
@@ -43,18 +46,41 @@ function pmPaint() {
     const notice = el("div", pmUi.notice, "pm-notice"); notice.setAttribute("role", "status"); node.append(notice);
   }
   if (pmUi.editor) { node.append(pmEditor()); return; }
-  node.append(...pmToolbar(workspace), el("div", null, "pm-task-list"));
+  node.append(...pmToolbar(workspace), pmSortBar(), el("div", null, "pm-task-list"));
   pmPaintList();
+}
+
+// Manual / Created / Priority. Switching re-sorts the data already here.
+function pmSortBar() {
+  const bar = document.createElement("div");
+  bar.className = "todo-sort-bar";
+  bar.setAttribute("role", "group");
+  bar.setAttribute("aria-label", "Sort todos");
+  for (const [mode, label] of Object.entries(SORT_MODES)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "todo-sort-button";
+    button.textContent = label;
+    button.dataset.mode = mode;
+    button.setAttribute("aria-pressed", String(todoSortMode === mode));
+    button.addEventListener("click", () => {
+      todoSortMode = mode;
+      bar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+      pmPaintList();
+    });
+    bar.append(button);
+  }
+  return bar;
 }
 
 function pmPaintList() {
   const list = pmUi.node.querySelector(".pm-task-list"); if (!list) return;
-  let items = pmUi.workspace.items.filter(item =>
+  // Sort the whole list first, so a missing index falls back to the saved order.
+  const items = sortTodos(pmUi.workspace.items, todoSortMode).filter(item =>
     (pmUi.filter === "all" || (pmUi.filter === "open" ? item.status !== "done" : item.status === pmUi.filter)) &&
     (pmUi.priority === "all" || item.priority === pmUi.priority) && item.text.toLocaleLowerCase().includes(pmUi.search.toLocaleLowerCase()));
-  if (pmUi.sort === "priority") items = [...items].sort((a, b) => Object.keys(PM_PRIORITIES).indexOf(a.priority) - Object.keys(PM_PRIORITIES).indexOf(b.priority));
-  const order = pmUi.sort === "priority" ? "sorted by priority" : "in original order";
-  list.replaceChildren(el("div", items.length ? `${items.length} shown · ${order}` : "No matching todos.", "pm-count"));
+  list.replaceChildren(el("div", items.length ? `${items.length} shown · ${PM_SORT_ORDERS[todoSortMode]}` : "No matching todos.", "pm-count"));
+  if (items.length > 1 && todoSortMode !== "manual") list.append(el("div", "Switch to Manual to reorder", "todo-sort-hint"));
   const visible = pmUi.expanded ? items : items.slice(0, PM_ROWS_SHOWN);
   visible.forEach(item => list.append(pmTaskRow(item)));
   if (items.length > PM_ROWS_SHOWN) {
@@ -69,6 +95,10 @@ function pmPaintList() {
 
 function pmTaskRow(item) {
   const entry = el("article", null, "pm-task");
+  if (todoSortMode === "manual") {
+    entry.dataset.manualIndex = String(pmManualIndex(item));
+    entry.append(pmDragHandle(item, entry));
+  }
   const check = el("input"); check.type = "checkbox"; check.checked = item.status === "done"; check.disabled = pmUi.busy;
   check.setAttribute("aria-label", `${check.checked ? "Reopen" : "Mark done"}: ${item.text}`);
   check.addEventListener("change", () => pmSend({ action: "update", id: item.id, status: check.checked ? "done" : "open", project: pmUi.workspace.project, revision: pmUi.workspace.revision }));
@@ -80,6 +110,65 @@ function pmTaskRow(item) {
   const taskBadge = pmTaskBadge(item);
   if (taskBadge) entry.append(taskBadge);
   return entry;
+}
+
+// The todo's place in the saved order, from the snapshot.
+function pmManualIndex(item) {
+  return todoManualIndex(item, pmUi.workspace.items.indexOf(item));
+}
+
+// Drag (pointer, also touch) or arrow keys, in Manual order only. A move names
+// the target's saved index, never its place on screen, which filters change.
+function pmDragHandle(item, entry) {
+  const handle = el("button", "≡", "pm-drag-handle");
+  handle.type = "button";
+  handle.disabled = pmUi.busy;
+  handle.setAttribute("aria-label", `Reorder ${item.text}: drag, or press the up and down arrow keys`);
+  handle.addEventListener("keydown", (event) => {
+    const step = { ArrowUp: "previousElementSibling", ArrowDown: "nextElementSibling" }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const target = entry[step];
+    if (target && target.dataset.manualIndex !== undefined) pmMove(item, Number(target.dataset.manualIndex));
+  });
+  handle.addEventListener("pointerdown", (event) => {
+    if (pmUi.busy) return;
+    event.preventDefault();
+    pmUi.dragging = true;
+    entry.classList.add("pm-dragging");
+    if (handle.setPointerCapture && event.pointerId !== undefined) handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!pmUi.dragging) return;
+    const target = pmDropTarget(event);
+    pmUi.node.querySelectorAll(".pm-drop-target").forEach((row) => row.classList.remove("pm-drop-target"));
+    if (target && target !== entry) target.classList.add("pm-drop-target");
+  });
+  handle.addEventListener("pointerup", (event) => {
+    if (!pmUi.dragging) return;
+    const target = pmDropTarget(event);
+    pmDragEnd(entry);
+    if (target && target !== entry) pmMove(item, Number(target.dataset.manualIndex));
+  });
+  handle.addEventListener("pointercancel", () => pmDragEnd(entry));
+  return handle;
+}
+
+function pmDropTarget(event) {
+  const hit = document.elementFromPoint ? document.elementFromPoint(event.clientX, event.clientY) : null;
+  const row = hit && hit.closest(".pm-task");
+  return row && pmUi.node.contains(row) && row.dataset.manualIndex !== undefined ? row : null;
+}
+
+function pmDragEnd(entry) {
+  pmUi.dragging = false;
+  entry.classList.remove("pm-dragging");
+  pmUi.node.querySelectorAll(".pm-drop-target").forEach((row) => row.classList.remove("pm-drop-target"));
+}
+
+function pmMove(item, index) {
+  if (todoSortMode !== "manual" || !Number.isInteger(index) || index === pmManualIndex(item)) return;
+  pmSend({ action: "move", id: item.id, project: pmUi.workspace.project, revision: pmUi.workspace.revision, index });
 }
 
 function pmEditor() {
