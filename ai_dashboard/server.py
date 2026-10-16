@@ -145,7 +145,7 @@ UPLOAD_TIMEOUT_SECONDS = 60
 _UPLOAD_CHUNK = 64 * 1024
 
 
-class _Refused(Exception):
+class _UploadError(Exception):
     """An upload the server keeps no part of; the message is for the owner."""
 
     def __init__(self, status: int, message: str) -> None:
@@ -166,18 +166,18 @@ async def _receive_image(request: web.Request, directory: Path) -> str:
     suffix, and the coding agent checks the image itself.
     """
     if not request.content_type.startswith("multipart/"):
-        raise _Refused(400, "expected a multipart image upload")
+        raise _UploadError(400, "expected a multipart image upload")
     try:
         reader = await request.multipart()
         part = await reader.next()
     except ValueError as error:  # a multipart body without its boundary
-        raise _Refused(400, "expected a multipart image upload") from error
+        raise _UploadError(400, "expected a multipart image upload") from error
     if not isinstance(part, aiohttp.BodyPartReader) or part.name != "image":
-        raise _Refused(400, 'expected one image field named "image"')
+        raise _UploadError(400, 'expected one image field named "image"')
     mime = part.headers.get("Content-Type", "").split(";")[0].strip().lower()
     suffix = IMAGE_TYPES.get(mime)
     if suffix is None:
-        raise _Refused(415, "images must be PNG, JPEG, WebP or GIF")
+        raise _UploadError(415, "images must be PNG, JPEG, WebP or GIF")
     directory.mkdir(parents=True, exist_ok=True)
     upload_id = secrets.token_hex(8)
     partial = directory / f".{upload_id}.part"
@@ -187,10 +187,10 @@ async def _receive_image(request: web.Request, directory: Path) -> str:
             while chunk := await part.read_chunk(_UPLOAD_CHUNK):
                 size += len(chunk)
                 if size > MAX_IMAGE_BYTES:
-                    raise _Refused(413, "image larger than 5 MB")
+                    raise _UploadError(413, "image larger than 5 MB")
                 handle.write(chunk)
         if size == 0:
-            raise _Refused(400, "the image is empty")
+            raise _UploadError(400, "the image is empty")
         partial.replace(directory / f"{upload_id}{suffix}")
     finally:
         # Also covers a refused, failed or timed-out upload: nothing is kept.
@@ -230,7 +230,7 @@ async def image_upload(request: web.Request) -> web.Response:
             status=408,
             headers=_NO_STORE,
         )
-    except _Refused as refused:
+    except _UploadError as refused:
         return web.json_response(
             {"error": refused.message}, status=refused.status, headers=_NO_STORE
         )
