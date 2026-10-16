@@ -310,6 +310,11 @@ In the PM window, a todo with a task shows the task's status as a small badge
 ("Task: Implementing"); tapping it opens Tasks. The
 launcher shows how many tasks are active and how many need you.
 
+A task whose run stopped without a pull request (a tool out of its limit, a
+crash) offers **Retry with Claude** and **Retry with Codex**: the same approved
+plan runs again, without planning it again. Such a task, and one a later part
+waits for, stays under Active.
+
 ### Worker
 
 The Tasks window's **Worker** card switches the coding agent's autonomous

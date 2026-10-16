@@ -35,8 +35,21 @@ function agoText(seconds) {
   return `${formatDuration(Math.max(0, Date.now() / 1000 - seconds))} ago`;
 }
 
+// A stopped task that can be retried, or that a later part waits for, still
+// needs you: it stays under Active.
 function isTaskFinished(task) {
-  return FINISHED_TASK_STAGES.includes(task.stage);
+  return FINISHED_TASK_STAGES.includes(task.stage) && !task.can_retry && !task.blocks;
+}
+
+function retryButton(task, tool, label, className) {
+  const key = `task:retry:${task.id}:${tool}`;
+  return taskButton(label, key, className, (button) => {
+    button.disabled = true;
+    askConfirmation(`Run "${task.title}" again with ${label.replace("Retry with ", "")}? Same approved plan, fresh branch; this uses AI tokens and opens a pull request.`, (isConfirmed) => {
+      if (isConfirmed) requestAction(key, "retry_task", { task: task.id, tool });
+      else button.disabled = false;
+    });
+  });
 }
 
 function taskButton(label, key, className, onClick) {
@@ -109,6 +122,10 @@ function taskActions(task) {
   }
   if (task.stage === "planned") {
     actions.push(taskButton("Open plan", `task:open:${task.id}`, "row-button", () => navigate("coding")));
+  }
+  if (task.can_retry) {
+    actions.push(retryButton(task, "claude", "Retry with Claude", "row-button"),
+      retryButton(task, "codex", "Retry with Codex", "row-button work-secondary"));
   }
   if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !task.waiting_for) {
     const key = `task:start:${task.id}`;

@@ -59,6 +59,8 @@ ACTIONS: dict[str, dict] = {
     "dismiss_task": {"task": _TASK_ID},
     # A plan for several repositories: one task per repository, in order.
     "split_plan": {},
+    # Run a task's approved plan again after a failed run, with this tool.
+    "retry_task": {"task": _TASK_ID, "tool": ("codex", "claude")},
     # The autonomous worker: on/off and its budget.
     "worker_switch": {"value": ("on", "off")},
     "worker_settings": {"max_runs": _COUNT, "reserve": _PERCENT},

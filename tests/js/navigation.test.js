@@ -2203,3 +2203,19 @@ test("a confirmation for a long task title fits Telegram's 256-character popup",
   assert.ok(asked[0].length <= 256, `${asked[0].length} characters`);
   assert.match(asked[0], /^Plan "improve coding logs view, .*…" in ai-dashboard\? This uses AI tokens\.$/);
 });
+
+test("a failed run can be retried with Claude or Codex and stays under Active", async () => {
+  const tasks = [{ id: "0a1b2c3d", title: "upload images (ai-coding-agent, part 1/2)", repo: "ai-coding-agent", stage: "stopped",
+    note: "the run ended without a pull request; see the bot chat", can_retry: true, blocks: true }];
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks, setup: TASK_SETUP } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0051" }) }) });
+  await sleep(60);
+  assert.match(page.doc.querySelector(".task-switch").textContent, /Active 1/);
+  assert.ok(buttonNamed(page, "Retry with Codex"));
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Retry with Claude").click();
+  await sleep(60);
+  assert.match(asked[0], /again with Claude\? Same approved plan/);
+  assert.deepStrictEqual(page.bodies, [{ action: "retry_task", args: { task: "0a1b2c3d", tool: "claude" } }]);
+});
