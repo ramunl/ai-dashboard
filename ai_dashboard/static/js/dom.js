@@ -88,7 +88,25 @@ function formatDuration(seconds) {
 }
 
 // Telegram's confirm dialog when available, the browser's otherwise.
+// Telegram refuses a popup message over 256 characters (WebAppPopupParamInvalid).
+const POPUP_LIMIT = 256;
+
+// Fit a question in a Telegram popup: shorten the quoted part (a task or plan
+// title) first, so the question and its warning stay readable.
+function popupText(message) {
+  if (message.length <= POPUP_LIMIT) return message;
+  const quoted = message.match(/"[^"]*"/);
+  if (quoted) {
+    const room = quoted[0].length - (message.length - POPUP_LIMIT) - 3;
+    if (room > 10) {
+      const short = `"${quoted[0].slice(1, room)}…"`;
+      return message.replace(quoted[0], short);
+    }
+  }
+  return `${message.slice(0, POPUP_LIMIT - 1)}…`;
+}
+
 function askConfirmation(message, onAnswer) {
-  if (tg && tg.showConfirm) tg.showConfirm(message, onAnswer);
+  if (tg && tg.showConfirm) tg.showConfirm(popupText(message), onAnswer);
   else onAnswer(window.confirm(message));
 }

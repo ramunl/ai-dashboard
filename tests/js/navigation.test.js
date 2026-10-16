@@ -2190,3 +2190,16 @@ test("a plan for one other repository offers Move to it instead of Approve", asy
   assert.match(asked[0], /To do task is made there/);
   assert.deepStrictEqual(page.bodies, [{ action: "split_plan", args: {} }]);
 });
+
+test("a confirmation for a long task title fits Telegram's 256-character popup", async () => {
+  const title = "improve coding logs view, it jumps to the window top every time it updates ".repeat(5).trim();
+  const tasks = [{ id: "0a1b2c3d", title, repo: "ai-dashboard", stage: "todo" }];
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks, setup: TASK_SETUP } } : DATA[name]) }) });
+  await sleep(60);
+  const asked = confirmWith(page, false);
+  buttonNamed(page, "Start planning").click();
+  await sleep(20);
+  assert.ok(asked[0].length <= 256, `${asked[0].length} characters`);
+  assert.match(asked[0], /^Plan "improve coding logs view, .*…" in ai-dashboard\? This uses AI tokens\.$/);
+});
