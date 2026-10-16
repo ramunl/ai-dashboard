@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import tempfile
@@ -511,3 +512,185 @@ class DetailTests(unittest.TestCase):
             "snapshot": {"todos": None, "projects": [1, 2]},
         }
         self.assertEqual(pm_detail(no_project), "no active project · 2 projects")
+
+
+class ImageStorageTests(unittest.TestCase):
+    unknown = {"used_bytes": None, "cap_bytes": None, "updated_at": None}
+
+    def _storage(self, snapshot: dict) -> dict:
+        from ai_dashboard.views import image_storage
+
+        bots = [BotSource("coding", TOKEN, "ai-coding-agent", "coding")]
+        return image_storage(bots, [{"service": "active", "snapshot": snapshot}])
+
+    def test_unknown_until_the_agent_publishes_a_usable_field(self) -> None:
+        self.assertEqual(self._storage({"updated_at": 5}), self.unknown)
+        bad_values = (
+            "3 GB",
+            {"used_bytes": "1", "cap_bytes": 9},
+            {"used_bytes": -1, "cap_bytes": 9},
+            {"used_bytes": 1, "cap_bytes": 0},
+            {"used_bytes": True, "cap_bytes": 9},
+            {"used_bytes": 1},
+        )
+        for images in bad_values:
+            snapshot = {"updated_at": 5, "images": images}
+            self.assertEqual(self._storage(snapshot), self.unknown, images)
+
+    def test_no_coding_agent_is_unknown(self) -> None:
+        from ai_dashboard.views import image_storage
+
+        self.assertEqual(image_storage([], []), self.unknown)
+
+    def test_known_figures_keep_the_snapshot_time(self) -> None:
+        snapshot = {"updated_at": 5, "images": {"used_bytes": 3, "cap_bytes": 9}}
+        self.assertEqual(
+            self._storage(snapshot),
+            {"used_bytes": 3, "cap_bytes": 9, "updated_at": 5},
+        )
+
+
+class ImageUploadTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.inbox = self.tmp / "inbox"
+        self.uploads = self.tmp / "uploads"
+        settings = Settings(
+            public_url="https://1-2-3-4.sslip.io:8443",
+            host="127.0.0.1",
+            port=8787,
+            owner_id=OWNER,
+            bots=(
+                BotSource(
+                    "coding",
+                    TOKEN,
+                    "ai-coding-agent",
+                    "coding",
+                    self.tmp / "snapshot.json",
+                    inbox_dir=self.inbox,
+                ),
+            ),
+            state_dir=self.tmp,
+        )
+        app = server.build_app(settings, set_buttons=False, record_disk=False)
+        self.client = TestClient(TestServer(app))
+        await self.client.start_server()
+        self.service = patch.object(
+            server, "service_state", AsyncMock(return_value="active")
+        )
+        self.service.start()
+
+    async def asyncTearDown(self) -> None:
+        self.service.stop()
+        await self.client.close()
+
+    def staged(self) -> list[str]:
+        if not self.uploads.is_dir():
+            return []
+        return sorted(path.name for path in self.uploads.iterdir())
+
+    async def image(
+        self, name="image", content_type="image/png", data=b"\x89PNG", headers=None
+    ):
+        form = aiohttp.FormData()
+        form.add_field(name, data, filename="shot.png", content_type=content_type)
+        return await self.client.post(
+            "/api/coding/images",
+            data=form,
+            headers=_auth() if headers is None else headers,
+        )
+
+    async def post_task(self, images: str):
+        body = {
+            "action": "create_task",
+            "args": {"repo": "repo", "text": "x", "todo": "-", "images": images},
+        }
+        return await self.client.post(
+            "/api/coding/actions", data=json.dumps(body), headers=_auth()
+        )
+
+    async def test_requires_the_owner_before_reading_anything(self) -> None:
+        self.assertEqual((await self.image(headers={})).status, 401)
+        self.assertEqual((await self.image(headers=_auth(user_id=1))).status, 403)
+        self.assertEqual(self.staged(), [])
+
+    async def test_stages_one_image_under_an_id(self) -> None:
+        response = await self.image()
+        self.assertEqual(response.status, 201)
+        upload_id = (await response.json())["id"]
+        self.assertRegex(upload_id, r"^[0-9a-f]{16}$")
+        self.assertEqual(self.staged(), [f"{upload_id}.png"])
+        self.assertEqual((self.uploads / f"{upload_id}.png").read_bytes(), b"\x89PNG")
+
+    async def test_refuses_other_types_fields_and_bodies(self) -> None:
+        for kwargs in (
+            {"content_type": "text/html"},
+            {"content_type": "image/svg+xml"},
+            {"name": "file"},
+            {"data": b""},
+        ):
+            response = await self.image(**kwargs)
+            self.assertIn(response.status, (400, 415), kwargs)
+        not_multipart = await self.client.post(
+            "/api/coding/images", json={"image": "x"}, headers=_auth()
+        )
+        self.assertEqual(not_multipart.status, 400)
+        self.assertEqual(self.staged(), [])
+
+    async def test_declared_size_over_the_limit_is_refused_before_reading(self) -> None:
+        with patch.object(server, "MAX_UPLOAD_BYTES", 1000):
+            response = await self.client.post(
+                "/api/coding/images", data=b"x" * 2000, headers=_auth()
+            )
+        self.assertEqual(response.status, 413)
+        self.assertEqual(self.staged(), [])
+
+    async def test_streamed_size_over_the_limit_leaves_no_partial_file(self) -> None:
+        with patch.object(server, "MAX_IMAGE_BYTES", 10_000):
+            response = await self.image(data=b"x" * 20_000)
+        self.assertEqual(response.status, 413)
+        self.assertEqual(self.staged(), [])
+
+    async def test_an_upload_that_never_finishes_is_answered_and_dropped(self) -> None:
+        async def never_finishes(*_args) -> str:
+            await asyncio.sleep(3600)
+            return "unreachable"
+
+        with (
+            patch.object(server, "UPLOAD_TIMEOUT_SECONDS", 0.05),
+            patch.object(server, "_receive_image", never_finishes),
+        ):
+            response = await self.image()
+        self.assertEqual(response.status, 408)
+        self.assertIn("longer than", (await response.json())["error"])
+
+    async def test_a_task_takes_its_staged_images_into_the_inbox(self) -> None:
+        first = (await (await self.image()).json())["id"]
+        second_response = await self.image(content_type="image/jpeg", data=b"jpg")
+        second = (await second_response.json())["id"]
+        response = await self.post_task(f"{first},{second}")
+        self.assertEqual(response.status, 202)
+        request_id = (await response.json())["id"]
+        saved = json.loads((self.inbox / f"{request_id}.json").read_text())
+        self.assertEqual(
+            saved["args"], {"repo": "repo", "text": "x", "todo": "-", "images": "2"}
+        )
+        self.assertEqual((self.inbox / f"{request_id}-1.png").read_bytes(), b"\x89PNG")
+        self.assertEqual((self.inbox / f"{request_id}-2.jpg").read_bytes(), b"jpg")
+        self.assertEqual(self.staged(), [])
+
+    async def test_a_task_names_only_images_that_are_still_staged(self) -> None:
+        response = await self.post_task("0123456789abcdef")
+        self.assertEqual(response.status, 400)
+        staged = (await (await self.image()).json())["id"]
+        response = await self.post_task(f"{staged},{staged}")
+        self.assertEqual(response.status, 400)
+        self.assertEqual(self.staged(), [f"{staged}.png"])
+        self.assertFalse(self.inbox.exists())
+
+    async def test_a_task_without_images_says_zero(self) -> None:
+        response = await self.post_task("")
+        self.assertEqual(response.status, 202)
+        request_id = (await response.json())["id"]
+        saved = json.loads((self.inbox / f"{request_id}.json").read_text())
+        self.assertEqual(saved["args"]["images"], "0")

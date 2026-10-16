@@ -151,6 +151,31 @@ def tasks_summary(bots: list[BotSource], views: list[dict | None]) -> dict | Non
     return None
 
 
+def image_storage(bots: list[BotSource], views: list[dict | None]) -> dict:
+    """Task image storage used and its cap, from the coding snapshot.
+
+    Unknown (None figures) when the agent does not publish the field, so an
+    older agent never shows a guess. updated_at dates the figures.
+    """
+    unknown = {"used_bytes": None, "cap_bytes": None, "updated_at": None}
+    for bot, view in zip(bots, views):
+        if bot.name != "coding" or not view:
+            continue
+        snapshot = view.get("snapshot") or {}
+        images = snapshot.get("images")
+        if not isinstance(images, dict):
+            return unknown
+        used, cap = images.get("used_bytes"), images.get("cap_bytes")
+        if type(used) is not int or type(cap) is not int or used < 0 or cap <= 0:
+            return unknown
+        return {
+            "used_bytes": used,
+            "cap_bytes": cap,
+            "updated_at": snapshot.get("updated_at"),
+        }
+    return unknown
+
+
 async def launcher_view(settings: Settings) -> dict:
     """Collect server and agent readings for the overview window."""
     units = list(
@@ -185,6 +210,7 @@ async def launcher_view(settings: Settings) -> dict:
         "services": list(services),
         "agents": rows,
         "tasks": tasks_summary(agent_bots, list(agent_views)),
+        "images": image_storage(agent_bots, list(agent_views)),
         "problems": compute_problems(resources, list(services), list(agent_views)),
     }
 

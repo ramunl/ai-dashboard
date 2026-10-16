@@ -1,6 +1,7 @@
 """Coding setup requests: the dashboard's check, the inbox file, the endpoint."""
 
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -10,7 +11,13 @@ from unittest.mock import AsyncMock, patch
 from aiohttp.test_utils import TestClient, TestServer
 
 from ai_dashboard import server
-from ai_dashboard.agent_actions import RequestError, check, submit
+from ai_dashboard.agent_actions import (
+    RequestError,
+    check,
+    staged_images,
+    submit,
+    sweep_staged,
+)
 from ai_dashboard.auth import sign_init_data
 from ai_dashboard.config import BotSource, Settings
 
@@ -74,25 +81,54 @@ class CheckTests(unittest.TestCase):
         check(
             {
                 "action": "create_task",
-                "args": {"repo": "repo", "text": "x", "todo": "my_ai_agents:3f2a"},
+                "args": {
+                    "repo": "repo",
+                    "text": "x",
+                    "todo": "my_ai_agents:3f2a",
+                    "images": "",
+                },
             }
         )
         check(
             {
                 "action": "create_task",
-                "args": {"repo": "repo", "text": "x", "todo": "-"},
+                "args": {"repo": "repo", "text": "x", "todo": "-", "images": ""},
             }
         )
         check({"action": "remove_task", "args": {"task": "0a1b2c3d"}})
-        for action, args in (
-            ("create_task", {"repo": "../x", "text": "x", "todo": "-"}),
-            ("create_task", {"repo": "repo", "text": "x", "todo": "a:b:c"}),
-            ("create_task", {"repo": "repo", "text": "x", "todo": ""}),
-            ("start_task", {"task": "0A1B2C3D"}),
-            ("start_task", {"task": "1"}),
+        bad = {"repo": "repo", "text": "x", "todo": "-", "images": ""}
+        for change in (
+            {"repo": "../x"},
+            {"todo": "a:b:c"},
+            {"todo": ""},
+            {"images": None},
+        ):
+            with self.assertRaises(RequestError, msg=str(change)):
+                check({"action": "create_task", "args": {**bad, **change}})
+        for args in (
+            {"repo": "repo", "text": "x", "todo": "-"},  # no images field at all
+            {**bad, "extra": "1"},
         ):
             with self.assertRaises(RequestError, msg=str(args)):
-                check({"action": action, "args": args})
+                check({"action": "create_task", "args": args})
+        with self.assertRaises(RequestError):
+            check({"action": "start_task", "args": {"task": "1"}})
+
+    def test_task_images_are_staged_upload_ids_up_to_three(self) -> None:
+        one, two, three = "0123456789abcdef", "fedcba9876543210", "0f1e2d3c4b5a6978"
+        for images in ("", one, f"{one},{two}", f"{one},{two},{three}"):
+            body = {"repo": "repo", "text": "x", "todo": "-", "images": images}
+            check({"action": "create_task", "args": body})
+        for images in (
+            f"{one},",
+            f"{one},{two},{three},{one}",
+            "0123456789ABCDEF",
+            "../etc/passwd",
+            "short",
+        ):
+            body = {"repo": "repo", "text": "x", "todo": "-", "images": images}
+            with self.assertRaises(RequestError, msg=images):
+                check({"action": "create_task", "args": body})
 
     def test_worker_requests_are_bounded(self) -> None:
         check({"action": "worker_switch", "args": {"value": "on"}})
@@ -148,6 +184,49 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(saved["action"], "set_planner")
         self.assertEqual(saved["requested_by"], "coding")
         self.assertRegex(saved["id"], r"^[0-9a-f]{16}$")
+
+    def test_submit_moves_images_in_before_the_request(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        image = tmp / "0123456789abcdef.png"
+        image.write_bytes(b"not parsed")
+        inbox = tmp / "inbox"
+        args = {"repo": "repo", "text": "x", "todo": "-", "images": "0123456789abcdef"}
+        request_id = submit(inbox, "create_task", args, "coding", [image])
+        self.assertFalse(image.exists())
+        self.assertEqual(
+            sorted(f.name for f in inbox.iterdir()),
+            [f"{request_id}-1.png", f"{request_id}.json"],
+        )
+        saved = json.loads((inbox / f"{request_id}.json").read_text())
+        self.assertEqual(saved["args"]["images"], "1")
+        self.assertEqual((inbox / f"{request_id}-1.png").read_bytes(), b"not parsed")
+
+    def test_staged_images_resolve_ids_in_order_or_not_at_all(self) -> None:
+        directory = Path(tempfile.mkdtemp())
+        one, two = "0123456789abcdef", "fedcba9876543210"
+        (directory / f"{one}.png").write_bytes(b"x")
+        (directory / f"{two}.jpg").write_bytes(b"y")
+        self.assertEqual(staged_images(directory, ""), [])
+        self.assertEqual(
+            staged_images(directory, f"{two},{one}"),
+            [directory / f"{two}.jpg", directory / f"{one}.png"],
+        )
+        self.assertIsNone(staged_images(directory, f"{one},{one}"))
+        self.assertIsNone(staged_images(directory, "aaaaaaaaaaaaaaaa"))
+        self.assertIsNone(staged_images(Path(tempfile.mkdtemp()) / "none", one))
+
+    def test_sweep_deletes_only_what_nobody_took_in_time(self) -> None:
+        directory = Path(tempfile.mkdtemp())
+        old = directory / "0123456789abcdef.png"
+        fresh = directory / "fedcba9876543210.png"
+        old.write_bytes(b"x")
+        fresh.write_bytes(b"y")
+        an_hour_and_a_bit = time.time() - 3700
+        os.utime(old, (an_hour_and_a_bit, an_hour_and_a_bit))
+        sweep_staged(directory, time.time())
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.exists())
+        sweep_staged(Path(tempfile.mkdtemp()) / "missing", time.time())
 
 
 class EndpointTests(unittest.IsolatedAsyncioTestCase):
