@@ -315,6 +315,10 @@ crash) offers **Retry with Claude** and **Retry with Codex**: the same approved
 plan runs again, without planning it again. Such a task, and one a later part
 waits for, stays under Active.
 
+**Autopilot** (a box in Make a task, or **Autopilot on/off** on a task): with the
+worker on, such a task is planned, approved by the worker and run to a pull
+request; you review the PR. Other tasks still wait for your approval.
+
 ### Worker
 
 The Tasks window's **Worker** card switches the coding agent's autonomous

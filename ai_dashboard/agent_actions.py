@@ -52,6 +52,8 @@ ACTIONS: dict[str, dict] = {
     "answer_bugfix": {"text": _TEXT},
     # Tasks: made from a todo (or not), planned in their repository.
     "create_task": {"repo": _NAME, "text": _TEXT, "todo": _TODO_REF},
+    "create_autopilot_task": {"repo": _NAME, "text": _TEXT, "todo": _TODO_REF},
+    "set_autopilot": {"task": _TASK_ID, "value": ("on", "off")},
     "start_task": {"task": _TASK_ID},
     "remove_task": {"task": _TASK_ID},
     # Tasks the worker proposed from the server logs: keep or drop.

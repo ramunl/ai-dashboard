@@ -2219,3 +2219,31 @@ test("a failed run can be retried with Claude or Codex and stays under Active", 
   assert.match(asked[0], /again with Claude\? Same approved plan/);
   assert.deepStrictEqual(page.bodies, [{ action: "retry_task", args: { task: "0a1b2c3d", tool: "claude" } }]);
 });
+
+test("Make a task with Autopilot ticked sends create_autopilot_task", async () => {
+  const state = { tasks: [], sent: 0, actions: [] };
+  const page = await openPage("/pm", tasksServer(state));
+  await sleep(70);
+  buttonNamed(page, "Normal task").click();
+  buttonNamed(page, "Make task").click();
+  await sleep(70);
+  const box = page.doc.querySelector(".task-autopilot input");
+  box.checked = true;
+  box.dispatchEvent(new page.dom.window.Event("change", { bubbles: true }));
+  confirmWith(page, true);
+  buttonNamed(page, "Make task and plan").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "create_autopilot_task", args: { repo: "ai-dashboard", text: "Normal task", todo: `app:${"b".repeat(32)}` } }]);
+});
+
+test("a task shows autopilot and switches it on or off", async () => {
+  const tasks = [{ id: "0a1b2c3d", title: "add login", repo: "ai-dashboard", stage: "todo", autopilot: true }];
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks, setup: TASK_SETUP } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0061" }) }) });
+  await sleep(60);
+  assert.match(page.doc.querySelector(".task-meta").textContent, /autopilot/);
+  buttonNamed(page, "Autopilot off").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "set_autopilot", args: { task: "0a1b2c3d", value: "off" } }]);
+});
