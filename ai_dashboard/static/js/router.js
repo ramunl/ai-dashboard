@@ -86,3 +86,8 @@ function initRouter() {
   if (tg && tg.BackButton) tg.BackButton.onClick(goBack);
   window.addEventListener("popstate", onPopstate);
 }
+
+// Coding logs owns its timer and patches only its list after initial loading.
+function shouldPollRouteShell() {
+  return currentPath() !== CODING_LOGS_PATH;
+}

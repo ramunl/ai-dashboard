@@ -110,3 +110,23 @@ function askConfirmation(message, onAnswer) {
   if (tg && tg.showConfirm) tg.showConfirm(popupText(message), onAnswer);
   else onAnswer(window.confirm(message));
 }
+
+// Capture both scrolling surfaces before patching logs. Telegram may scroll
+// the document instead of the box; follow either only when already at its end.
+function preserveLogsScroll(box) {
+  const x = window.scrollX;
+  const y = window.scrollY;
+  const doc = document.scrollingElement || document.documentElement;
+  const documentHeight = () => Math.max(doc.scrollHeight, document.body.scrollHeight);
+  const wasAtEnd = documentHeight() > window.innerHeight &&
+    documentHeight() - y - window.innerHeight <= 24;
+  const top = box.scrollTop;
+  const left = box.scrollLeft;
+  const boxAtEnd = box.scrollHeight - top - box.clientHeight <= 24;
+  return () => {
+    box.scrollTop = boxAtEnd ? box.scrollHeight : top;
+    box.scrollLeft = left;
+    const target = wasAtEnd ? Math.max(0, documentHeight() - window.innerHeight) : y;
+    if (window.scrollX !== x || window.scrollY !== target) window.scrollTo(x, target);
+  };
+}

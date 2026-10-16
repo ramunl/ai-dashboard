@@ -81,6 +81,7 @@ function show() {
 }
 
 async function refresh() {
+  if (hasData && !shouldPollRouteShell()) return;
   if (currentRoute().api === "pm" && typeof pmUi !== "undefined" && pmUi.busy) return;
   const initData = tg ? tg.initData : "";
   if (!initData) {

@@ -58,10 +58,11 @@ async function openLogs(server) {
       window.Telegram = { WebApp: { initData: "signed", ready() {}, expand() {}, openLink() {},
         BackButton: { show() {}, hide() {}, onClick() {} } } };
       fakeScrollLayout(window);
+      window.scrollTo = (x, y) => { window.scrollX = x; window.scrollY = y; };
       window.fetch = async (api, init) => {
         const name = api.split("/").pop();
         if (name.startsWith("logs?")) {
-          requests.push({ query: name, signal: init.signal });
+          requests.push({ query: name, signal: init.signal, cache: init.cache });
           const answer = server.answer ? await server.answer(name, init.signal)
             : { ok: true, unit: "ai-coding-agent", errors_only: false, units: UNITS, lines: server.lines };
           return { ok: true, status: 200, json: async () => answer };
@@ -74,6 +75,7 @@ async function openLogs(server) {
   });
   await sleep(40);
   const doc = dom.window.document;
+  Object.defineProperty(doc.documentElement, "scrollHeight", { configurable: true, get: () => 2000 });
   const page = {
     dom, doc, requests, errors,
     box: () => doc.querySelector(".log-tail-box"),
@@ -160,14 +162,14 @@ test("the New lines button jumps down and resumes following; scrolling down clea
   assert.strictEqual(page.button().hidden, true);
 });
 
-test("a rotated log replaces the lines and keeps the distance from the bottom", async () => {
+test("a rotated log replaces the lines and keeps the scroll position", async () => {
   const server = { lines: lines("a", 1, 20) };
   const page = await openLogs(server);
   page.scrollTo(30); // 170 px above the bottom
   server.lines = lines("b", 1, 25);
   await page.tick();
   assert.deepStrictEqual(page.texts(), server.lines);
-  assert.strictEqual(page.box().scrollTop, 80);
+  assert.strictEqual(page.box().scrollTop, 30);
   assert.strictEqual(page.button().hidden, false);
 });
 
@@ -271,4 +273,61 @@ test("the first answer for another unit is asked again for the coding agent", as
   await sleep(20);
   assert.deepStrictEqual(page.requests.map((r) => r.query), ["logs?unit=&errors=0", "logs?unit=ai-coding-agent&errors=0"]);
   assert.deepStrictEqual(page.texts(), ["ai-coding-agent line"]);
+});
+
+test("lock skips polls, unlock fetches immediately, and ordinary taps do not pause", async () => {
+  const server = { lines: lines("a", 1, 20) };
+  const page = await openLogs(server);
+  const lock = page.doc.querySelector(".logs-lock-button");
+  assert.ok(lock);
+  assert.strictEqual(lock.getAttribute("aria-pressed"), "false");
+  lock.click();
+  assert.strictEqual(lock.textContent, "Lock: on");
+  assert.match(page.doc.querySelector(".logs-lock-status").textContent, /Updates paused/);
+  await page.tick();
+  assert.strictEqual(page.requests.length, 1);
+  lock.click();
+  assert.strictEqual(page.requests.length, 2);
+  await sleep(10);
+  page.box().click();
+  await page.tick();
+  assert.strictEqual(page.requests.length, 3);
+  assert.ok(page.requests.every((request) => request.cache === "no-store"));
+});
+
+test("patch restores document and box scroll even if layout moves them", async () => {
+  const server = { lines: lines("a", 1, 20) };
+  const page = await openLogs(server);
+  const win = page.dom.window;
+  win.scrollTo(0, 350);
+  page.scrollTo(30);
+  const list = page.doc.querySelector(".log-tail-lines");
+  const append = list.append.bind(list);
+  list.append = (...nodes) => {
+    append(...nodes);
+    win.scrollTo(0, 0); // simulate browser anchoring/layout during a patch
+    page.box().scrollTop = 0;
+  };
+  server.lines = lines("a", 1, 23);
+  await page.tick();
+  assert.strictEqual(win.scrollY, 350);
+  assert.strictEqual(page.box().scrollTop, 30);
+});
+
+test("leaving resets lock and an aborted response cannot patch a new visit", async () => {
+  const server = { lines: lines("a", 1, 20) };
+  const page = await openLogs(server);
+  let release;
+  server.answer = () => new Promise((resolve) => { release = resolve; });
+  const pending = page.tick();
+  page.doc.querySelector(".logs-lock-button").click();
+  page.dom.window.eval("navigate('/coding')");
+  assert.ok(page.requests.at(-1).signal.aborted);
+  server.answer = null;
+  page.dom.window.eval("navigate('/coding/logs')");
+  await sleep(40);
+  release({ ok: true, unit: "ai-coding-agent", units: UNITS, lines: ["stale"] });
+  await pending;
+  assert.strictEqual(page.doc.querySelector(".logs-lock-button").getAttribute("aria-pressed"), "false");
+  assert.deepStrictEqual(page.texts(), server.lines);
 });

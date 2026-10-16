@@ -353,3 +353,13 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .worker-budget > .pm-field { flex: 1 1 9rem; }
 .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--link); cursor: pointer; }
 .worker-recent { overflow-wrap: anywhere; }
+
+.logs-lock-controls { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+.logs-lock-button {
+  background: var(--card, #f2f2f5); color: var(--fg, #1b1b1f);
+  border: 1px solid var(--accent, #2a7ae2); border-radius: 0.4rem;
+  padding: 0.5rem 0.75rem; cursor: pointer; font: inherit;
+}
+.logs-lock-button[aria-pressed="true"] { background: var(--accent, #2a7ae2); color: var(--accent-text, #fff); }
+.logs-lock-button:focus-visible { outline: 2px solid var(--accent, #2a7ae2); outline-offset: 3px; }
+.logs-lock-status { color: var(--hint, #8a8a90); font-size: 0.875rem; }
