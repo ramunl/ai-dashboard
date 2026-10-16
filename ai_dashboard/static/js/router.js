@@ -7,6 +7,7 @@ const ROUTES = {
   coding: { api: "coding", page: codingPage, title: "Coding agent" },
   "coding/projects": { api: "coding", page: projectsPage, title: "Projects", parent: "coding" },
   "coding/ai": { api: "coding", page: aiToolsPage, title: "AI tools", parent: "coding" },
+  "coding/logs": { api: "coding", page: codingLogsPage, title: "Coding logs", parent: "coding" },
   pm: { api: "pm", page: pmPage, title: "PM agent" },
   tasks: { api: "coding", page: tasksPage, title: "Tasks" },
 };

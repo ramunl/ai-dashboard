@@ -277,6 +277,24 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .logs-controls button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .logs-controls button:disabled { opacity: 0.55; cursor: default; }
 
+/* Coding logs window: the box scrolls on its own, so new lines never move the
+   page; the "New lines" button sticks to the box's bottom edge. */
+.log-tail-box {
+  position: relative; overflow: auto; overscroll-behavior: contain;
+  max-height: 70vh; max-height: 70dvh; padding: 0.5rem; border-radius: 0.5rem;
+  background: rgba(127, 127, 127, 0.08); color: var(--fg);
+}
+.log-tail-box:focus-visible { outline: 2px solid var(--tg-theme-link-color, var(--link)); outline-offset: 2px; }
+.log-tail-line { white-space: pre; font: 0.75rem/1.4 ui-monospace, Menlo, monospace; }
+.log-tail-error { color: var(--bad); margin-bottom: 0.5rem; }
+.new-lines-button {
+  position: sticky; bottom: 0.25rem; display: block; margin: 0.5rem 0 0 auto;
+  border: none; border-radius: 1rem; padding: 0.35rem 0.85rem; font: inherit; cursor: pointer;
+  background: var(--tg-theme-button-color, var(--accent)); color: var(--tg-theme-button-text-color, var(--accent-text));
+}
+.new-lines-button[hidden] { display: none; }
+.new-lines-button:focus-visible { outline: 2px solid var(--tg-theme-link-color, var(--link)); outline-offset: 2px; }
+
 /* Restart is a deliberate action: outlined, not a filled primary button. */
 .restart-button { background: transparent; color: inherit; border: 1px solid var(--divider); }
 

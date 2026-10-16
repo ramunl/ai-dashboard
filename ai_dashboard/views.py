@@ -29,7 +29,7 @@ WINDOWS = {
 
 # More pages that read another window's data: the Coding sub-windows, and
 # Tasks (/tasks), which reads the coding agent's task list.
-SUB_WINDOWS = {"coding/projects", "coding/ai", "tasks"}
+SUB_WINDOWS = {"coding/projects", "coding/ai", "coding/logs", "tasks"}
 
 
 async def _window_of(settings: Settings, name: str) -> dict | None:

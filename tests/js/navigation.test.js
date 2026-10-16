@@ -892,12 +892,12 @@ function codingServer(setup = SETUP) {
 }
 const buttonsIn = (page, text) => [...page.doc.querySelectorAll("main button")].filter((b) => b.textContent === text);
 
-test("Coding window links to Projects and AI tools, and Back returns to Coding", async () => {
+test("Coding window links to Projects, AI tools and Logs, and Back returns to Coding", async () => {
   const server = codingServer();
   const page = await openPage("/coding", server.options);
   await sleep(60);
   const links = [...page.doc.querySelectorAll("main a.nav-row")].map((a) => a.getAttribute("href"));
-  assert.deepStrictEqual(links, ["/coding/projects", "/coding/ai"]);
+  assert.deepStrictEqual(links, ["/coding/projects", "/coding/ai", "/coding/logs"]);
   page.doc.querySelector('a[href="/coding/projects"]').click();
   await sleep(60);
   assert.strictEqual(page.state().path, "/coding/projects");
