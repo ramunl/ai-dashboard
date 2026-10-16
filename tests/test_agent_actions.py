@@ -135,6 +135,13 @@ class CheckTests(unittest.TestCase):
         check({"action": "worker_tools", "args": {"value": "fixed"}})
         check({"action": "worker_scan", "args": {}})
         check({"action": "split_plan", "args": {}})
+        check({"action": "set_autopilot", "args": {"task": "0a1b2c3d", "value": "on"}})
+        check(
+            {
+                "action": "create_autopilot_task",
+                "args": {"repo": "repo", "text": "x", "todo": "-"},
+            }
+        )
         check({"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "claude"}})
         with self.assertRaises(RequestError):
             check({"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "gpt"}})

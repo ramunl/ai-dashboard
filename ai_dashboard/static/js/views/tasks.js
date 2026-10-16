@@ -24,6 +24,7 @@ const FINISHED_TASK_STAGES = ["pr", "done", "stopped"];
 let taskFilter = "active";
 let taskDraft = null;  // { text, todo } handed over by the PM window's Make task
 let taskRepo = "";
+let taskAutopilot = false;  // the Make a task sheet's Autopilot box
 let taskProgress = { deployed: {}, deployable: [], closed: [] };  // from the dashboard
 
 // The agent's stage, plus "deployed", which only the dashboard can see.
@@ -79,6 +80,7 @@ function taskMeta(task) {
     parts.push(isDeployable ? "waiting for a deployment" : "no deployment for this repo");
   }
   if (taskProgress.closed.includes(task.id)) parts.push("todo closed");
+  if (task.autopilot) parts.push("autopilot");
   if (task.waiting_for) parts.push(`starts after: ${task.waiting_for}`);
   if (task.note) parts.push(task.note);
   if (task.todo) parts.push(`from todo ${task.todo.split(":")[0]}`);
@@ -122,6 +124,12 @@ function taskActions(task) {
   }
   if (task.stage === "planned") {
     actions.push(taskButton("Open plan", `task:open:${task.id}`, "row-button", () => navigate("coding")));
+  }
+  if (!FINISHED_TASK_STAGES.includes(task.stage) && task.stage !== "proposed" && typeof task.autopilot === "boolean") {
+    const key = `task:autopilot:${task.id}`;
+    const value = task.autopilot ? "off" : "on";
+    actions.push(taskButton(task.autopilot ? "Autopilot off" : "Autopilot on", key, "row-button work-secondary",
+      (button) => { button.disabled = true; requestAction(key, "set_autopilot", { task: task.id, value }); }));
   }
   if (task.can_retry) {
     actions.push(retryButton(task, "claude", "Retry with Claude", "row-button"),
@@ -187,6 +195,59 @@ function tasksCard(tasks) {
   const rows = [...shown].reverse().map(taskRow);
   if (!rows.length) rows.push(muted(tasks.length ? "No tasks here." : "No tasks yet. Open a todo in the PM window and tap Make task."));
   return card("Tasks", taskFilterSwitch(tasks), ...rows);
+}
+
+// Autopilot: the worker plans, approves and runs the task to a pull request.
+function autopilotBox() {
+  const label = el("label", null, "radio-row task-autopilot");
+  const box = el("input");
+  box.type = "checkbox";
+  box.checked = taskAutopilot;
+  box.disabled = hasPendingActions();
+  box.addEventListener("change", () => { taskAutopilot = box.checked; });
+  const text = el("span");
+  text.append(el("span", "Autopilot"),
+    el("span", "The worker approves the plan and runs it to a pull request; you review the PR", "card-note radio-note"));
+  label.append(box, text);
+  return label;
+}
+
+function makeTaskCard(setup) {
+  const projects = setup.projects.map((project) => ({ value: project.name, note: project.repository }));
+  if (!taskRepo || !projects.some((option) => option.value === taskRepo)) {
+    const active = setup.projects.find((project) => project.active);
+    taskRepo = active ? active.name : "";
+  }
+  const repos = radioList("task-repo", projects, taskRepo, hasPendingActions(), (name) => { taskRepo = name; });
+  const make = taskButton("Make task and plan", "task:create", "row-button", (button) => {
+    if (!taskRepo) {
+      showAlert("Choose the repository first.");
+      return;
+    }
+    const text = taskDraft.text.replace(/\s+/g, " ").trim().slice(0, WORK_TEXT_LIMIT);
+    button.disabled = true;
+    askConfirmation(`Make a task in ${taskRepo} and start planning it? This uses AI tokens.`, (isConfirmed) => {
+      if (!isConfirmed) {
+        button.disabled = false;
+        return;
+      }
+      const action = taskAutopilot ? "create_autopilot_task" : "create_task";
+      requestAction("task:create", action, { repo: taskRepo, text, todo: taskDraft.todo }, (result) => {
+        taskDraft = null;
+        taskFilter = "active";
+        actionNotice = { text: result.message, until: Date.now() + NOTICE_MS };
+      });
+    });
+  });
+  const cancel = taskButton("Cancel", "task:cancel", "row-button work-secondary", () => {
+    taskDraft = null;
+    refresh();
+  });
+  const sheet = card("Make a task", el("p", taskDraft.text, "plan-summary"), el("div", "Repository", "card-subtitle"), repos,
+    autopilotBox(),
+    workActions(make, cancel), el("div", "If another task is planning, this one waits as To do.", "card-note"));
+  sheet.classList.add("card-wide", "task-sheet");
+  return sheet;
 }
 
 function tasksPage(view) {
