@@ -14,8 +14,7 @@ const codingLogs = {
   tail: null,
   loaded: null, // "Loaded …" note
   unit: "", // chosen from the server's list after the first answer
-  lockButton: null,
-  lockStatus: null,
+  lock: null, // the Lock / Unlock logs button (coding-logs-lock.js)
   isPolling: false,
   timer: 0,
 };
@@ -30,34 +29,26 @@ function codingLogsCard() {
   if (!codingLogs.node) {
     codingLogs.tail = createLogTail();
     codingLogs.loaded = el("div", "Loading…", "card-note");
+    codingLogs.lock = createLogsLock(toggleCodingLogsLock);
     codingLogs.node = el("section", null, "card-wide");
-    codingLogs.lockButton = el("button", "Lock: off", "logs-lock-button");
-    codingLogs.lockButton.type = "button";
-    codingLogs.lockButton.addEventListener("click", toggleCodingLogsLock);
-    codingLogs.lockStatus = el("span", null, "logs-lock-status");
-    codingLogs.lockStatus.setAttribute("role", "status");
-    const controls = el("div", null, "logs-lock-controls");
-    controls.append(codingLogs.lockButton, codingLogs.lockStatus);
-    codingLogs.node.append(el("h2", "Coding agent logs"), controls, codingLogs.tail.node, codingLogs.loaded);
-    syncCodingLogsLock();
+    codingLogs.node.append(el("h2", "Coding agent logs"), codingLogs.lock.node, codingLogs.tail.node, codingLogs.loaded);
+    renderLogsLock(codingLogs.lock, isLogsLocked);
   }
   return codingLogs.node;
 }
 
-function syncCodingLogsLock() {
-  if (!codingLogs.lockButton) return;
-  codingLogs.lockButton.textContent = `Lock: ${isLogsLocked ? "on" : "off"}`;
-  codingLogs.lockButton.setAttribute("aria-pressed", String(isLogsLocked));
-  codingLogs.lockStatus.textContent = isLogsLocked ? "Updates paused" : "Updates live";
-}
-
-function toggleCodingLogsLock() {
-  isLogsLocked = !isLogsLocked;
-  // Discard an in-flight answer so it cannot change lines while locked.
-  if (isLogsLocked && logsAbort) logsAbort.abort();
+// Drop the poll in flight: its late answer must not change the lines.
+function cancelCodingLogsFetch() {
+  if (logsAbort) logsAbort.abort();
   logsAbort = null;
   isLogsFetchInFlight = false;
-  syncCodingLogsLock();
+}
+
+// Unlocking asks once at once; the timer then carries on with the polls.
+function toggleCodingLogsLock() {
+  isLogsLocked = !isLogsLocked;
+  cancelCodingLogsFetch();
+  renderLogsLock(codingLogs.lock, isLogsLocked);
   if (!isLogsLocked) codingLogsTick();
 }
 
@@ -68,15 +59,13 @@ function startCodingLogs() {
   codingLogsTick();
 }
 
-// Leaving the window: stop the timer and cancel the poll in flight.
+// Leaving the window: stop the timer, cancel the poll in flight, unlock.
 function stopCodingLogs() {
   codingLogs.isPolling = false;
   clearInterval(codingLogs.timer);
-  if (logsAbort) logsAbort.abort();
-  logsAbort = null;
-  isLogsFetchInFlight = false;
+  cancelCodingLogsFetch();
   isLogsLocked = false;
-  syncCodingLogsLock();
+  if (codingLogs.lock) renderLogsLock(codingLogs.lock, isLogsLocked);
 }
 
 async function codingLogsTick() {
