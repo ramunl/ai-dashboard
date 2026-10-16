@@ -12,8 +12,10 @@ import json
 import os
 import re
 import secrets
+import shutil
 import tempfile
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 _NAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -29,8 +31,25 @@ _COUNT = re.compile(r"^([0-9]|[1-4][0-9]|50)$")  # runs per day, 0 = no cap
 _PERCENT = re.compile(r"^([0-9]|[1-8][0-9]|90)$")  # reserve, 0-90 %
 # Where a task came from: "<todo project>:<todo id>", or "-" for none.
 _TODO_REF = re.compile(r"^(-|[A-Za-z0-9._-]{1,64}:[A-Za-z0-9]{1,64})$")
+# Up to MAX_IMAGES staged uploads for a task: their ids, comma-separated, or "".
+_UPLOADS = re.compile(r"^(?:[0-9a-f]{16}(?:,[0-9a-f]{16}){0,2})?$")
 
-# Mirrors ai_agent.inbox.ACTIONS in the coding agent.
+# Images a task may carry, and how each one is kept: only the declared type
+# picks the suffix. The bytes are never parsed here; the agent checks them.
+MAX_IMAGES = 3
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+IMAGE_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+# A staged image no task has taken within this long is deleted.
+STAGED_AFTER_SECONDS = 3600
+
+# Mirrors ai_agent.inbox.ACTIONS in the coding agent. The dashboard sends the
+# staged ids in "images"; submit() replaces them with the count the agent gets,
+# and moves the image files into the inbox beside the request.
 ACTIONS: dict[str, dict] = {
     "use_project": {"name": _NAME},
     "add_repository": {"repository": _REPOSITORY},
@@ -51,7 +70,12 @@ ACTIONS: dict[str, dict] = {
     # An answer to the agent's bugfix questions: the words after /answer.
     "answer_bugfix": {"text": _TEXT},
     # Tasks: made from a todo (or not), planned in their repository.
-    "create_task": {"repo": _NAME, "text": _TEXT, "todo": _TODO_REF},
+    "create_task": {
+        "repo": _NAME,
+        "text": _TEXT,
+        "todo": _TODO_REF,
+        "images": _UPLOADS,
+    },
     "start_task": {"task": _TASK_ID},
     "remove_task": {"task": _TASK_ID},
     # Tasks the worker proposed from the server logs: keep or drop.
@@ -94,9 +118,48 @@ def check(body: object) -> tuple[str, dict[str, str]]:
     return action, args
 
 
-def submit(inbox: Path, action: str, args: dict[str, str], requested_by: str) -> str:
-    """Drop the request in the agent's inbox atomically; return its id."""
+def staged_images(directory: Path, value: str) -> list[Path] | None:
+    """The staged files for a request's upload ids, in order; None if any is gone."""
+    ids = [part for part in value.split(",") if part]
+    if len(set(ids)) != len(ids):
+        return None
+    paths = []
+    for upload_id in ids:
+        found = next(directory.glob(f"{upload_id}.*"), None)
+        if found is None:
+            return None
+        paths.append(found)
+    return paths
+
+
+def sweep_staged(directory: Path, now: float) -> None:
+    """Delete staged images and half-written uploads nobody took in time."""
+    if not directory.is_dir():
+        return
+    for path in directory.iterdir():
+        try:
+            stale = now - path.stat().st_mtime > STAGED_AFTER_SECONDS
+        except FileNotFoundError:  # taken by a task meanwhile
+            continue
+        if stale:
+            path.unlink(missing_ok=True)
+
+
+def submit(
+    inbox: Path,
+    action: str,
+    args: dict[str, str],
+    requested_by: str,
+    images: Sequence[Path] = (),
+) -> str:
+    """Drop the request in the agent's inbox atomically; return its id.
+
+    Images go in first, as <id>-<n><suffix> beside the request, so the agent
+    never reads a request whose images are still on their way.
+    """
     request_id = secrets.token_hex(8)
+    if "images" in args:
+        args = {**args, "images": str(len(images))}
     payload = {
         "id": request_id,
         "action": action,
@@ -105,14 +168,24 @@ def submit(inbox: Path, action: str, args: dict[str, str], requested_by: str) ->
         "requested_by": requested_by,
     }
     inbox.mkdir(parents=True, exist_ok=True)
-    # Written under a name the agent ignores, then renamed into place, so the
-    # agent never reads a half-written request.
-    fd, tmp = tempfile.mkstemp(dir=inbox, prefix=".", suffix=".tmp")
+    moved: list[Path] = []
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle)
-        os.replace(tmp, inbox / f"{request_id}.json")
+        for number, image in enumerate(images, 1):
+            target = inbox / f"{request_id}-{number}{image.suffix}"
+            shutil.move(image, target)
+            moved.append(target)
+        # Written under a name the agent ignores, then renamed into place, so the
+        # agent never reads a half-written request.
+        fd, tmp = tempfile.mkstemp(dir=inbox, prefix=".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+            os.replace(tmp, inbox / f"{request_id}.json")
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
     except BaseException:
-        Path(tmp).unlink(missing_ok=True)
+        for target in moved:
+            target.unlink(missing_ok=True)
         raise
     return request_id

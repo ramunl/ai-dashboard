@@ -39,17 +39,15 @@ function usageMeter(used, total, label) {
   return meter;
 }
 
-function resourceRows(resources) {
+function resourceRows(resources, images) {
   if (!resources) return [muted("Resources unavailable")];
-  const { load, cpus, memory, disk } = resources;
-  const diskPercent = Math.round((100 * disk.used) / disk.total);
+  const { load, cpus, memory } = resources;
   return [
     row("Load", `${load.map((x) => x.toFixed(2)).join(" / ")} (${cpus} CPU)`),
     row("Memory", `${formatBytes(memory.total - memory.available)} of ${formatBytes(memory.total)}`),
     usageMeter(memory.total - memory.available, memory.total, "Memory usage"),
-    row("Disk", `${formatBytes(disk.used)} of ${formatBytes(disk.total)} (${diskPercent}%)`),
-    usageMeter(disk.used, disk.total, "Disk usage"),
-    row("Disk trend", diskTrendText(disk.trend)),
+    diskRow(resources.disk, images),
+    row("Disk trend", diskTrendText(resources.disk.trend)),
   ];
 }
 
@@ -104,7 +102,7 @@ function tasksLinkCards(view) {
 }
 
 function resourcesCard(view) {
-  return card("Server resources", ...resourceRows(view.resources));
+  return card("Server resources", ...resourceRows(view.resources, view.images));
 }
 
 function serverSubtitle(view) {

@@ -1853,7 +1853,7 @@ test("Make task in a todo opens a repository choice in Tasks and sends the todo 
   buttonNamed(page, "Make task and plan").click();
   await sleep(60);
   assert.match(asked[0], /Make a task in ai-ops-agent and start planning it\?/);
-  assert.deepStrictEqual(page.bodies, [{ action: "create_task", args: { repo: "ai-ops-agent", text: "Normal task", todo: `app:${"b".repeat(32)}` } }]);
+  assert.deepStrictEqual(page.bodies, [{ action: "create_task", args: { repo: "ai-ops-agent", text: "Normal task", todo: `app:${"b".repeat(32)}`, images: "" } }]);
   state.actions = [{ id: "beef0001", action: "create_task", status: "done", message: "Task added as To do: a plan is waiting for approval or confirmation." }];
   await page.dom.window.eval("refresh()");
   await sleep(40);

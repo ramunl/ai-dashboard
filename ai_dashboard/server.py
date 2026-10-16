@@ -6,13 +6,23 @@ import asyncio
 import contextlib
 import json
 import logging
+import secrets
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import aiohttp
 from aiohttp import web
 
-from ai_dashboard.agent_actions import RequestError, check, submit
+from ai_dashboard.agent_actions import (
+    IMAGE_TYPES,
+    MAX_IMAGE_BYTES,
+    RequestError,
+    check,
+    staged_images,
+    submit,
+    sweep_staged,
+)
 from ai_dashboard.auth import InitDataError, verify_init_data
 from ai_dashboard.backups import BACKUPS, register_backups
 from ai_dashboard.config import Settings
@@ -127,6 +137,104 @@ async def window_data(request: web.Request) -> web.Response:
 
 
 MAX_ACTION_BODY_BYTES = 4096
+# One image plus its multipart headers. aiohttp's client_max_size is set to
+# this (build_app); multipart bodies are not capped by it, so _receive_image
+# counts the bytes itself.
+MAX_UPLOAD_BYTES = MAX_IMAGE_BYTES + 64 * 1024
+UPLOAD_TIMEOUT_SECONDS = 60
+_UPLOAD_CHUNK = 64 * 1024
+
+
+class _Refused(Exception):
+    """An upload the server keeps no part of; the message is for the owner."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def _staging(settings: Settings) -> Path:
+    """Where uploaded images wait for the task that takes them."""
+    return settings.state_dir / "uploads"
+
+
+async def _receive_image(request: web.Request, directory: Path) -> str:
+    """Stream the single image part to disk in chunks; return its upload id.
+
+    The bytes are never parsed or executed: only the declared type sets the
+    suffix, and the coding agent checks the image itself.
+    """
+    if not request.content_type.startswith("multipart/"):
+        raise _Refused(400, "expected a multipart image upload")
+    try:
+        reader = await request.multipart()
+        part = await reader.next()
+    except ValueError as error:  # a multipart body without its boundary
+        raise _Refused(400, "expected a multipart image upload") from error
+    if not isinstance(part, aiohttp.BodyPartReader) or part.name != "image":
+        raise _Refused(400, 'expected one image field named "image"')
+    mime = part.headers.get("Content-Type", "").split(";")[0].strip().lower()
+    suffix = IMAGE_TYPES.get(mime)
+    if suffix is None:
+        raise _Refused(415, "images must be PNG, JPEG, WebP or GIF")
+    directory.mkdir(parents=True, exist_ok=True)
+    upload_id = secrets.token_hex(8)
+    partial = directory / f".{upload_id}.part"
+    size = 0
+    try:
+        with partial.open("wb") as handle:
+            while chunk := await part.read_chunk(_UPLOAD_CHUNK):
+                size += len(chunk)
+                if size > MAX_IMAGE_BYTES:
+                    raise _Refused(413, "image larger than 5 MB")
+                handle.write(chunk)
+        if size == 0:
+            raise _Refused(400, "the image is empty")
+        partial.replace(directory / f"{upload_id}{suffix}")
+    finally:
+        # Also covers a refused, failed or timed-out upload: nothing is kept.
+        partial.unlink(missing_ok=True)
+    return upload_id
+
+
+async def image_upload(request: web.Request) -> web.Response:
+    """Owner-only: keep one image until the task that takes it is made.
+
+    The page sends each image before its task; the returned id goes in the
+    create_task request. An image no task takes within an hour is deleted.
+    """
+    settings = request.app[SETTINGS]
+    try:
+        verify_init_data(_init_data(request), settings.tokens(), settings.owner_id)
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    bot = settings.bot("coding")
+    if bot is None or bot.inbox_dir is None:
+        return web.json_response({"error": "coding agent not configured"}, status=404)
+    if (request.content_length or 0) > MAX_UPLOAD_BYTES:
+        return web.json_response(
+            {"error": "image too large"}, status=413, headers=_NO_STORE
+        )
+    directory = _staging(settings)
+    sweep_staged(directory, time.time())
+    try:
+        upload_id = await asyncio.wait_for(
+            _receive_image(request, directory), UPLOAD_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        return web.json_response(
+            {"error": f"the upload took longer than {UPLOAD_TIMEOUT_SECONDS} s"},
+            status=408,
+            headers=_NO_STORE,
+        )
+    except _Refused as refused:
+        return web.json_response(
+            {"error": refused.message}, status=refused.status, headers=_NO_STORE
+        )
+    return web.json_response({"id": upload_id}, status=201, headers=_NO_STORE)
 
 
 async def coding_action(request: web.Request) -> web.Response:
@@ -152,6 +260,14 @@ async def coding_action(request: web.Request) -> web.Response:
         action, args = check(json.loads(await request.text()))
     except (ValueError, RequestError) as error:
         return web.json_response({"error": f"bad request: {error}"}, status=400)
+    images: list[Path] = []
+    if action == "create_task" and args["images"]:
+        images = staged_images(_staging(settings), args["images"]) or []
+        if not images:
+            return web.json_response(
+                {"error": "an image is missing or was already used; add it again"},
+                status=400,
+            )
     state = await service_state(bot.service)
     if state != "active":
         return web.json_response(
@@ -159,7 +275,7 @@ async def coding_action(request: web.Request) -> web.Response:
             status=503,
         )
     request_id = await asyncio.to_thread(
-        submit, bot.inbox_dir, action, args, viewer.bot
+        submit, bot.inbox_dir, action, args, viewer.bot, images
     )
     logger.info("Coding action %s requested from the %s bot", action, viewer.bot)
     return web.json_response({"id": request_id}, status=202, headers=_NO_STORE)
@@ -444,7 +560,7 @@ def build_app(
     refresh_cleanup: bool | None = None,
 ) -> web.Application:
     """Register dashboard routes and optional background startup work."""
-    app = web.Application()
+    app = web.Application(client_max_size=MAX_UPLOAD_BYTES)
     app[SETTINGS] = settings
     app[DEPLOYMENTS] = DeploymentService(settings.deployment_command)
     saved = SavedChecks(settings.saved_checks_file)
@@ -468,6 +584,7 @@ def build_app(
     app.router.add_post("/api/ops/tools", tools_action)
 
     app.router.add_post("/api/coding/actions", coding_action)
+    app.router.add_post("/api/coding/images", image_upload)
     app.router.add_get("/static/{name:.+}", static_file)
     app.router.add_get("/", page)
     app.router.add_get("/{window}", page)

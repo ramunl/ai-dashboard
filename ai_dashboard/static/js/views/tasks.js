@@ -189,42 +189,6 @@ function tasksCard(tasks) {
   return card("Tasks", taskFilterSwitch(tasks), ...rows);
 }
 
-function makeTaskCard(setup) {
-  const projects = setup.projects.map((project) => ({ value: project.name, note: project.repository }));
-  if (!taskRepo || !projects.some((option) => option.value === taskRepo)) {
-    const active = setup.projects.find((project) => project.active);
-    taskRepo = active ? active.name : "";
-  }
-  const repos = radioList("task-repo", projects, taskRepo, hasPendingActions(), (name) => { taskRepo = name; });
-  const make = taskButton("Make task and plan", "task:create", "row-button", (button) => {
-    if (!taskRepo) {
-      showAlert("Choose the repository first.");
-      return;
-    }
-    const text = taskDraft.text.replace(/\s+/g, " ").trim().slice(0, WORK_TEXT_LIMIT);
-    button.disabled = true;
-    askConfirmation(`Make a task in ${taskRepo} and start planning it? This uses AI tokens.`, (isConfirmed) => {
-      if (!isConfirmed) {
-        button.disabled = false;
-        return;
-      }
-      requestAction("task:create", "create_task", { repo: taskRepo, text, todo: taskDraft.todo }, (result) => {
-        taskDraft = null;
-        taskFilter = "active";
-        actionNotice = { text: result.message, until: Date.now() + NOTICE_MS };
-      });
-    });
-  });
-  const cancel = taskButton("Cancel", "task:cancel", "row-button work-secondary", () => {
-    taskDraft = null;
-    refresh();
-  });
-  const sheet = card("Make a task", el("p", taskDraft.text, "plan-summary"), el("div", "Repository", "card-subtitle"), repos,
-    workActions(make, cancel), el("div", "If another task is planning, this one waits as To do.", "card-note"));
-  sheet.classList.add("card-wide", "task-sheet");
-  return sheet;
-}
-
 function tasksPage(view) {
   const setup = setupOf(view);
   settleActions(setup);
