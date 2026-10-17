@@ -1,11 +1,11 @@
 // Coding › Logs window (/coding/logs): the coding agent's journal, polled on
 // its own timer and updated in place by the log tail box (log-tail.js), so a
-// poll never resets the scroll position. Reads the Ops logs endpoint.
+// poll never resets the scroll position. The Lock button is in
+// coding-logs-lock.js. Reads the Ops logs endpoint.
 
 const CODING_LOGS_PATH = "coding/logs";
 const CODING_LOGS_POLL_MS = 3000;
 
-let isLogsLocked = false;
 let isLogsFetchInFlight = false;
 let logsAbort = null;
 
@@ -31,34 +31,14 @@ function codingLogsCard() {
     codingLogs.tail = createLogTail();
     codingLogs.loaded = el("div", "Loading…", "card-note");
     codingLogs.node = el("section", null, "card-wide");
-    codingLogs.lockButton = el("button", "Lock: off", "logs-lock-button");
-    codingLogs.lockButton.type = "button";
-    codingLogs.lockButton.addEventListener("click", toggleCodingLogsLock);
-    codingLogs.lockStatus = el("span", null, "logs-lock-status");
-    codingLogs.lockStatus.setAttribute("role", "status");
-    const controls = el("div", null, "logs-lock-controls");
-    controls.append(codingLogs.lockButton, codingLogs.lockStatus);
-    codingLogs.node.append(el("h2", "Coding agent logs"), controls, codingLogs.tail.node, codingLogs.loaded);
-    syncCodingLogsLock();
+    codingLogs.node.append(
+      el("h2", "Coding agent logs"),
+      codingLogsLockControls(),
+      codingLogs.tail.node,
+      codingLogs.loaded,
+    );
   }
   return codingLogs.node;
-}
-
-function syncCodingLogsLock() {
-  if (!codingLogs.lockButton) return;
-  codingLogs.lockButton.textContent = `Lock: ${isLogsLocked ? "on" : "off"}`;
-  codingLogs.lockButton.setAttribute("aria-pressed", String(isLogsLocked));
-  codingLogs.lockStatus.textContent = isLogsLocked ? "Updates paused" : "Updates live";
-}
-
-function toggleCodingLogsLock() {
-  isLogsLocked = !isLogsLocked;
-  // Discard an in-flight answer so it cannot change lines while locked.
-  if (isLogsLocked && logsAbort) logsAbort.abort();
-  logsAbort = null;
-  isLogsFetchInFlight = false;
-  syncCodingLogsLock();
-  if (!isLogsLocked) codingLogsTick();
 }
 
 function startCodingLogs() {
