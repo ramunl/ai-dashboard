@@ -128,6 +128,10 @@ function makeTaskCard(setup) {
     const repo = taskRepo;
     const text = draft.text.replace(/\s+/g, " ").trim().slice(0, WORK_TEXT_LIMIT);
     const picked = [...draftImages()];
+    if (taskAutopilot && picked.length) {
+      showAlert("Autopilot tasks can't carry images yet: untick Autopilot or remove the images.");
+      return;
+    }
     button.disabled = true;
     const withImages = picked.length ? ` with ${picked.length} image${picked.length === 1 ? "" : "s"}` : "";
     askConfirmation(`Make a task in ${repo}${withImages} and start planning it? This uses AI tokens.`, async (isConfirmed) => {
@@ -148,7 +152,10 @@ function makeTaskCard(setup) {
       }
       imagesSending = false;
       if (taskDraft !== draft) return;  // cancelled while the images were sent
-      requestAction("task:create", "create_task", { repo, text, todo: draft.todo, images: ids.join(",") }, (result) => {
+      const request = taskAutopilot
+        ? ["create_autopilot_task", { repo, text, todo: draft.todo }]
+        : ["create_task", { repo, text, todo: draft.todo, images: ids.join(",") }];
+      requestAction("task:create", ...request, (result) => {
         taskDraft = null;
         clearDraftImages();
         taskFilter = "active";
@@ -163,7 +170,7 @@ function makeTaskCard(setup) {
     refresh();
   });
   const sheet = card("Make a task", el("p", taskDraft.text, "plan-summary"), el("div", "Repository", "card-subtitle"), repos,
-    imagesBox, workActions(make, cancel), el("div", "If another task is planning, this one waits as To do.", "card-note"));
+    imagesBox, autopilotBox(), workActions(make, cancel), el("div", "If another task is planning, this one waits as To do.", "card-note"));
   sheet.classList.add("card-wide", "task-sheet");
   return sheet;
 }
