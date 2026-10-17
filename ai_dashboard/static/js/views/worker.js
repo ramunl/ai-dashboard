@@ -122,6 +122,30 @@ function workerStatsRows(worker) {
   return rows;
 }
 
+const WORKER_REVIEW_CHOICES = [0, 1, 2, 3, 5, 10];  // proposals per daily review; 0 = off
+
+// Daily code review: how many proposals, the last review, and Review now.
+function workerReviewRows(worker) {
+  if (typeof worker.review_proposals !== "number") return [];  // an older agent
+  const count = budgetSelect("Code review proposals", WORKER_REVIEW_CHOICES, worker.review_proposals,
+    (n) => (n ? `${n} a day` : "Off"), (n) => requestAction("worker:reviews", "worker_reviews", { value: String(n) }));
+  count.querySelector("select").disabled = hasPendingActions();
+  const rows = [count];
+  const last = worker.last_review;
+  if (last) {
+    const ago = formatDuration(Math.max(0, Date.now() / 1000 - last.at));
+    rows.push(el("div", `Last review: ${last.repo}, ${last.proposed} proposal${last.proposed === 1 ? "" : "s"}, ${ago} ago`, "card-note"));
+  }
+  rows.push(workActions(taskButton("Review a repo now", "worker:review", "row-button work-secondary", (button) => {
+    button.disabled = true;
+    askConfirmation("Review the next repository now? This uses AI tokens; proposals arrive in Tasks.", (isConfirmed) => {
+      if (isConfirmed) requestAction("worker:review", "worker_review", {});
+      else button.disabled = false;
+    });
+  })));
+  return rows;
+}
+
 function workerCard(worker) {
   const cap = worker.max_runs ? `${worker.runs_today} of ${worker.max_runs} runs today` : `${worker.runs_today} runs today · no cap`;
   const title = el("div");
@@ -133,8 +157,8 @@ function workerCard(worker) {
   for (const [tool, until] of Object.entries(worker.out_until || {})) {
     rows.push(row(`${tool[0].toUpperCase()}${tool.slice(1)}`, `out until ${clockTime(until)}`));
   }
-  rows.push(workActions(workerSwitchButton(worker), workerScanButton()), ...workerBudgetRows(worker), workerToolsRow(worker), ...workerStatsRows(worker),
-    el("div", "Once a day while idle it reads the services' error logs and proposes tasks for recurring errors.", "card-note"),
+  rows.push(workActions(workerSwitchButton(worker), workerScanButton()), ...workerBudgetRows(worker), workerToolsRow(worker), ...workerReviewRows(worker), ...workerStatsRows(worker),
+    el("div", "Once a day while idle it reads the services' error logs and reviews one repository, and proposes tasks.", "card-note"),
     el("div", "Claude Code's limits can't be read from the server: the worker learns Claude is out when a run hits its limit.", "card-note"));
   return card("Worker", ...rows);
 }

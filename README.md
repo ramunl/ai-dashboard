@@ -319,6 +319,11 @@ waits for, stays under Active.
 worker on, such a task is planned, approved by the worker and run to a pull
 request; you review the PR. Other tasks still wait for your approval.
 
+**Code review proposals** on the Worker card sets how many proposals the
+worker's daily code review may make (0 = no reviews); it saves at once. The
+card shows the last review, and **Review a repo now** reviews the next
+repository straight away. Proposals arrive in Tasks as Proposed.
+
 ### Worker
 
 The Tasks window's **Worker** card switches the coding agent's autonomous

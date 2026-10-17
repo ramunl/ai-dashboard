@@ -2291,3 +2291,29 @@ test("Check now posts with no options; a missing ai-audit shows its error", asyn
   await sleep(60);
   assert.deepStrictEqual(page.posts, ["/api/ops/security"]);
 });
+
+test("the Worker card sets review proposals at once and can review a repo now", async () => {
+  const worker = { ...WORKER, review_proposals: 3, last_review: { repo: "ai-dashboard", at: Date.now() / 1000 - 3600, proposed: 2 } };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: [], setup: TASK_SETUP, worker } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: `beef00${70 + page.bodies.length}` }) }) });
+  await sleep(60);
+  assert.match(workerCardOf(page).textContent, /Last review: ai-dashboard, 2 proposals, 1h/);
+  selectValue(page, fieldSelect(page, "Code review proposals"), "5");
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "worker_reviews", args: { value: "5" } }]);
+});
+
+test("Review a repo now asks first and sends worker_review", async () => {
+  const worker = { ...WORKER, review_proposals: 0 };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks: [], setup: TASK_SETUP, worker } } : DATA[name]) }),
+    onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0081" }) }) });
+  await sleep(60);
+  assert.strictEqual(fieldSelect(page, "Code review proposals").selectedOptions[0].textContent, "Off");
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Review a repo now").click();
+  await sleep(60);
+  assert.match(asked[0], /uses AI tokens/);
+  assert.deepStrictEqual(page.bodies, [{ action: "worker_review", args: {} }]);
+});

@@ -28,6 +28,7 @@ _TEXT = re.compile(r"^(?=.*\S)[^\x00-\x1f\x7f]{1,4000}$")
 _KINDS = ("plan", "implement", "bugfix")
 _TASK_ID = re.compile(r"^[0-9a-f]{8}$")
 _COUNT = re.compile(r"^([0-9]|[1-4][0-9]|50)$")  # runs per day, 0 = no cap
+_REVIEWS = re.compile(r"^([0-9]|10)$")
 _PERCENT = re.compile(r"^([0-9]|[1-8][0-9]|90)$")  # reserve, 0-90 %
 # Where a task came from: "<todo project>:<todo id>", or "-" for none.
 _TODO_REF = re.compile(r"^(-|[A-Za-z0-9._-]{1,64}:[A-Za-z0-9]{1,64})$")
@@ -92,6 +93,9 @@ ACTIONS: dict[str, dict] = {
     "worker_settings": {"max_runs": _COUNT, "reserve": _PERCENT},
     "worker_tools": {"value": ("auto", "fixed")},
     "worker_scan": {},
+    # Daily code review: proposals per review (0 = off), and review now.
+    "worker_reviews": {"value": _REVIEWS},
+    "worker_review": {},
 }
 
 

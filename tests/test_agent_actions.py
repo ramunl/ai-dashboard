@@ -135,6 +135,10 @@ class CheckTests(unittest.TestCase):
         check({"action": "worker_tools", "args": {"value": "fixed"}})
         check({"action": "worker_scan", "args": {}})
         check({"action": "split_plan", "args": {}})
+        check({"action": "worker_reviews", "args": {"value": "10"}})
+        check({"action": "worker_review", "args": {}})
+        with self.assertRaises(RequestError):
+            check({"action": "worker_reviews", "args": {"value": "11"}})
         check({"action": "set_autopilot", "args": {"task": "0a1b2c3d", "value": "on"}})
         check(
             {
