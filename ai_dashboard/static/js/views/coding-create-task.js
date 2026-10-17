@@ -108,6 +108,8 @@ async function uploadImages(images) {
   return ids;
 }
 
+// The Make task sheet. Autopilot tasks take no images: the server's
+// create_autopilot_task has no images field, so they are refused here.
 function makeTaskCard(setup) {
   const projects = setup.projects.map((project) => ({ value: project.name, note: project.repository }));
   if (!taskRepo || !projects.some((option) => option.value === taskRepo)) {
@@ -126,18 +128,26 @@ function makeTaskCard(setup) {
     }
     const draft = taskDraft;
     const repo = taskRepo;
+    const autopilot = taskAutopilot;
     const text = draft.text.replace(/\s+/g, " ").trim().slice(0, WORK_TEXT_LIMIT);
     const picked = [...draftImages()];
+    if (autopilot && picked.length) {
+      showAlert("Autopilot tasks take no images. Remove them or untick Autopilot.");
+      return;
+    }
     button.disabled = true;
     const withImages = picked.length ? ` with ${picked.length} image${picked.length === 1 ? "" : "s"}` : "";
-    askConfirmation(`Make a task in ${repo}${withImages} and start planning it? This uses AI tokens.`, async (isConfirmed) => {
+    const mode = autopilot ? "Make an Autopilot task" : "Make a task";
+    askConfirmation(`${mode} in ${repo}${withImages} and start planning it? This uses AI tokens.`, async (isConfirmed) => {
       if (!isConfirmed) {
         button.disabled = false;
         return;
       }
-      imagesSending = true;
-      refresh();
-      let ids;
+      let ids = [];
+      if (picked.length) {
+        imagesSending = true;
+        refresh();
+      }
       try {
         ids = await uploadImages(picked);
       } catch (error) {
@@ -148,12 +158,17 @@ function makeTaskCard(setup) {
       }
       imagesSending = false;
       if (taskDraft !== draft) return;  // cancelled while the images were sent
-      requestAction("task:create", "create_task", { repo, text, todo: draft.todo, images: ids.join(",") }, (result) => {
+      const done = (result) => {
         taskDraft = null;
         clearDraftImages();
         taskFilter = "active";
         actionNotice = { text: result.message, until: Date.now() + NOTICE_MS };
-      });
+      };
+      if (autopilot) {
+        requestAction("task:create", "create_autopilot_task", { repo, text, todo: draft.todo }, done);
+      } else {
+        requestAction("task:create", "create_task", { repo, text, todo: draft.todo, images: ids.join(",") }, done);
+      }
     });
   });
   make.disabled = make.disabled || imagesSending;
@@ -163,7 +178,7 @@ function makeTaskCard(setup) {
     refresh();
   });
   const sheet = card("Make a task", el("p", taskDraft.text, "plan-summary"), el("div", "Repository", "card-subtitle"), repos,
-    imagesBox, workActions(make, cancel), el("div", "If another task is planning, this one waits as To do.", "card-note"));
+    autopilotBox(), imagesBox, workActions(make, cancel), el("div", "If another task is planning, this one waits as To do.", "card-note"));
   sheet.classList.add("card-wide", "task-sheet");
   return sheet;
 }
