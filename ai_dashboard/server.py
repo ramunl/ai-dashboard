@@ -33,6 +33,7 @@ from ai_dashboard.maintenance import CleanupService
 from ai_dashboard.package_updates import TIMEOUTS, PackageService
 from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
 from ai_dashboard.saved_checks import SavedChecks
+from ai_dashboard.security import SECURITY, register_security
 from ai_dashboard.service_actions import ServiceControl
 from ai_dashboard.sources import service_state
 from ai_dashboard.task_progress import (
@@ -130,6 +131,7 @@ async def window_data(request: web.Request) -> web.Response:
             "cleanup": request.app[CLEANUP].state(),
             "packages": request.app[PACKAGES].state(),
             "backups": await request.app[BACKUPS].state(),
+            "security": request.app[SECURITY].state(),
             "ai_tools": request.app[TOOLS].state(),
             "deployments": await request.app[DEPLOYMENTS].state(),
         }
@@ -571,6 +573,7 @@ def build_app(
     app[CLOSER] = TaskCloser(settings.pm_command, saved)
     register_pm_routes(app, settings)
     register_backups(app, settings)
+    register_security(app, settings)
     app.router.add_get("/healthz", health)
     # Before /api/{window}: aiohttp matches routes in order.
     app.router.add_get("/api/ops/logs", logs_data)

@@ -92,6 +92,6 @@ function opsPage(view) {
     subtitle: serverSubtitle(view),
     status: pageStatus(view),
     alert: "",
-    nodes: [operationsCard(view), servicesCard(view), deploymentsCard(view), ...problemsCards(view), diskUsageCard(view), updatesCard(view), aiToolsCard(view), backupsCard(view), resourcesCard(view), ...rebootCards(view), logsCard()],
+    nodes: [operationsCard(view), servicesCard(view), deploymentsCard(view), ...problemsCards(view), diskUsageCard(view), updatesCard(view), aiToolsCard(view), securityCard(view), backupsCard(view), resourcesCard(view), ...rebootCards(view), logsCard()],
   };
 }

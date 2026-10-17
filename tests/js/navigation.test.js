@@ -294,12 +294,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Needs attention", "Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Backups", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Needs attention", "Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Security", "Backups", "Server resources", "Logs"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Backups", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Security", "Backups", "Server resources", "Logs"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {
@@ -2246,4 +2246,46 @@ test("a task shows autopilot and switches it on or off", async () => {
   buttonNamed(page, "Autopilot off").click();
   await sleep(60);
   assert.deepStrictEqual(page.bodies, [{ action: "set_autopilot", args: { task: "0a1b2c3d", value: "off" } }]);
+});
+
+// ---------------------------------------------------------------- security
+
+const SECURITY_REPORT = { ok: true, checked_at: Date.now() / 1000 - 120, stats: {
+  ssh: { available: true, failed: 1240, failed_ips: 312, accepted: 2, password_logins: 1,
+    top_attackers: [{ ip: "203.0.113.5", count: 410 }], top_users: [{ user: "root", count: 600 }] },
+  fail2ban: { installed: true, jails: [{ name: "sshd", banned_now: 7, banned_total: 145, failed_total: 900 }] },
+  sessions: [{ user: "roman", tty: "pts/0", since: "2026-10-16 10:01", from: "192.0.2.10" }],
+  ports: [{ proto: "tcp", port: 22, process: "sshd" }, { proto: "udp", port: 51820, process: "wg" }],
+  firewall: "active" },
+  findings: [{ level: "high", title: "SSH accepts passwords", detail: "1240 failed SSH logins in 24 h", fix: "Set PasswordAuthentication no" }] };
+const securityCardOf = (page) => [...page.doc.querySelectorAll("main section")].find((node) => node.querySelector("h2").textContent === "Security");
+const securityOps = (security, extra = {}) => ({ latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+  json: async () => (name === "ops" ? { ...OPS, security } : DATA[name]) }), ...extra });
+
+test("the Security card shows attacks, bans, sessions and what to fix", async () => {
+  const page = await openPage("/ops", securityOps({ report: SECURITY_REPORT, running: false }));
+  await sleep(60);
+  const text = securityCardOf(page).textContent;
+  assert.match(text, /1 to fix/);
+  assert.match(text, /checked 2m ago|checked 2 min/);
+  assert.match(text, /Failed SSH logins, 24 h1,240 from 312 IPs/);
+  assert.match(text, /Successful logins, 24 h2 \(1 by password\)/);
+  assert.match(text, /Banned now7/);
+  assert.match(text, /Banned in total145/);
+  assert.match(text, /Logged in nowroman from 192\.0\.2\.10/);
+  assert.match(text, /Public ports22\/tcp sshd, 51820\/udp wg/);
+  assert.match(text, /203\.0\.113\.5×410/);
+  assert.match(text, /🔴 SSH accepts passwords/);
+  assert.match(text, /Fix: Set PasswordAuthentication no/);
+});
+
+test("Check now posts with no options; a missing ai-audit shows its error", async () => {
+  const page = await openPage("/ops", securityOps({ report: { ok: false, error: "ai-audit is not installed", checked_at: 1 }, running: false },
+    { onPost: async () => ({ ok: true, status: 202, json: async () => ({ started: true }) }) }));
+  await sleep(60);
+  const card = securityCardOf(page);
+  assert.match(card.textContent, /ai-audit is not installed/);
+  buttonNamed(page, "Check now").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.posts, ["/api/ops/security"]);
 });

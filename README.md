@@ -469,3 +469,15 @@ missing files, and warns when the last successful archive is over two days old.
 The signed owner-only POST accepts no paths or options. The CLI lock also protects
 against simultaneous nightly/chat backups. Dashboard delivery results survive
 restarts in `backup-delivery.json`; the last saved archive is not proof of delivery.
+
+## Security (Ops window)
+
+The **Security** card shows `ai-audit check` from the Ops agent: failed and
+successful SSH logins in 24 h, fail2ban bans (now and in total), who is logged
+in, public ports, the firewall, top attacking IPs and tried user names, and
+the findings with their exact fix. The audit takes a few seconds, so the
+dashboard keeps the last report (also across restarts in `security.json` in
+its state directory) and refreshes it when it is older than 15 minutes;
+**Check now** (`POST /api/ops/security`, owner-only, no options) runs it at
+once. It only reads; nothing on the server is changed. Install `ai-audit`
+from the Ops agent first.
