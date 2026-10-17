@@ -384,3 +384,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .security-finding summary { cursor: pointer; overflow-wrap: anywhere; }
 .security-fix { font-family: ui-monospace, monospace; font-size: 0.78rem; overflow-wrap: anywhere; margin-top: 0.25rem; }
 .security-details { margin-top: 0.4rem; font-size: 0.85rem; }
+
+/* Service/client details stay compact on small Telegram screens. */
+.clients-service { margin-top: 0.65rem; border-top: 1px solid var(--divider); padding-top: 0.5rem; }
+.clients-service summary, .clients-peer summary { cursor: pointer; overflow-wrap: anywhere; }
+.clients-peer { margin: 0.45rem 0 0.45rem 0.5rem; }

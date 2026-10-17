@@ -25,6 +25,7 @@ from ai_dashboard.agent_actions import (
 )
 from ai_dashboard.auth import InitDataError, verify_init_data
 from ai_dashboard.backups import BACKUPS, register_backups
+from ai_dashboard.clients import CLIENTS, register_clients
 from ai_dashboard.config import Settings
 from ai_dashboard.deployments import TARGETS, DeploymentService
 from ai_dashboard.disk_history import record_forever
@@ -132,6 +133,7 @@ async def window_data(request: web.Request) -> web.Response:
             "packages": request.app[PACKAGES].state(),
             "backups": await request.app[BACKUPS].state(),
             "security": request.app[SECURITY].state(),
+            "clients": request.app[CLIENTS].state(),
             "ai_tools": request.app[TOOLS].state(),
             "deployments": await request.app[DEPLOYMENTS].state(),
         }
@@ -574,6 +576,7 @@ def build_app(
     register_pm_routes(app, settings)
     register_backups(app, settings)
     register_security(app, settings)
+    register_clients(app, settings)
     app.router.add_get("/healthz", health)
     # Before /api/{window}: aiohttp matches routes in order.
     app.router.add_get("/api/ops/logs", logs_data)

@@ -294,12 +294,12 @@ test("Ops window shows its own cards, never the agent list", async () => {
 
   const ops = await openPage("/ops", { respond: answer(WITH_PROBLEM) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(ops), ["Needs attention", "Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Security", "Backups", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(ops), ["Needs attention", "Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Security", "Connected clients", "Backups", "Server resources", "Logs"]);
   assert.match(ops.doc.querySelector("main").textContent, /Up3h 2m/);
 
   const calm = await openPage("/ops", { respond: answer({ ...WITH_PROBLEM, problems: [] }) });
   await sleep(60);
-  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Security", "Backups", "Server resources", "Logs"]);
+  assert.deepStrictEqual(cardTitles(calm), ["Operations", "Services", "Deployments", "Disk usage", "Updates", "AI tools", "Security", "Connected clients", "Backups", "Server resources", "Logs"]);
 });
 
 test("agent rows show uptime and the overview shows the disk trend", async () => {
@@ -363,7 +363,9 @@ const opsWith = (cleanup) => async (name) => ({
   ok: true, status: 200,
   json: async () => (name === "ops" ? { ...OPS, cleanup: { ...OPS.cleanup, ...cleanup } } : DATA[name]),
 });
-const cleanupButton = (page) => page.doc.querySelector("button.action-button");
+const cleanupButton = (page) => [...page.doc.querySelectorAll("main section")]
+  .find((node) => node.querySelector("h2")?.textContent === "Disk usage")
+  ?.querySelector("button.action-button") || null;
 const confirmWith = (page, answer) => {
   const asked = [];
   page.dom.window.Telegram.WebApp.showConfirm = (message, callback) => { asked.push(message); callback(answer); };
