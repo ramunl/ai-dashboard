@@ -38,3 +38,36 @@ test("refresh uses the fixed endpoint without options and handles failures", asy
   assert.equal(button.disabled,false);
   dom.window.close();
 });
+test("polling preserves service and device expansion by stable identity, including explicit closes", async () => {
+  const service = {id:"vpn",name:"VPN",available:true,active:2,unit:"devices",clients:[
+    {id:"phone",name:"Phone",active:true}, {id:"laptop",name:"Laptop",active:true}
+  ]};
+  const state = services => ({report:{ok:true,checked_at:Date.now()/1000,services}});
+  const dom = setup(state([service]));
+  const doc = dom.window.document;
+  const render = services => {
+    const next = dom.window.clientsCard({clients:state(services)});
+    doc.body.replaceChildren(next);
+  };
+  doc.querySelector(".clients-service").open = true;
+  doc.querySelector(".clients-peer").open = true;
+  // Refresh before queued toggle events have fired, with changed text and order.
+  const updated = {...service,name:"Amnezia VPN",active:1,clients:[
+    service.clients[1], {...service.clients[0],name:"Renamed phone",active:false}
+  ]};
+  render([updated]);
+  await new Promise(resolve=>dom.window.setTimeout(resolve,10));
+  assert.equal(doc.querySelector(".clients-service").open,true);
+  const peers = doc.querySelectorAll(".clients-peer");
+  assert.equal(peers[0].open,false);
+  assert.equal(peers[1].open,true);
+  assert.match(doc.body.textContent,/Amnezia VPN · 1 devices/);
+  assert.match(peers[1].textContent,/Renamed phone · idle/);
+  peers[1].open = false;
+  doc.querySelector(".clients-service").open = false;
+  render([updated]);
+  await new Promise(resolve=>dom.window.setTimeout(resolve,10));
+  assert.equal(doc.querySelector(".clients-service").open,false);
+  assert.equal(doc.querySelectorAll(".clients-peer")[1].open,false);
+  dom.window.close();
+});
