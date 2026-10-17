@@ -469,3 +469,33 @@ missing files, and warns when the last successful archive is over two days old.
 The signed owner-only POST accepts no paths or options. The CLI lock also protects
 against simultaneous nightly/chat backups. Dashboard delivery results survive
 restarts in `backup-delivery.json`; the last saved archive is not proof of delivery.
+
+## Security (Ops window)
+
+The **Security** card shows `ai-audit check` from the Ops agent: failed and
+successful SSH logins in 24 h, fail2ban bans (now and in total), who is logged
+in, public ports, the firewall, top attacking IPs and tried user names, and
+the findings with their exact fix. The audit takes a few seconds, so the
+dashboard keeps the last report (also across restarts in `security.json` in
+its state directory) and refreshes it when it is older than 15 minutes;
+**Check now** (`POST /api/ops/security`, owner-only, no options) runs it at
+once. It only reads; nothing on the server is changed. Install `ai-audit`
+from the Ops agent first.
+
+## Connected clients (Ops)
+
+The owner-only Ops window shows devices, sessions, streams, inbound TCP
+connections, observed source addresses and available traffic metrics for VPN,
+Telegram proxies, the HTTPS relay and media/IPTV. Expand a service for details.
+VPN uses a 3-minute handshake window; profiles and IP addresses do not identify
+unique people. Native relay/mtg counters, transfer rates, UTC-day sampled usage
+and sampled peaks are shown where supported. Container traffic includes both
+sides of media relay traffic; HTTP keep-alives are not viewers or streams.
+
+Install ai-ops-agent's `deploy/install-ai-clients` first. Its background timer
+samples every 30 seconds, even while the dashboard is closed. The dashboard
+refreshes on demand while Ops is open and saves its last result across restarts.
+`POST /api/ops/clients` triggers a sample: signed owner authentication, no request
+body/options, one request in flight. Missing sources show unavailable, not zero;
+old readings and sampling gaps are labeled. These counts cannot be added into
+an exact total of people. No credentials or browsing URLs are exposed.
