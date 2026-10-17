@@ -35,7 +35,7 @@ function securityStatRows(stats) {
   if (ports.length) rows.push(row("Public ports", ports.map((item) => `${item.port}/${item.proto} ${item.process}`).join(", ")));
   const attackers = ssh.top_attackers || [];
   if (attackers.length) {
-    const details = el("details", null, "security-details");
+    const details = rememberDetails(el("details", null, "security-details"), ["security", "attackers"]);
     details.append(el("summary", "Top attackers and tried users"));
     for (const item of attackers) details.append(row(item.ip, `×${securityCount(item.count)}`));
     for (const item of ssh.top_users || []) details.append(row(`user ${item.user}`, `×${securityCount(item.count)}`));
@@ -45,7 +45,7 @@ function securityStatRows(stats) {
 }
 
 function securityFinding(item) {
-  const details = el("details", null, "security-finding");
+  const details = rememberDetails(el("details", null, "security-finding"), ["security", "finding", item.title]);
   details.dataset.level = item.level;
   details.append(el("summary", `${SECURITY_ICONS[item.level] || "•"} ${item.title}`),
     el("div", item.detail, "card-note"), el("div", `Fix: ${item.fix}`, "security-fix"));

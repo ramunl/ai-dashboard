@@ -20,6 +20,7 @@ function setHeader(title, subtitle, status) {
 }
 
 function renderLoading() {
+  captureDetailsState();
   setHeader(currentRoute().title, "", "");
   showAlert("");
   document.getElementById("view").replaceChildren(muted("Loading…"));

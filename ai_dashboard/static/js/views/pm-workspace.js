@@ -41,6 +41,7 @@ function pmWorkspace(workspace) {
 
 function pmPaint() {
   const node = pmUi.node, workspace = pmUi.workspace;
+  captureDetailsState(node);
   node.replaceChildren(el("h2", "Todos"));
   if (pmUi.notice) {
     const notice = el("div", pmUi.notice, "pm-notice"); notice.setAttribute("role", "status"); node.append(notice);

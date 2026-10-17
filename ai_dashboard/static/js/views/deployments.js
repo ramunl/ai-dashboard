@@ -2,7 +2,6 @@
 // executes jobs. One compact row per agent; details and actions open on tap.
 
 let rollbackPending = false;
-const openDeployments = new Set(); // names whose details are open, kept across refreshes
 const DEPLOY_BUSY = ["queued", "deploying", "rolling_back", "rollback_failed"];
 
 function deploymentRevision(revision) {
@@ -142,12 +141,7 @@ function deploymentDetails(target, isBusy, view) {
 }
 
 function deploymentItem(target, isBusy, view) {
-  const item = el("details", null, "deploy-item");
-  item.open = openDeployments.has(target.name);
-  item.addEventListener("toggle", () => {
-    if (item.open) openDeployments.add(target.name);
-    else openDeployments.delete(target.name);
-  });
+  const item = rememberDetails(el("details", null, "deploy-item"), ["deployment", target.name]);
   item.append(deploymentSummary(target), ...deploymentDetails(target, isBusy, view));
   // Problems stay visible without opening the row.
   const outside = [];

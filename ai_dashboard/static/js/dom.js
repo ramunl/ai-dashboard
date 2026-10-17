@@ -8,6 +8,30 @@ function el(tag, text, className) {
   return node;
 }
 
+// User choices survive rebuilt cards. Keys identify content, never its position.
+const expandedDetails = new Map();
+
+function captureDetailsState(root = document) {
+  for (const node of root.querySelectorAll("details[data-expansion-key]")) {
+    expandedDetails.set(node.dataset.expansionKey, node.open);
+  }
+}
+
+function rememberDetails(node, identity) {
+  const key = JSON.stringify(identity);
+  // Capture the live property even before the asynchronous toggle event fires.
+  for (const current of document.querySelectorAll("details[data-expansion-key]")) {
+    if (current.dataset.expansionKey === key) expandedDetails.set(key, current.open);
+  }
+  node.dataset.expansionKey = key;
+  node.open = expandedDetails.get(key) === true;
+  node.addEventListener("toggle", () => {
+    // Detached old nodes may still have queued events after a refresh.
+    if (node.isConnected) expandedDetails.set(key, node.open);
+  });
+  return node;
+}
+
 function row(label, value) {
   const node = el("div", null, "row");
   node.append(el("span", label), value instanceof Node ? value : el("span", value ?? "—"));

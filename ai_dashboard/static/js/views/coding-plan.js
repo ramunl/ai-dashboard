@@ -5,7 +5,6 @@
 
 let isReviseOpen = false;
 let reviseDraft = "";  // kept across refreshes until the agent accepts it
-let openPlan = "";  // "<plan id>:<revision>" of the plan whose details are open
 
 function planList(title, items, tag) {
   if (!items || !items.length) return [];
@@ -40,12 +39,7 @@ function planDetails(plan) {
   const steps = plan.steps || [];
   const files = plan.files || [];
   const key = `${plan.id}:${plan.revision}`;
-  const details = el("details", null, "plan-details");
-  details.open = openPlan === key;
-  details.addEventListener("toggle", () => {
-    if (details.open) openPlan = key;
-    else if (openPlan === key) openPlan = "";
-  });
+  const details = rememberDetails(el("details", null, "plan-details"), ["plan", key]);
   details.append(
     el("summary", `Details · ${planCount(steps.length, "step")} · ${planCount(files.length, "file")}`),
     row("Branch", plan.branch),

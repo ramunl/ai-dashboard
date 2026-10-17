@@ -2,7 +2,6 @@
 // show the disk meter and the coding agent's task image storage against its
 // cap. The figures come from the agent's snapshot: unknown when it has none.
 const UNKNOWN_IMAGES = { used_bytes: null, cap_bytes: null, updated_at: null };
-let diskRowOpen = false; // kept across refreshes, as the deployment rows are
 
 function diskRow(disk, images) {
   const percent = Math.round((100 * disk.used) / disk.total);
@@ -11,9 +10,7 @@ function diskRow(disk, images) {
     el("span", "Disk"),
     el("span", `${formatBytes(disk.used)} of ${formatBytes(disk.total)} (${percent}%)`),
   );
-  const item = el("details", null, "disk-item");
-  item.open = diskRowOpen;
-  item.addEventListener("toggle", () => { diskRowOpen = item.open; });
+  const item = rememberDetails(el("details", null, "disk-item"), ["disk"]);
   item.append(summary, usageMeter(disk.used, disk.total, "Disk usage"), imageStorageRow(images || UNKNOWN_IMAGES));
   return item;
 }

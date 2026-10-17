@@ -56,7 +56,7 @@ function pmQuickAdd(workspace) {
 }
 
 function pmMoreMenu(workspace) {
-  const menu = el("details", null, "pm-menu");
+  const menu = rememberDetails(el("details", null, "pm-menu"), ["pm", "menu", workspace.project]);
   const summary = el("summary", "⋯", "pm-button");
   summary.setAttribute("aria-label", "More actions");
   const items = el("div", null, "pm-menu-items");

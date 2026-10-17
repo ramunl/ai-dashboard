@@ -69,7 +69,7 @@ function pmLayout(workspace, snapshot) {
 }
 
 function pmAbout(snapshot) {
-  const details = el("details", null, "pm-about");
+  const details = rememberDetails(el("details", null, "pm-about"), ["pm", "about"]);
   details.append(el("summary", "About PM agent"));
   if (snapshot) details.append(el("pre", [snapshot.version, snapshot.core].filter(Boolean).join("\n")));
   return details;

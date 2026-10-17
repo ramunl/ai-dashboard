@@ -1,15 +1,4 @@
 // Service counts have different meanings: never sum them into "online people".
-const clientDetailsOpen = new Map();
-
-function clientRememberDetails(node, key) {
-  node.dataset.clientDetail = key;
-  node.open = clientDetailsOpen.get(key) === true;
-  node.addEventListener("toggle", () => {
-    // A queued event from a replaced node must not overwrite the current state.
-    if (node.isConnected) clientDetailsOpen.set(key, node.open);
-  });
-  return node;
-}
 function clientsRefreshButton(running) {
   const button = el("button", running ? "Refreshing…" : "Refresh clients", "action-button");
   button.type = "button";
@@ -43,7 +32,7 @@ function clientTrafficRows(service) {
 
 function clientServiceDetails(service) {
   const serviceKey = service.id || service.name;
-  const details = clientRememberDetails(el("details", null, "clients-service"), JSON.stringify([serviceKey]));
+  const details = rememberDetails(el("details", null, "clients-service"), ["clients", serviceKey]);
   const count = service.available && typeof service.active === "number"
     ? `${service.active.toLocaleString("en-US")} ${service.unit}` : "Unavailable";
   details.append(el("summary", `${service.name} · ${count}`));
@@ -66,7 +55,7 @@ function clientServiceDetails(service) {
   if (service.available && !["rx_bytes", "tx_bytes", "traffic_bytes"].some(key => typeof service[key] === "number")) details.append(el("p", "Traffic counters unavailable for this service.", "card-note"));
   for (const client of service.clients || []) {
     const state = typeof client.active === "boolean" ? (client.active ? "recently active" : "idle / offline") : `${client.connections} connections`;
-    const item = clientRememberDetails(el("details", null, "clients-peer"), JSON.stringify([serviceKey, client.id || client.name]));
+    const item = rememberDetails(el("details", null, "clients-peer"), ["clients", serviceKey, client.id || client.name]);
     item.append(el("summary", `${client.name} · ${state}`));
     if ("last_seen_seconds" in client) item.append(row("Last handshake", client.last_seen_seconds === null ? "Never" : `${formatDuration(client.last_seen_seconds)} ago`));
     if (typeof client.rx_bytes === "number") item.append(row("Uploaded", formatBytes(client.rx_bytes)), row("Downloaded", formatBytes(client.tx_bytes)));
@@ -79,10 +68,6 @@ function clientServiceDetails(service) {
 }
 
 function clientsCard(view) {
-  // Read the live property before rebuilding: toggle events are asynchronous.
-  for (const node of document.querySelectorAll("details[data-client-detail]")) {
-    clientDetailsOpen.set(node.dataset.clientDetail, node.open);
-  }
   const state = view.clients || {};
   const report = state.report;
   const nodes = [el("p", "Devices, sessions and connections per service. One person may use several; source addresses can be shared.", "card-note")];

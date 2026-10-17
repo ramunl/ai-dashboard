@@ -107,7 +107,7 @@ function proposalActions(task) {
   });
   const nodes = [];
   if (Array.isArray(task.evidence) && task.evidence.length) {
-    const details = el("details", null, "task-evidence");
+    const details = rememberDetails(el("details", null, "task-evidence"), ["task", task.id, "evidence"]);
     details.append(el("summary", "Log lines"));
     for (const line of task.evidence) details.append(el("pre", line, "log-line"));
     nodes.push(details);
