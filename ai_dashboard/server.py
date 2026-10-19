@@ -278,9 +278,12 @@ async def coding_action(request: web.Request) -> web.Response:
             {"error": f"the coding agent is {state}; try again once it runs"},
             status=503,
         )
-    request_id = await asyncio.to_thread(
-        submit, bot.inbox_dir, action, args, viewer.bot, images
-    )
+    try:
+        request_id = await asyncio.to_thread(
+            submit, bot.inbox_dir, action, args, viewer.bot, images
+        )
+    except RequestError as error:
+        return web.json_response({"error": str(error)}, status=400)
     logger.info("Coding action %s requested from the %s bot", action, viewer.bot)
     return web.json_response({"id": request_id}, status=202, headers=_NO_STORE)
 
