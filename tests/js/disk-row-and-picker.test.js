@@ -204,6 +204,21 @@ test("Make task with images confirms first, sends each image, then the task with
   assert.deepStrictEqual(page.errors, []);
 });
 
+test("Autopilot refuses attached images instead of dropping them, and sends nothing", async () => {
+  const page = await openSheet();
+  const box = sheetOf(page).querySelector(".task-autopilot input");
+  box.checked = true;
+  box.dispatchEvent(new page.dom.window.Event("change", { bubbles: true }));
+  pick(page, [makeFile(page, "one.png", "image/png")]);
+  await sleep(40);
+  confirmWith(page, true);
+  buttonNamed(page, "Make task and plan").click();
+  await sleep(40);
+  assert.strictEqual(alertText(page), "Autopilot tasks take no images. Remove them or untick Autopilot.");
+  assert.deepStrictEqual(page.posts, []);
+  assert.deepStrictEqual(page.errors, []);
+});
+
 test("an upload that never answers is given up: the sheet says so and nothing is sent", async () => {
   const page = await openSheet({
     onPost: async (api, init) => (api === "/api/coding/images" ? hang(init.signal) : answer({ id: "beef0003" }, 202)),
