@@ -688,6 +688,29 @@ class ImageUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.staged(), [f"{staged}.png"])
         self.assertFalse(self.inbox.exists())
 
+    async def test_two_tasks_cannot_both_take_the_same_staged_image(self) -> None:
+        staged = (await (await self.image()).json())["id"]
+        arrived = 0
+
+        async def hold_until_both_checked(_service: str) -> str:
+            # Each request waits here after its staged check, so both pass the
+            # check before either one moves the image.
+            nonlocal arrived
+            arrived += 1
+            while arrived < 2:
+                await asyncio.sleep(0)
+            return "active"
+
+        with patch.object(server, "service_state", hold_until_both_checked):
+            first, second = await asyncio.gather(
+                self.post_task(staged), self.post_task(staged)
+            )
+        loser = first if first.status == 400 else second
+        self.assertEqual(sorted([first.status, second.status]), [202, 400])
+        self.assertIn("already used", (await loser.json())["error"])
+        self.assertEqual(self.staged(), [])
+        self.assertEqual(len(list(self.inbox.glob("*.json"))), 1)
+
     async def test_a_task_without_images_says_zero(self) -> None:
         response = await self.post_task("")
         self.assertEqual(response.status, 202)

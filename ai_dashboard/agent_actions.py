@@ -14,6 +14,7 @@ import re
 import secrets
 import shutil
 import tempfile
+import threading
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -103,6 +104,11 @@ class RequestError(Exception):
     """The request is malformed; the message says what is wrong."""
 
 
+# Held while submit() checks that each staged image is still there and moves
+# it, so two requests for the same ids cannot both pass the check.
+_MOVE_LOCK = threading.Lock()
+
+
 def check(body: object) -> tuple[str, dict[str, str]]:
     """Return (action, args) for a well-formed request body, else raise."""
     if not isinstance(body, dict):
@@ -174,12 +180,18 @@ def submit(
         "requested_by": requested_by,
     }
     inbox.mkdir(parents=True, exist_ok=True)
-    moved: list[Path] = []
+    moved: list[tuple[Path, Path]] = []
     try:
-        for number, image in enumerate(images, 1):
-            target = inbox / f"{request_id}-{number}{image.suffix}"
-            shutil.move(image, target)
-            moved.append(target)
+        with _MOVE_LOCK:
+            for number, image in enumerate(images, 1):
+                target = inbox / f"{request_id}-{number}{image.suffix}"
+                if not image.is_file():
+                    raise _gone(image)
+                try:
+                    shutil.move(image, target)
+                except FileNotFoundError:  # swept as stale after the check
+                    raise _gone(image) from None
+                moved.append((image, target))
         # Written under a name the agent ignores, then renamed into place, so the
         # agent never reads a half-written request.
         fd, tmp = tempfile.mkstemp(dir=inbox, prefix=".", suffix=".tmp")
@@ -191,7 +203,14 @@ def submit(
             Path(tmp).unlink(missing_ok=True)
             raise
     except BaseException:
-        for target in moved:
-            target.unlink(missing_ok=True)
+        # Put back every image already moved, so a failed request leaves the
+        # staged images as they were and a retry sees the same state.
+        for image, target in moved:
+            shutil.move(target, image)
         raise
     return request_id
+
+
+def _gone(image: Path) -> RequestError:
+    """The error for a staged image that is no longer there."""
+    return RequestError(f"image {image.stem} is missing or was already used")
