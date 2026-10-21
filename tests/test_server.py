@@ -4,6 +4,7 @@ import logging
 import tempfile
 import time
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -164,6 +165,57 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["opened_from"], "coding")
         self.assertIsNone(body["problem"])
         self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    async def test_tokens_auth_and_normalized_data(self) -> None:
+        for headers, status in (
+            ({}, 401),
+            (_auth("999:X"), 401),
+            (_auth(user_id=1), 403),
+        ):
+            response = await self.client.get("/api/tokens", headers=headers)
+            self.assertEqual(response.status, status)
+        response = await self.client.get("/api/tokens", headers=_auth())
+        self.assertEqual(response.status, 200)
+        body = await response.json()
+        self.assertFalse(body["available"])
+        self.assertNotIn("snapshot", body)
+        self.assertNotIn("queue", body)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.snapshot.write_text(
+            json.dumps(
+                {
+                    "format": 2,
+                    "updated_at": time.time(),
+                    "secret": "PRIVATE",
+                    "token_usage": {
+                        "window_days": 90,
+                        "days": [
+                            {
+                                "date": datetime.now(UTC).date().isoformat(),
+                                "usage": [
+                                    {
+                                        "role": "planner",
+                                        "tool": "codex",
+                                        "calls": 1,
+                                        "unknown": 0,
+                                        "tokens": 42,
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            )
+        )
+        response = await self.client.get("/api/tokens", headers=_auth())
+        body = await response.json()
+        self.assertTrue(body["available"])
+        self.assertEqual(body["totals"][0]["tokens"], 42)
+        self.assertNotIn("PRIVATE", json.dumps(body))
+        self.assertEqual((await self.client.get("/tokens")).status, 200)
+        self.assertEqual(
+            (await self.client.post("/api/tokens", headers=_auth())).status, 405
+        )
 
     async def test_unknown_window(self) -> None:
         self.assertEqual(

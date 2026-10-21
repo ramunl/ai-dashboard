@@ -16,6 +16,8 @@ from ai_dashboard.commands import run_command
 from ai_dashboard.config import BotSource
 
 SNAPSHOT_FORMAT = 1
+# Coding v2 only adds optional token_usage; other publishers still use v1.
+CODING_SNAPSHOT_FORMATS = (1, 2)
 # The coding agent rewrites its snapshot at least every 30 s (heartbeat).
 STALE_AFTER_SECONDS = 90
 
@@ -29,7 +31,9 @@ async def service_state(unit: str) -> str:
     return output.strip() if output and output.strip() else "unknown"
 
 
-def read_snapshot(path: Path) -> tuple[dict | None, str | None]:
+def read_snapshot(
+    path: Path, formats: tuple[int, ...] = (SNAPSHOT_FORMAT,)
+) -> tuple[dict | None, str | None]:
     """Return (snapshot, problem). Exactly one of them is None."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -37,7 +41,11 @@ def read_snapshot(path: Path) -> tuple[dict | None, str | None]:
         return None, "has not published a snapshot yet"
     except (OSError, ValueError) as error:
         return None, f"snapshot unreadable ({type(error).__name__})"
-    if not isinstance(data, dict) or data.get("format") != SNAPSHOT_FORMAT:
+    if (
+        not isinstance(data, dict)
+        or type(data.get("format")) is not int
+        or data["format"] not in formats
+    ):
         return None, "published an unsupported snapshot format; update the dashboard"
     return data, None
 
@@ -70,6 +78,9 @@ def describe(
 async def agent_view(bot: BotSource, now: float | None = None) -> dict:
     """Combine an agent snapshot with its current service state."""
     state = await service_state(bot.service)
-    snapshot, problem = await asyncio.to_thread(read_snapshot, bot.snapshot_file)
+    formats = CODING_SNAPSHOT_FORMATS if bot.name == "coding" else (SNAPSHOT_FORMAT,)
+    snapshot, problem = await asyncio.to_thread(
+        read_snapshot, bot.snapshot_file, formats
+    )
     view = describe(state, snapshot, problem, time.time() if now is None else now)
     return {"agent": bot.name, "unit": bot.service, **view}

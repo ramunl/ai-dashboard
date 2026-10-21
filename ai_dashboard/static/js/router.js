@@ -9,6 +9,7 @@ const ROUTES = {
   "coding/ai": { api: "coding", page: aiToolsPage, title: "AI tools", parent: "coding" },
   "coding/logs": { api: "coding", page: codingLogsPage, title: "Coding logs", parent: "coding" },
   pm: { api: "pm", page: pmPage, title: "PM agent" },
+  tokens: { api: "tokens", page: tokensPage, title: "Tokens" },
   tasks: { api: "coding", page: tasksPage, title: "Tasks" },
 };
 const POPSTATE_GRACE_MS = 300;

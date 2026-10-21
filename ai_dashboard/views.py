@@ -15,7 +15,8 @@ from ai_dashboard.health import (
     unit_status,
     uptime_of,
 )
-from ai_dashboard.sources import agent_view
+from ai_dashboard.sources import CODING_SNAPSHOT_FORMATS, agent_view, read_snapshot
+from ai_dashboard.token_usage import usage_view
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ WINDOWS = {
     "coding": "Coding agent",
     "pm": "PM agent",
     "ops": "Ops agent",
+    "tokens": "Tokens",
 }
 
 # More pages that read another window's data: the Coding sub-windows, and
@@ -41,6 +43,17 @@ async def _window_of(settings: Settings, name: str) -> dict | None:
 async def coding_view(settings: Settings) -> dict | None:
     """Return the coding window data when its bot is configured."""
     return await _window_of(settings, "coding")
+
+
+async def tokens_view(settings: Settings) -> dict:
+    """Read Coding usage without exposing its other snapshot fields."""
+    bot = settings.bot("coding")
+    snapshot = None
+    if bot is not None and bot.snapshot_file is not None:
+        snapshot, _ = await asyncio.to_thread(
+            read_snapshot, bot.snapshot_file, CODING_SNAPSHOT_FORMATS
+        )
+    return usage_view(snapshot, time.time())
 
 
 async def pm_view(settings: Settings) -> dict | None:
@@ -217,6 +230,7 @@ async def launcher_view(settings: Settings) -> dict:
 
 VIEW_PROVIDERS = {
     "coding": coding_view,
+    "tokens": tokens_view,
     "pm": pm_view,
     "launcher": launcher_view,
     # The Ops window shows the overview data plus disk cleanup (added in server).
