@@ -355,6 +355,11 @@ inbox; fixed action names, no free text). The agent runs its own command
 handlers, so progress and results still arrive in the bot chat. Starting a
 run asks first: it spends AI tokens and opens a pull request.
 
+The Work card's text box also takes images: **Add images**, or paste a
+screenshot into the box. With images, **Plan** or **Implement** makes a task
+in the active project carrying them (tasks are how images reach the planner
+and implementer); it shows in Tasks and plans at once. Bugfix takes no images.
+
 A pending plan shows its summary, with branch, files, steps and risks under
 **Details**. The agent publishes this as a bounded, redacted outline in its
 snapshot (`pending_plan`), never the generated prompt.

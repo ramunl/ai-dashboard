@@ -82,7 +82,7 @@ async function openPage(url, options = {}) {
         }
         await sleep(10);
         const name = api.split("/").pop();
-        return answer(name === "launcher" ? (options.launcher || LAUNCHER) : CODING);
+        return answer(name === "launcher" ? (options.launcher || LAUNCHER) : (options.coding || CODING));
       };
       window.setInterval = () => 0;  // no timer: each test refreshes by hand
     },
@@ -278,4 +278,68 @@ test("a draft cancelled while its images are still going is not sent", async () 
   await sleep(160);
   assert.deepStrictEqual(page.posts, ["/api/coding/images"]);
   assert.strictEqual(sheetOf(page), undefined);
+});
+
+// ------------------------------------------------- Coding › Work card images
+
+const workCardOf = (page) => [...page.doc.querySelectorAll("main section")]
+  .find((node) => node.querySelector("h2") && node.querySelector("h2").textContent === "Work");
+// The Coding window needs the full setup (models, tools) to render.
+const CODING_FULL = { ...CODING, snapshot: { ...CODING.snapshot, setup: { ...CODING.snapshot.setup,
+  planner: "codex", implementer: "codex", planner_options: ["codex", "claude"], implementer_options: ["codex", "claude"],
+  models: [{ tool: "codex", model: "default", options: [] }, { tool: "claude", model: "claude-opus-5-5", options: [] }] } } };
+async function openWork(options = {}) {
+  const page = await openPage("/coding", { coding: CODING_FULL, ...options });
+  const box = workCardOf(page).querySelector("textarea");
+  box.value = "The logs card jumps";
+  box.dispatchEvent(new page.dom.window.Event("input"));
+  return page;
+}
+
+test("Work card: a picked image makes Plan a task in the active project with it", async () => {
+  const page = await openWork({
+    onPost: async (api) => (api === "/api/coding/images" ? answer({ id: "0000000000000001" }, 201) : answer({ id: "beef0010" }, 202)),
+  });
+  const input = workCardOf(page).querySelector('input[type="file"]');
+  Object.defineProperty(input, "files", { configurable: true, value: [makeFile(page, "shot.png", "image/png")] });
+  input.dispatchEvent(new page.dom.window.Event("change"));
+  await sleep(40);
+  assert.strictEqual(workCardOf(page).querySelectorAll("figure.task-image").length, 1);
+  assert.match(workCardOf(page).textContent, /makes a task in the active project/);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Plan").click();
+  await sleep(80);
+  assert.match(asked[0], /^Plan "The logs card jumps" with 1 image.*\? It becomes a task in ai-dashboard; this uses AI tokens\.$/);
+  assert.deepStrictEqual(page.posts, ["/api/coding/images", "/api/coding/actions"]);
+  assert.deepStrictEqual(page.bodies[1], { action: "create_task", args: {
+    repo: "ai-dashboard", text: "The logs card jumps", todo: "-", images: "0000000000000001" } });
+  assert.deepStrictEqual(page.errors, []);
+});
+
+test("Work card: a pasted screenshot is added; Bugfix with images explains instead of sending", async () => {
+  const page = await openWork();
+  const box = workCardOf(page).querySelector("textarea");
+  const paste = new page.dom.window.Event("paste", { bubbles: true, cancelable: true });
+  paste.clipboardData = { files: [makeFile(page, "clipboard.png", "image/png")] };
+  box.dispatchEvent(paste);
+  await sleep(40);
+  assert.ok(paste.defaultPrevented);
+  assert.strictEqual(workCardOf(page).querySelectorAll("figure.task-image").length, 1);
+  buttonNamed(page, "Bugfix").click();
+  await sleep(20);
+  assert.match(alertText(page), /Images go with Plan or Implement/);
+  assert.deepStrictEqual(page.posts, []);
+  // Text pastes are left to the browser.
+  const textPaste = new page.dom.window.Event("paste", { bubbles: true, cancelable: true });
+  textPaste.clipboardData = { files: [] };
+  workCardOf(page).querySelector("textarea").dispatchEvent(textPaste);
+  assert.strictEqual(textPaste.defaultPrevented, false);
+});
+
+test("Work card: without images, Plan still sends start_work", async () => {
+  const page = await openWork();
+  confirmWith(page, true);
+  buttonNamed(page, "Plan").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "start_work", args: { kind: "plan", text: "The logs card jumps" } }]);
 });

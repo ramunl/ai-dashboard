@@ -124,6 +124,7 @@ function workerRows(worker) {
 }
 
 function workCard(snapshot) {
+  workRepo = (snapshot.project && snapshot.project.name) || "";
   const thinking = snapshot.thinking || null;
   const worker = snapshot.worker || null;
   isWorkBusy = Boolean(thinking) || Boolean(worker && worker.enabled && worker.current_phase === "planning");

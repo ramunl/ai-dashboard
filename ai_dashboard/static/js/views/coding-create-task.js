@@ -26,7 +26,11 @@ function clearDraftImages() {
 
 // Keeps the picked files that fit; says why one was skipped.
 function addImages(files) {
-  const images = draftImages();
+  addImagesTo(draftImages(), files);
+}
+
+// Adds the files that fit to images (a draft's list), up to IMAGE_LIMIT.
+function addImagesTo(images, files) {
   for (const file of files) {
     if (images.length >= IMAGE_LIMIT) {
       actionNotice = { text: `A task takes up to ${IMAGE_LIMIT} images.`, until: Date.now() + NOTICE_MS };
@@ -42,7 +46,7 @@ function addImages(files) {
   }
 }
 
-function imagePicker(disabled) {
+function imagePicker(disabled, onFiles = addImages) {
   const input = el("input");
   input.type = "file";
   input.accept = "image/*";
@@ -50,7 +54,7 @@ function imagePicker(disabled) {
   input.disabled = disabled;
   input.setAttribute("aria-label", "Images for the task");
   input.addEventListener("change", () => {
-    addImages([...input.files]);
+    onFiles([...input.files]);
     refresh();
   });
   const label = el("label", "Add images", "row-button image-pick");
@@ -59,14 +63,14 @@ function imagePicker(disabled) {
 }
 
 // The preview and the file name, the name rendered as text only.
-function imagePreview(image, index) {
+function imagePreview(image, index, images = taskImages) {
   const figure = el("figure", null, "task-image");
   const picture = el("img", null, "task-image-preview");
   picture.src = image.url;
   picture.alt = `Image ${index + 1}`;
-  const remove = taskButton("Remove image", `task:image:${index}`, "row-button work-secondary", () => {
+  const remove = taskButton("Remove image", `task:image:${images === taskImages ? "" : "work:"}${index}`, "row-button work-secondary", () => {
     URL.revokeObjectURL(image.url);
-    taskImages.splice(index, 1);
+    images.splice(index, 1);
     refresh();
   });
   remove.disabled = remove.disabled || imagesSending;
