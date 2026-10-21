@@ -393,3 +393,10 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .tokens-table caption { text-align: left; margin: 0.6rem 0; }
 .tokens-table th, .tokens-table td { padding: 0.4rem 0.2rem; text-align: left; overflow-wrap: anywhere; vertical-align: top; }
 .tokens-table thead { border-bottom: 1px solid var(--hint); }
+
+/* Ops log controls use foreground/background pairs in both themes. */
+.logs-header { align-items: center; }
+.logs-header h2 { margin: 0 auto 0 0; }
+.logs-header .logs-lock-button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.logs-header button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+.logs-header + .logs-lock-status { color: var(--fg); margin-bottom: 0.5rem; }

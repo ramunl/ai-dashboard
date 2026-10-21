@@ -50,7 +50,18 @@ function renderPage(page, body) {
   // and re-adding a scroll box would reset its scroll position.
   const isSameNodes = nodes.length === view.children.length &&
     nodes.every((node, index) => view.children[index] === node);
-  if (!keepEditor && !isSameNodes) view.replaceChildren(...nodes);
+  if (!keepEditor && !isSameNodes) {
+    if (currentPath() === "ops" && logsState.node && view.contains(logsState.node)) {
+      // Keep the log box attached: shell refreshes must preserve selection,
+      // scroll position and keyboard focus on the lock control.
+      for (const child of [...view.children]) {
+        if (!nodes.includes(child)) child.remove();
+      }
+      nodes.forEach((node, index) => {
+        if (view.children[index] !== node) view.insertBefore(node, view.children[index] || null);
+      });
+    } else view.replaceChildren(...nodes);
+  }
   const age = typeof body.age_seconds === "number"
     ? ` · data ${Math.round(body.age_seconds)} s old`
     : "";
@@ -76,6 +87,7 @@ function show() {
   hasData = false;
   cancelRequest();
   stopCodingLogs();
+  stopOpsLogs();
   syncBackButton();
   renderLoading();
   refresh();
