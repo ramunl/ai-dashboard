@@ -1,5 +1,5 @@
 // Browser-level tests for the Disk row (views/disk-row.js) and the image picker
-// of the Make task sheet (views/coding-create-task.js): the expandable row with
+// of the Make task sheet (views/coding-create-task.js): the always-visible disk row with
 // the task image storage against its cap, the picker's limits, and uploads that
 // are slow or never answer. Run: npm test
 const test = require("node:test");
@@ -121,16 +121,15 @@ function pick(page, files) {
   input.dispatchEvent(new page.dom.window.Event("change"));
 }
 
-test("the Disk row opens to the task image storage against its cap, with the snapshot time", async () => {
+test("disk and task image storage are always visible, including after refresh", async () => {
   const page = await openPage("/", { launcher: { ...LAUNCHER, images: KNOWN_IMAGES } });
   await sleep(40);
-  const disk = page.doc.querySelector("details.disk-item");
-  assert.ok(disk, "the Disk row is expandable");
-  assert.strictEqual(disk.open, false);
+  const disk = page.doc.querySelector(".disk-item");
+  assert.ok(disk, "disk information is present");
+  assert.strictEqual(disk.tagName, "DIV");
+  assert.strictEqual(disk.querySelector("summary"), null);
   assert.deepStrictEqual([...disk.querySelector(".disk-summary").querySelectorAll("span")].map((s) => s.textContent),
     ["Disk", "9.3 GB of 18.6 GB (50%)"]);
-  disk.open = true;
-  await sleep(20);
   const label = disk.querySelector(".meter-label .meter-text");
   assert.match(label.textContent, /^1\.2 GB of 5\.0 GB \(24%\) · as of \d{1,2}:\d{2}/);
   const bar = disk.querySelector('progress[aria-label="Task image storage usage"]');
@@ -140,7 +139,8 @@ test("the Disk row opens to the task image storage against its cap, with the sna
   assert.strictEqual(Number(bar.value), KNOWN_IMAGES.used_bytes);
   await page.dom.window.eval("refresh()");
   await sleep(60);
-  assert.strictEqual(page.doc.querySelector("details.disk-item").open, true, "an open row stays open on refresh");
+  assert.strictEqual(page.doc.querySelector(".disk-item").tagName, "DIV");
+  assert.ok(page.doc.querySelector('.disk-item progress[aria-label="Task image storage usage"]'));
   assert.deepStrictEqual(page.errors, []);
 });
 
@@ -148,7 +148,7 @@ test("an agent without the image field shows the image storage as unknown, not a
   for (const launcher of [LAUNCHER, { ...LAUNCHER, images: { used_bytes: null, cap_bytes: null, updated_at: null } }]) {
     const page = await openPage("/", { launcher });
     await sleep(40);
-    const images = page.doc.querySelector("details.disk-item .disk-images");
+    const images = page.doc.querySelector(".disk-item .disk-images");
     assert.match(images.textContent, /Task images\s*unknown/);
     assert.strictEqual(images.querySelector("progress"), null);
     assert.deepStrictEqual(page.errors, []);

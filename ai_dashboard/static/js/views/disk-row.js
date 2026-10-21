@@ -1,16 +1,16 @@
-// The Disk row of Server resources (overview and Ops). One line that opens to
-// show the disk meter and the coding agent's task image storage against its
+// Disk information in Server resources (overview and Ops) is always visible:
+// the disk meter and the coding agent's task image storage against its
 // cap. The figures come from the agent's snapshot: unknown when it has none.
 const UNKNOWN_IMAGES = { used_bytes: null, cap_bytes: null, updated_at: null };
 
 function diskRow(disk, images) {
   const percent = Math.round((100 * disk.used) / disk.total);
-  const summary = el("summary", null, "row disk-summary");
+  const summary = el("div", null, "row disk-summary");
   summary.append(
     el("span", "Disk"),
     el("span", `${formatBytes(disk.used)} of ${formatBytes(disk.total)} (${percent}%)`),
   );
-  const item = rememberDetails(el("details", null, "disk-item"), ["disk"]);
+  const item = el("div", null, "disk-item");
   item.append(summary, usageMeter(disk.used, disk.total, "Disk usage"), imageStorageRow(images || UNKNOWN_IMAGES));
   return item;
 }

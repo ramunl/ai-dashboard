@@ -352,10 +352,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .task-image-preview { width: 4.5rem; height: 4.5rem; object-fit: cover; border-radius: 0.4rem; }
 .task-image-name { overflow-wrap: anywhere; margin: 0; }
 
-/* Server resources › Disk: one line, the image storage on tap. */
-.disk-summary { cursor: pointer; list-style: none; }
-.disk-summary::-webkit-details-marker { display: none; }
-.disk-item[open] > .disk-summary { margin-bottom: 0.2rem; }
+/* Server resources › Disk and image storage are always visible. */
+.disk-summary { margin-bottom: 0.2rem; }
 .disk-images { margin-bottom: 0.4rem; }
 .meter-label { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 auto; min-width: 0; }
 .meter-label .usage-meter { flex: 1 1 auto; width: auto; min-width: 3rem; margin: 0; }
