@@ -78,7 +78,7 @@ function problemsCards(view) {
 
 function agentsCard(view) {
   const rows = view.agents.length ? view.agents.map(navRow) : [muted("No agents configured")];
-  return card("Agents", ...rows);
+  return card("Agents", ...rows, tokensLauncherLink());
 }
 
 // A row to the Tasks window, when the coding agent keeps tasks.

@@ -254,7 +254,7 @@ test("agent rows are links and every status dot has text", async () => {
   await sleep(250);
   const rows = [...page.doc.querySelectorAll(".nav-row")];
   assert.deepStrictEqual(rows.map((a) => [a.tagName, a.getAttribute("href")]),
-                         [["A", "/coding"], ["A", "/pm"], ["A", "/ops"]]);
+                         [["A", "/coding"], ["A", "/pm"], ["A", "/ops"], ["A", "/tokens"]]);
   assert.strictEqual(page.text("status-label"), "OK");
   assert.strictEqual(page.doc.querySelectorAll("[style]").length, 0);
 });

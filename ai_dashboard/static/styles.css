@@ -389,3 +389,9 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .clients-service { margin-top: 0.65rem; border-top: 1px solid var(--divider); padding-top: 0.5rem; }
 .clients-service summary, .clients-peer summary { cursor: pointer; overflow-wrap: anywhere; }
 .clients-peer { margin: 0.45rem 0 0.45rem 0.5rem; }
+
+/* Token totals stay readable inside narrow Telegram windows. */
+.tokens-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.85rem; }
+.tokens-table caption { text-align: left; margin: 0.6rem 0; }
+.tokens-table th, .tokens-table td { padding: 0.4rem 0.2rem; text-align: left; overflow-wrap: anywhere; vertical-align: top; }
+.tokens-table thead { border-bottom: 1px solid var(--hint); }
