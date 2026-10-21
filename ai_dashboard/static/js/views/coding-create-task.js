@@ -138,7 +138,7 @@ function makeTaskCard(setup) {
     button.disabled = true;
     const withImages = picked.length ? ` with ${picked.length} image${picked.length === 1 ? "" : "s"}` : "";
     const mode = autopilot ? "Make an Autopilot task" : "Make a task";
-    askConfirmation(`${mode} in ${repo}${withImages} and start planning it? This uses AI tokens.`, async (isConfirmed) => {
+    askConfirmation(`${mode} in ${repo}${withImages} and start planning it${plannerText()}? This uses AI tokens.`, async (isConfirmed) => {
       if (!isConfirmed) {
         button.disabled = false;
         return;

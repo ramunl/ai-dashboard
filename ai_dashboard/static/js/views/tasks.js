@@ -22,6 +22,7 @@ const TASK_FILTERS = { active: "Active", finished: "Finished", all: "All" };
 const FINISHED_TASK_STAGES = ["pr", "done", "stopped"];
 
 let taskFilter = "active";
+let taskPlanner = "";  // "codex" or "claude": who plans, from Setup › AI tools
 let taskDraft = null;  // { text, todo } handed over by the PM window's Make task
 let taskRepo = "";
 let taskAutopilot = false;  // the Make a task sheet's Autopilot box
@@ -51,6 +52,11 @@ function retryButton(task, tool, label, className) {
       else button.disabled = false;
     });
   });
+}
+
+// " with Codex" (the planner chosen in Setup), or "" when unknown.
+function plannerText() {
+  return taskPlanner ? ` with ${taskPlanner[0].toUpperCase()}${taskPlanner.slice(1)}` : "";
 }
 
 function taskButton(label, key, className, onClick) {
@@ -139,7 +145,7 @@ function taskActions(task) {
     const key = `task:start:${task.id}`;
     actions.push(taskButton("Start planning", key, "row-button", (button) => {
       button.disabled = true;
-      askConfirmation(`Plan "${task.title}" in ${task.repo}? This uses AI tokens.`, (isConfirmed) => {
+      askConfirmation(`Plan "${task.title}" in ${task.repo}${plannerText()}? This uses AI tokens.`, (isConfirmed) => {
         if (isConfirmed) requestAction(key, "start_task", { task: task.id });
         else button.disabled = false;
       });
@@ -215,6 +221,7 @@ function autopilotBox() {
 function tasksPage(view) {
   const setup = setupOf(view);
   settleActions(setup);
+  taskPlanner = (setup && setup.planner) || "";
   taskProgress = { deployed: {}, deployable: [], closed: [], ...(view.task_progress || {}) };
   const snapshot = view.snapshot;
   const tasks = (snapshot && snapshot.tasks) || null;
@@ -225,6 +232,7 @@ function tasksPage(view) {
   }
   const waiting = tasks.filter((task) => ["planned", "proposed"].includes(task.stage)).length;
   page.subtitle = `${tasks.length} task${tasks.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} need${waiting === 1 ? "s" : ""} you` : ""}`;
+  if (taskPlanner) page.subtitle += ` · planner ${taskPlanner}`;
   const nodes = taskDraft ? [makeTaskCard(setup), tasksCard(tasks)] : [tasksCard(tasks)];
   if (snapshot.worker) nodes.push(workerCard(snapshot.worker));
   return { ...page, nodes };

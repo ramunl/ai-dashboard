@@ -1808,7 +1808,7 @@ test("Tasks lists active work newest first, with a status, meta and the right bu
   const page = await openPage("/tasks", tasksServer({ tasks: TASKS_LIST, sent: 0 }));
   await sleep(60);
   assert.strictEqual(page.state().title, "Tasks");
-  assert.match(page.text("subtitle"), /^4 tasks · 1 needs you$/);
+  assert.match(page.text("subtitle"), /^4 tasks · 1 needs you · planner codex$/);
   assert.deepStrictEqual(taskStatuses(page), ["To do", "Implementing", "Needs approval"]);
   const [todo, implementing, planned] = taskRows(page);
   assert.match(planned.textContent, /ai-ops-agent · plan revision 2 · from todo my_ai_agents/);
@@ -1829,7 +1829,7 @@ test("Start planning and Remove ask first and send only the task id", async () =
   let asked = confirmWith(page, false);
   buttonNamed(page, "Start planning").click();
   await sleep(30);
-  assert.match(asked[0], /Plan "improve ui" in ai-dashboard\? This uses AI tokens\./);
+  assert.match(asked[0], /Plan "improve ui" in ai-dashboard with Codex\? This uses AI tokens\./);
   assert.deepStrictEqual(page.posts, []);
   asked = confirmWith(page, true);
   buttonNamed(page, "Remove").click();
@@ -1854,7 +1854,7 @@ test("Make task in a todo opens a repository choice in Tasks and sends the todo 
   const asked = confirmWith(page, true);
   buttonNamed(page, "Make task and plan").click();
   await sleep(60);
-  assert.match(asked[0], /Make a task in ai-ops-agent and start planning it\?/);
+  assert.match(asked[0], /Make a task in ai-ops-agent and start planning it with Codex\?/);
   assert.deepStrictEqual(page.bodies, [{ action: "create_task", args: { repo: "ai-ops-agent", text: "Normal task", todo: `app:${"b".repeat(32)}`, images: "" } }]);
   state.actions = [{ id: "beef0001", action: "create_task", status: "done", message: "Task added as To do: a plan is waiting for approval or confirmation." }];
   await page.dom.window.eval("refresh()");
@@ -2203,7 +2203,7 @@ test("a confirmation for a long task title fits Telegram's 256-character popup",
   buttonNamed(page, "Start planning").click();
   await sleep(20);
   assert.ok(asked[0].length <= 256, `${asked[0].length} characters`);
-  assert.match(asked[0], /^Plan "improve coding logs view, .*…" in ai-dashboard\? This uses AI tokens\.$/);
+  assert.match(asked[0], /^Plan "improve coding logs view, .*…" in ai-dashboard with Codex\? This uses AI tokens\.$/);
 });
 
 test("a failed run can be retried with Claude or Codex and stays under Active", async () => {
@@ -2316,4 +2316,17 @@ test("Review a repo now asks first and sends worker_review", async () => {
   await sleep(60);
   assert.match(asked[0], /uses AI tokens/);
   assert.deepStrictEqual(page.bodies, [{ action: "worker_review", args: {} }]);
+});
+
+test("Start planning names the planner chosen in Setup, and so does the Tasks subtitle", async () => {
+  const tasks = [{ id: "0a1b2c3d", title: "token stats", repo: "ai-dashboard", stage: "todo" }];
+  const setup = { ...TASK_SETUP, planner: "codex", implementer: "claude" };
+  const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
+    json: async () => (name === "coding" ? { ...CODING, snapshot: { ...CODING.snapshot, tasks, setup } } : DATA[name]) }) });
+  await sleep(60);
+  assert.match(page.doc.body.textContent, /1 task · planner codex/);
+  const asked = confirmWith(page, false);
+  buttonNamed(page, "Start planning").click();
+  await sleep(20);
+  assert.strictEqual(asked[0], 'Plan "token stats" in ai-dashboard with Codex? This uses AI tokens.');
 });
