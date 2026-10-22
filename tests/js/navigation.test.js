@@ -2254,7 +2254,9 @@ test("a task shows autopilot and switches it on or off", async () => {
 
 const SECURITY_REPORT = { ok: true, checked_at: Date.now() / 1000 - 120, stats: {
   ssh: { available: true, failed: 1240, failed_ips: 312, accepted: 2, password_logins: 1,
-    top_attackers: [{ ip: "203.0.113.5", count: 410 }], top_users: [{ user: "root", count: 600 }] },
+    top_attackers: [{ ip: "203.0.113.5", count: 410 }], top_users: [{ user: "root", count: 600 }],
+    login_groups: [{ user: "roman", from: "192.0.2.10", method: "publickey", key: "ED25519 …ijklmnop", count: 18, last: Date.now() / 1000 - 60 },
+      { user: "deploy", from: "192.0.2.11", method: "password", key: "", count: 2, last: null }] },
   fail2ban: { installed: true, jails: [{ name: "sshd", banned_now: 7, banned_total: 145, failed_total: 900 }] },
   sessions: [{ user: "roman", tty: "pts/0", since: "2026-10-16 10:01", from: "192.0.2.10" }],
   ports: [{ proto: "tcp", port: 22, process: "sshd" }, { proto: "udp", port: 51820, process: "wg" }],
@@ -2277,6 +2279,9 @@ test("the Security card shows attacks, bans, sessions and what to fix", async ()
   assert.match(text, /Logged in nowroman from 192\.0\.2\.10/);
   assert.match(text, /Public ports22\/tcp sshd, 51820\/udp wg/);
   assert.match(text, /203\.0\.113\.5×410/);
+  assert.match(text, /Who logged in/);
+  assert.match(text, /roman from 192\.0\.2\.10×18 \(publickey, key ED25519 …ijklmnop\) · last \d/);
+  assert.match(text, /deploy from 192\.0\.2\.11×2 \(password\)/);
   assert.match(text, /🔴 SSH accepts passwords/);
   assert.match(text, /Fix: Set PasswordAuthentication no/);
 });

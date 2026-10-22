@@ -5,7 +5,7 @@ const path = require("node:path");
 const {JSDOM} = require("jsdom");
 function setup() {
   const dom = new JSDOM("<main></main>", {runScripts:"outside-only"});
-  for (const file of ["dom.js", "views/security.js", "views/tasks.js", "views/pm.js", "views/pm-toolbar.js"]) {
+  for (const file of ["dom.js", "views/security.js", "views/limits.js", "views/tasks.js", "views/pm.js", "views/pm-toolbar.js"]) {
     dom.window.eval(fs.readFileSync(path.join(__dirname,"../../ai_dashboard/static/js",file),"utf8"));
   }
   return dom;
@@ -15,26 +15,30 @@ test("security findings and attackers keep explicit open/closed choices through 
   const dom=setup(), w=dom.window, root=w.document.querySelector("main");
   const finding=port=>({title:`port ${port}/tcp is public`,level:"low",detail:"Before",fix:"Check it"});
   const render=(ports,failed)=>{
-    const nodes=[...w.securityStatRows({ssh:{available:true,failed,top_attackers:[{ip:"192.0.2.1",count:failed}]}}),...ports.map(p=>w.securityFinding({...finding(p),detail:`Updated ${failed}`}))];
+    const nodes=[...w.securityStatRows({ssh:{available:true,failed,top_attackers:[{ip:"192.0.2.1",count:failed}],login_groups:[{user:"roman",from:"192.0.2.10",method:"publickey",key:"ED25519 …ijklmnop",count:failed,last:1}]}}),...ports.map(p=>w.securityFinding({...finding(p),detail:`Updated ${failed}`}))];
     root.replaceChildren(...nodes);
   };
   render([2398,8080],1);
-  root.querySelector(".security-details").open=true;
+  root.querySelector(".security-details:not(.security-logins)").open=true;
+  root.querySelector(".security-logins").open=true;
   root.querySelector(".security-finding").open=true;
   render([8080,2398,9000],2); // before toggle events; order changes
   await tick(dom);
-  assert.equal(root.querySelector(".security-details").open,true);
+  assert.equal(root.querySelector(".security-details:not(.security-logins)").open,true);
+  assert.equal(root.querySelector(".security-logins").open,true);
   const findings=root.querySelectorAll(".security-finding");
   assert.equal(findings[0].open,false);
   assert.equal(findings[1].open,true);
   assert.equal(findings[2].open,false);
   assert.match(findings[1].textContent,/Updated 2/);
   findings[1].open=false;
-  root.querySelector(".security-details").open=false;
+  root.querySelector(".security-details:not(.security-logins)").open=false;
+  root.querySelector(".security-logins").open=false;
   render([2398,8080],3);
   await tick(dom);
-  assert.equal(root.querySelector(".security-details").open,false);
+  assert.equal(root.querySelector(".security-details:not(.security-logins)").open,false);
   assert.equal(root.querySelector(".security-finding").open,false);
+  assert.equal(root.querySelector(".security-logins").open,false);
   dom.window.close();
 });
 test("PM about and task evidence retain expansion without sharing state with other tasks", async () => {

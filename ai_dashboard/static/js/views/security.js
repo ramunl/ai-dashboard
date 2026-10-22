@@ -33,6 +33,17 @@ function securityStatRows(stats) {
   rows.push(row("Firewall", stats.firewall || "?"));
   const ports = stats.ports || [];
   if (ports.length) rows.push(row("Public ports", ports.map((item) => `${item.port}/${item.proto} ${item.process}`).join(", ")));
+  const logins = ssh.login_groups || [];
+  if (logins.length) {
+    const details = rememberDetails(el("details", null, "security-details security-logins"), ["security", "logins"]);
+    details.append(el("summary", "Who logged in"));
+    for (const item of logins) {
+      const when = typeof item.last === "number" ? ` · last ${clockTime(item.last)}` : "";
+      const key = item.key ? `, key ${item.key}` : "";
+      details.append(row(`${item.user} from ${item.from}`, `×${securityCount(item.count)} (${item.method}${key})${when}`));
+    }
+    rows.push(details);
+  }
   const attackers = ssh.top_attackers || [];
   if (attackers.length) {
     const details = rememberDetails(el("details", null, "security-details"), ["security", "attackers"]);
