@@ -2270,14 +2270,17 @@ test("the Security card shows attacks, bans, sessions and what to fix", async ()
   const page = await openPage("/ops", securityOps({ report: SECURITY_REPORT, running: false }));
   await sleep(60);
   const text = securityCardOf(page).textContent;
-  assert.match(text, /1 to fix/);
+  assert.match(text, /1 configuration issue\(s\)/);
   assert.match(text, /checked 2m ago|checked 2 min/);
   assert.match(text, /Failed SSH logins, 24 h1,240 from 312 IPs/);
   assert.match(text, /Successful logins, 24 h2 \(1 by password\)/);
   assert.match(text, /Banned now7/);
   assert.match(text, /Banned in total145/);
   assert.match(text, /Logged in nowroman from 192\.0\.2\.10/);
-  assert.match(text, /Public ports22\/tcp sshd, 51820\/udp wg/);
+  assert.match(text, /Unreviewed exposure/);
+  assert.match(text, /22\/tcp sshd/);
+  assert.match(text, /51820\/udp wg/);
+  assert.match(text, /Unfamiliar identity — review/);
   assert.match(text, /203\.0\.113\.5×410/);
   assert.match(text, /Who logged in/);
   assert.match(text, /roman from 192\.0\.2\.10×18 \(publickey, key ED25519 …ijklmnop\) · last \d/);
@@ -2334,4 +2337,30 @@ test("Start planning names the planner chosen in Setup, and so does the Tasks su
   buttonNamed(page, "Start planning").click();
   await sleep(20);
   assert.strictEqual(asked[0], 'Plan "token stats" in ai-dashboard with Codex? This uses AI tokens.');
+});
+
+
+test("security reviews separate port exposure from configuration and can be undone", async () => {
+  const report = { ...SECURITY_REPORT, findings: [...SECURITY_REPORT.findings,
+    { level: "low", title: "port 51820/udp is public (wg)", detail: "Review it", fix: "Close it" }] };
+  const page = await openPage("/ops", securityOps({ report, running: false }));
+  await sleep(60);
+  let card = securityCardOf(page);
+  assert.match(card.textContent, /1 configuration issue\(s\) · 2 service\(s\) to review · 2 login identity/);
+  assert.doesNotMatch(card.textContent, /Fix: Close it/);
+  const buttons = [...card.querySelectorAll("button")].filter((item) => item.textContent === "Mark expected");
+  buttons[0].click();
+  await sleep(100);
+  card = securityCardOf(page);
+  assert.match(card.textContent, /1 login identity\/identities to review/);
+  assert.match(card.textContent, /Expected identity/);
+  const portRow = [...card.querySelectorAll(".row")].find((item) => item.textContent.startsWith("22/tcp sshd"));
+  portRow.querySelector("button").click();
+  await sleep(100);
+  card = securityCardOf(page);
+  assert.match(card.textContent, /Expected listening services/);
+  assert.match(card.textContent, /1 service\(s\) to review/);
+  [...card.querySelectorAll("button")].find((item) => item.textContent === "Review again").click();
+  await sleep(100);
+  assert.match(securityCardOf(page).textContent, /2 login identity\/identities to review/);
 });

@@ -509,3 +509,12 @@ refreshes on demand while Ops is open and saves its last result across restarts.
 body/options, one request in flight. Missing sources show unavailable, not zero;
 old readings and sampling gaps are labeled. These counts cannot be added into
 an exact total of people. No credentials or browsing URLs are exposed.
+
+The Security card separates rejected SSH attempts and bans, successful login
+identities, listening services, and configuration issues. Use **Mark expected**
+to acknowledge a service (protocol, port and process) or login identity (user,
+address, method and displayed key); **Review again** undoes it. These review
+notes stay in this browser and reset when its storage is cleared. They do not
+change firewall rules or authenticate a key: the audit supplies a shortened
+key label. A listener is not proof of internet reachability, and expected
+entries are not proof that a server is uncompromised.
