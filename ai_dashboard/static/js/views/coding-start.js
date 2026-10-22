@@ -10,7 +10,7 @@ const WORK_KINDS = [
   { kind: "bugfix", label: "Bugfix", verb: "Prepare a bugfix for" },
 ];
 let workDraft = "";  // kept across refreshes until the agent accepts it
-let workImages = [];  // { file, url } for the draft; sent with Plan or Implement
+let workImages = [];  // original Files for the draft; sent with Plan or Implement
 let workImagesSending = false;
 let workRepo = "";  // the active project: where work with images becomes a task
 
@@ -55,7 +55,6 @@ function startWithImages(choice, text, key, button) {
     workImagesSending = false;
     requestAction(key, "create_task", { repo: workRepo, text, todo: "-", images: ids.join(",") }, (result) => {
       workDraft = "";
-      for (const image of workImages) URL.revokeObjectURL(image.url);
       workImages = [];
       actionNotice = { text: `${result.message} It is in Tasks; the plan arrives in the bot chat.`, until: Date.now() + NOTICE_MS };
     });
@@ -92,11 +91,6 @@ function startButton(choice) {
   return button;
 }
 
-function addWorkImages(files) {
-  addImagesTo(workImages, files);
-  refresh();
-}
-
 function startWorkRows() {
   const draft = el("textarea", null, "work-draft");
   draft.placeholder = "Describe a feature or a bug…";
@@ -105,16 +99,6 @@ function startWorkRows() {
   draft.disabled = hasPendingActions() || isWorkBusy;
   draft.setAttribute("aria-label", "New work");
   draft.addEventListener("input", () => { workDraft = draft.value; });
-  // A screenshot pasted into the box is added as an image; text pastes as usual.
-  draft.addEventListener("paste", (event) => {
-    const files = [...(event.clipboardData?.files || [])].filter((file) => file.type.startsWith("image/"));
-    if (!files.length) return;
-    event.preventDefault();
-    addWorkImages(files);
-  });
   const disabled = hasPendingActions() || isWorkBusy || workImagesSending;
-  const images = el("div", null, "task-images work-images");
-  images.append(imagePicker(disabled, addWorkImages), ...workImages.map((image, index) => imagePreview(image, index, workImages)));
-  if (workImages.length) images.append(el("div", "With images, Plan or Implement makes a task in the active project.", "card-note"));
-  return [draft, images, workActions(...WORK_KINDS.map(startButton))];
+  return [draft, ...codingWorkerAttachments(draft, disabled), workActions(...WORK_KINDS.map(startButton))];
 }
