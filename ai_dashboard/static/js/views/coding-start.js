@@ -23,71 +23,78 @@ function startQuestion(choice, text) {
   return `${choice.verb} "${shown}"? This uses AI tokens; the result arrives in the bot chat.`;
 }
 
-// Work with images goes as a task in the active project: tasks carry images.
-function startWithImages(choice, text, key, button) {
-  if (choice.kind === "bugfix") {
-    showAlert("Images go with Plan or Implement; remove them for a bugfix.");
-    return;
+// Keep confirmation, uploads and the HTTP request locked across polling renders.
+let workStartKey = "";
+let workStartStage = "";
+
+function setWorkStartStage(stage) {
+  workStartStage = stage;
+  for (const button of document.querySelectorAll("[data-work-start]")) {
+    button.disabled = true;
+    if (button.dataset.workStart === workStartKey) button.textContent = stage;
   }
-  if (!workRepo) {
-    showAlert("No active project to plan in.");
-    return;
-  }
-  const count = workImages.length;
-  const shown = text.length > 120 ? `${text.slice(0, 120)}…` : text;
-  button.disabled = true;
-  askConfirmation(`${choice.verb} "${shown}" with ${count} image${count === 1 ? "" : "s"}${plannerText()}? It becomes a task in ${workRepo}; this uses AI tokens.`, async (isConfirmed) => {
-    if (!isConfirmed) {
-      button.disabled = false;
-      return;
-    }
-    workImagesSending = true;
-    refresh();
-    let ids;
-    try {
-      ids = await uploadImages([...workImages]);
-    } catch (error) {
-      workImagesSending = false;
-      actionNotice = { text: `Image not sent: ${error.message}`, until: Date.now() + NOTICE_MS };
-      refresh();
-      return;
-    }
-    workImagesSending = false;
-    requestAction(key, "create_task", { repo: workRepo, text, todo: "-", images: ids.join(",") }, (result) => {
-      workDraft = "";
-      workImages = [];
-      actionNotice = { text: `${result.message} It is in Tasks; the plan arrives in the bot chat.`, until: Date.now() + NOTICE_MS };
-    });
-  });
+  for (const control of document.querySelectorAll(".work-draft, .work-images input, .work-images button, .attachment-preview button")) control.disabled = true;
+  refresh();
 }
 
 function startButton(choice) {
   const key = `work:start:${choice.kind}`;
   const className = choice.kind === "plan" ? "row-button" : "row-button work-secondary";
-  const button = workButton(choice.label, key, className, (button) => {
+  const button = workButton(choice.label, key, className, () => {
+    if (workStartKey || hasPendingActions()) return;
     const text = workText();
     if (!text) {
       showAlert("Describe the feature or the bug first.");
       return;
     }
-    if (workImages.length) {
-      startWithImages(choice, text, key, button);
+    const picked = [...workImages];
+    const repo = workRepo;
+    if (picked.length && choice.kind === "bugfix") {
+      showAlert("Images go with Plan or Implement; remove them for a bugfix.");
       return;
     }
-    button.disabled = true;
-    askConfirmation(startQuestion(choice, text), (isConfirmed) => {
-      if (!isConfirmed) {
-        button.disabled = false;
-        return;
+    if (picked.length && !repo) {
+      showAlert("No active project to plan in.");
+      return;
+    }
+    workStartKey = key;
+    setWorkStartStage("Confirming…");
+    const shown = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+    const question = picked.length
+      ? `${choice.verb} "${shown}" with ${picked.length} image${picked.length === 1 ? "" : "s"}${plannerText()}? It becomes a task in ${repo}; this uses AI tokens.`
+      : startQuestion(choice, text);
+    askConfirmation(question, async (isConfirmed) => {
+      try {
+        if (!isConfirmed) return;
+        let ids = [];
+        if (picked.length) {
+          workImagesSending = true;
+          setWorkStartStage("Sending images…");
+          try { ids = await uploadImages(picked); }
+          catch (error) {
+            actionNotice = { text: `Image not sent: ${error.message}`, until: Date.now() + NOTICE_MS };
+            return;
+          }
+        }
+        setWorkStartStage("Sending…");
+        await requestAction(key, picked.length ? "create_task" : "start_work",
+          picked.length ? { repo, text, todo: "-", images: ids.join(",") } : { kind: choice.kind, text },
+          (result) => {
+            workDraft = "";
+            workImages = [];
+            actionNotice = { text: `${result.message} ${picked.length ? "It is in Tasks; the plan arrives in the bot chat." : "The result will arrive in the bot chat."}`, until: Date.now() + NOTICE_MS };
+          });
+      } finally {
+        workImagesSending = false;
+        workStartKey = "";
+        workStartStage = "";
+        refresh();
       }
-      requestAction(key, "start_work", { kind: choice.kind, text }, (result) => {
-        workDraft = "";
-        actionNotice = { text: `${result.message} The result will arrive in the bot chat.`, until: Date.now() + NOTICE_MS };
-      });
     });
   });
-  button.disabled = button.disabled || workImagesSending;
-  if (workImagesSending && choice.kind !== "bugfix") button.textContent = "Sending images…";
+  button.dataset.workStart = key;
+  button.disabled = button.disabled || Boolean(workStartKey);
+  if (workStartKey === key) button.textContent = workStartStage;
   return button;
 }
 
@@ -96,9 +103,9 @@ function startWorkRows() {
   draft.placeholder = "Describe a feature or a bug…";
   draft.maxLength = WORK_TEXT_LIMIT;
   draft.value = workDraft;
-  draft.disabled = hasPendingActions() || isWorkBusy;
+  draft.disabled = hasPendingActions() || isWorkBusy || Boolean(workStartKey);
   draft.setAttribute("aria-label", "New work");
   draft.addEventListener("input", () => { workDraft = draft.value; });
-  const disabled = hasPendingActions() || isWorkBusy || workImagesSending;
+  const disabled = hasPendingActions() || isWorkBusy || Boolean(workStartKey);
   return [draft, ...codingWorkerAttachments(draft, disabled), workActions(...WORK_KINDS.map(startButton))];
 }

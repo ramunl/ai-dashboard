@@ -6,25 +6,31 @@ const NOTICE_MS = 30 * 1000;
 const FINAL_STATUSES = ["done", "failed", "expired", "rejected"];
 
 const pendingActions = new Map(); // request id -> { key, startedAt }
+const submittingActions = new Set();
 let actionNotice = null; // { text, until } shown in the alert box
 
 // onDone(result), if given, runs once the agent reports the action as done.
 async function requestAction(key, action, args, onDone = null) {
+  if (hasPendingActions()) return;
+  submittingActions.add(key);
+  refresh();
   try {
     const answer = await postAction("coding/actions", tg ? tg.initData : "", { action, args });
     pendingActions.set(answer.id, { key, startedAt: Date.now(), onDone });
   } catch (error) {
     actionNotice = { text: `Not sent: ${error.message}`, until: Date.now() + NOTICE_MS };
+  } finally {
+    submittingActions.delete(key);
   }
   refresh();
 }
 
 function isActionPending(key) {
-  return [...pendingActions.values()].some((pending) => pending.key === key);
+  return submittingActions.has(key) || [...pendingActions.values()].some((pending) => pending.key === key);
 }
 
 function hasPendingActions() {
-  return pendingActions.size > 0;
+  return submittingActions.size > 0 || pendingActions.size > 0;
 }
 
 // Match pending requests with the agent's results; remember what went wrong.

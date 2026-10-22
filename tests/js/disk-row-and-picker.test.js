@@ -343,3 +343,52 @@ test("Work card: without images, Plan still sends start_work", async () => {
   await sleep(60);
   assert.deepStrictEqual(page.bodies, [{ action: "start_work", args: { kind: "plan", text: "The logs card jumps" } }]);
 });
+
+test("Work locks every start button during upload and slow POST, then waits for the agent", async () => {
+  let uploadDone, postDone;
+  const page = await openWork({ onPost: (api) => new Promise((resolve) => {
+    if (api === "/api/coding/images") uploadDone = resolve;
+    else postDone = resolve;
+  }) });
+  const input = workCardOf(page).querySelector('input[type="file"]');
+  Object.defineProperty(input, "files", { configurable: true, value: [makeFile(page, "shot.png", "image/png")] });
+  input.dispatchEvent(new page.dom.window.Event("change"));
+  confirmWith(page, true);
+  const implement = buttonNamed(page, "Implement");
+  implement.click();
+  implement.click();
+  assert.match(implement.textContent, /Sending images/);
+  assert.ok(buttonNamed(page, "Plan").disabled);
+  assert.ok(workCardOf(page).querySelector("textarea").disabled);
+  await sleep(30);
+  assert.ok([...workCardOf(page).querySelectorAll("button")].every((button) => button.disabled));
+  uploadDone(answer({ id: "0000000000000001" }, 201));
+  await sleep(30);
+  const starts = [...workCardOf(page).querySelectorAll("[data-work-start]")];
+  assert.ok(starts.every((button) => button.disabled));
+  starts.forEach((button) => button.click());
+  assert.strictEqual(page.posts.filter((api) => api === "/api/coding/actions").length, 1);
+  postDone(answer({ id: "beef0030" }, 202));
+  await sleep(50);
+  assert.ok([...workCardOf(page).querySelectorAll("[data-work-start]")].every((button) => button.disabled));
+  page.dom.window.eval('settleActions({actions:[{id:"beef0030",status:"done",message:"Task created"}]}); refresh();');
+  await sleep(50);
+  assert.strictEqual(workCardOf(page).querySelector("textarea").value, "");
+  assert.strictEqual(buttonNamed(page, "Plan").disabled, false);
+  assert.deepStrictEqual(page.errors, []);
+});
+
+test("Work cancellation and send failure unlock the draft without losing it", async () => {
+  const page = await openWork({ onPost: async () => answer({ error: "offline" }, 503) });
+  confirmWith(page, false);
+  buttonNamed(page, "Plan").click();
+  await sleep(50);
+  assert.strictEqual(buttonNamed(page, "Implement").disabled, false);
+  confirmWith(page, true);
+  buttonNamed(page, "Implement").click();
+  assert.ok(buttonNamed(page, "Plan").disabled);
+  await sleep(60);
+  assert.strictEqual(buttonNamed(page, "Plan").disabled, false);
+  assert.strictEqual(workCardOf(page).querySelector("textarea").value, "The logs card jumps");
+  assert.match(alertText(page), /Not sent/);
+});

@@ -3,6 +3,7 @@
 function codingWorkerAttachments(draft, disabled) {
   const preview = attachmentPreview(workImages, disabled);
   const add = (files) => {
+    if (workStartKey || hasPendingActions()) return;
     addImagesTo(workImages, files, false);
     preview.render();
   };
