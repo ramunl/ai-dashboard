@@ -30,7 +30,7 @@ function addImages(files) {
 }
 
 // Adds the files that fit to images (a draft's list), up to IMAGE_LIMIT.
-function addImagesTo(images, files) {
+function addImagesTo(images, files, createPreviewUrl = true) {
   for (const file of files) {
     if (images.length >= IMAGE_LIMIT) {
       actionNotice = { text: `A task takes up to ${IMAGE_LIMIT} images.`, until: Date.now() + NOTICE_MS };
@@ -41,7 +41,7 @@ function addImagesTo(images, files) {
     } else if (file.size > IMAGE_MAX_BYTES) {
       actionNotice = { text: `${file.name} is larger than 5 MB.`, until: Date.now() + NOTICE_MS };
     } else {
-      images.push({ file, url: URL.createObjectURL(file) });
+      images.push({ file, url: createPreviewUrl ? URL.createObjectURL(file) : null });
     }
   }
 }

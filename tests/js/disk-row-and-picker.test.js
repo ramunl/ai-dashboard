@@ -304,7 +304,7 @@ test("Work card: a picked image makes Plan a task in the active project with it"
   Object.defineProperty(input, "files", { configurable: true, value: [makeFile(page, "shot.png", "image/png")] });
   input.dispatchEvent(new page.dom.window.Event("change"));
   await sleep(40);
-  assert.strictEqual(workCardOf(page).querySelectorAll("figure.task-image").length, 1);
+  assert.strictEqual(workCardOf(page).querySelectorAll("figure.attachment-thumb").length, 1);
   assert.match(workCardOf(page).textContent, /makes a task in the active project/);
   const asked = confirmWith(page, true);
   buttonNamed(page, "Plan").click();
@@ -324,7 +324,7 @@ test("Work card: a pasted screenshot is added; Bugfix with images explains inste
   box.dispatchEvent(paste);
   await sleep(40);
   assert.ok(paste.defaultPrevented);
-  assert.strictEqual(workCardOf(page).querySelectorAll("figure.task-image").length, 1);
+  assert.strictEqual(workCardOf(page).querySelectorAll("figure.attachment-thumb").length, 1);
   buttonNamed(page, "Bugfix").click();
   await sleep(20);
   assert.match(alertText(page), /Images go with Plan or Implement/);
