@@ -36,6 +36,14 @@ def _fake_cleanup(run_delay: float = 0.0, report: str | None = None) -> str:
     return str(path)
 
 
+def _script(body: str) -> str:
+    """A stand-in command that runs ``body``: exit codes, output and signals."""
+    path = Path(tempfile.mkdtemp()) / "fake-command"
+    path.write_text("#!/bin/sh\n" + body)
+    path.chmod(0o755)
+    return str(path)
+
+
 def _auth(token: str = OPS_TOKEN, user_id: int = OWNER) -> dict:
     init = sign_init_data(
         {"auth_date": str(int(time.time())), "user": json.dumps({"id": user_id})}, token
@@ -63,6 +71,54 @@ class InvokeTests(unittest.IsolatedAsyncioTestCase):
     async def test_timeout_kills_the_process(self) -> None:
         result = await invoke(_fake_cleanup(run_delay=5), "run", 0.3)
         self.assertIn("timed out", result["error"])
+        self.assertIs(result["timed_out"], True)
+
+    async def test_nonzero_exit_is_a_failure_even_with_json_output(self) -> None:
+        path = _script('echo \'{"ok": true, "remaining": 4}\'\nexit 1\n')
+        result = await invoke(path, "upgrade", 10, "ai-packages")
+        self.assertIs(result["ok"], False)
+        self.assertEqual(result["exit_code"], 1)
+        self.assertEqual(result["remaining"], 4)  # the command's fields are kept
+        self.assertIn("ai-packages upgrade failed (exit code 1)", result["error"])
+
+    async def test_empty_output_names_the_exit_code(self) -> None:
+        result = await invoke(_script("exit 3\n"), "upgrade", 10, "ai-packages")
+        self.assertEqual(
+            result["error"], "ai-packages upgrade failed (exit code 3): no output"
+        )
+        self.assertEqual(result["exit_code"], 3)
+        self.assertIsNone(result["signal"])
+        self.assertNotIn("diagnostics", result)
+
+    async def test_a_signal_is_named_when_there_is_no_output(self) -> None:
+        result = await invoke(_script("kill -9 $$\n"), "upgrade", 10, "ai-packages")
+        self.assertIs(result["ok"], False)
+        self.assertEqual(result["signal"], "SIGKILL")
+        self.assertIsNone(result["exit_code"])
+        self.assertIn("killed by SIGKILL", result["error"])
+
+    async def test_a_signal_during_json_output_is_still_a_failure(self) -> None:
+        path = _script("echo '{\"ok\": true}'\nkill -TERM $$\n")
+        result = await invoke(path, "upgrade", 10, "ai-packages")
+        self.assertIs(result["ok"], False)
+        self.assertEqual(result["signal"], "SIGTERM")
+
+    async def test_diagnostics_are_bounded(self) -> None:
+        long_line = "E" * 5000
+        path = _script(
+            f"i=0; while [ $i -lt 9 ]; do echo '{long_line}' >&2; i=$((i+1)); done\n"
+            "exit 2\n"
+        )
+        result = await invoke(path, "upgrade", 10, "ai-packages")
+        self.assertEqual(len(result["diagnostics"]), maintenance.DIAGNOSTIC_LINES)
+        for line in result["diagnostics"]:
+            self.assertLessEqual(len(line), maintenance.DIAGNOSTIC_CHARS)
+        self.assertLess(len(result["error"]), maintenance.DIAGNOSTIC_CHARS + 80)
+
+    async def test_successful_json_passes_through_unchanged(self) -> None:
+        path = _script('echo \'{"ok": true, "upgraded": 2}\'\n')
+        result = await invoke(path, "upgrade", 10, "ai-packages")
+        self.assertEqual(result, {"ok": True, "upgraded": 2})
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):

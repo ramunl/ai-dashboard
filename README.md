@@ -445,13 +445,19 @@ needs the owner's signed Telegram data, and the agent side validates again.
 - **Kept across restarts**: the last disk report and cleanup, package check
   and upgrade, and AI tool check and update are saved in
   `<state dir>/ops-checks.json`, so a restart or deploy of the dashboard no
-  longer shows "Not checked". Only finished results are saved, never
-  "running"; an old disk report says when it was measured until a new one
-  arrives.
+  longer shows "Not checked". Finished results are saved; an upgrade still in
+  flight is saved only so the next start can mark its outcome unknown. An old
+  disk report says when it was measured until a new one arrives.
 - **Updates**: system packages, via the ops agent's `ai-packages`. *Check for
   updates* refreshes the package indexes and lists what is pending (security
   updates counted separately); *Upgrade* asks first, then installs. Nothing
   runs on its own, one run at a time, and a required reboot is shown.
+  An upgrade ends as completed, failed (with the exit code or signal and the
+  command's last output) or unknown (timed out, or the dashboard stopped
+  during it). After any upgrade the counts are re-read with the read-only
+  `status` mode; counts that cannot be proven newer than the upgrade are
+  marked cached, and cached counts never offer an upgrade until a check runs.
+  A reboot is refused while an upgrade's outcome is unknown.
 - **AI tools**: Codex and Claude Code, via the ops agent's `ai-tools`. *Check
   versions* shows the installed and the published version of each; a tool
   with a newer version gets an **Update** button (confirmation first). Only a
