@@ -231,6 +231,19 @@ class CheckTests(unittest.TestCase):
         self.assertTrue(other.exists())
         self.assertEqual(len(list(inbox.glob("*.json"))), 1)
 
+    def test_submit_puts_images_back_when_the_request_fails(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        image = tmp / "0123456789abcdef.png"
+        image.write_bytes(b"x")
+        inbox = tmp / "inbox"
+        args = {"repo": "repo", "text": "x", "todo": "-", "images": "id"}
+        with patch.object(os, "replace", side_effect=OSError):
+            with self.assertRaises(OSError):
+                submit(inbox, "create_task", args, "coding", [image])
+        self.assertEqual(image.read_bytes(), b"x")
+        self.assertEqual(list(inbox.glob("*.json")), [])
+        self.assertEqual(list((inbox / "uploads").iterdir()), [])
+
     def test_staged_images_resolve_ids_in_order_or_not_at_all(self) -> None:
         directory = Path(tempfile.mkdtemp())
         one, two = "0123456789abcdef", "fedcba9876543210"
