@@ -189,7 +189,7 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(saved["requested_by"], "coding")
         self.assertRegex(saved["id"], r"^[0-9a-f]{16}$")
 
-    def test_submit_moves_images_in_before_the_request(self) -> None:
+    def test_submit_moves_images_into_the_request_upload_folder(self) -> None:
         tmp = Path(tempfile.mkdtemp())
         image = tmp / "0123456789abcdef.png"
         image.write_bytes(b"not parsed")
@@ -198,12 +198,38 @@ class CheckTests(unittest.TestCase):
         request_id = submit(inbox, "create_task", args, "coding", [image])
         self.assertFalse(image.exists())
         self.assertEqual(
-            sorted(f.name for f in inbox.iterdir()),
-            [f"{request_id}-1.png", f"{request_id}.json"],
+            sorted(f.name for f in inbox.iterdir()), [f"{request_id}.json", "uploads"]
         )
+        folder = inbox / "uploads" / request_id
+        self.assertEqual([f.name for f in folder.iterdir()], ["1.png"])
+        self.assertEqual((folder / "1.png").read_bytes(), b"not parsed")
         saved = json.loads((inbox / f"{request_id}.json").read_text())
-        self.assertEqual(saved["args"]["images"], "1")
-        self.assertEqual((inbox / f"{request_id}-1.png").read_bytes(), b"not parsed")
+        self.assertEqual(saved["args"]["images"], [{"name": "1.png"}])
+
+    def test_submit_sends_no_images_key_without_images(self) -> None:
+        inbox = Path(tempfile.mkdtemp()) / "inbox"
+        args = {"repo": "repo", "text": "x", "todo": "-", "images": ""}
+        request_id = submit(inbox, "create_task", args, "coding")
+        saved = json.loads((inbox / f"{request_id}.json").read_text())
+        self.assertEqual(saved["args"], {"repo": "repo", "text": "x", "todo": "-"})
+        self.assertFalse((inbox / "uploads").exists())
+
+    def test_submit_waits_while_the_agent_has_four_batches(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        inbox = tmp / "inbox"
+        for number in range(4):
+            (inbox / "uploads" / f"{number:016x}").mkdir(parents=True)
+        (inbox / "uploads" / f"{3:016x}" / ".claimed").write_text("")
+        image = tmp / "0123456789abcdef.png"
+        image.write_bytes(b"x")
+        args = {"repo": "repo", "text": "x", "todo": "-", "images": "id"}
+        submit(inbox, "create_task", args, "coding", [image])  # 3 waiting: fine
+        other = tmp / "fedcba9876543210.png"
+        other.write_bytes(b"y")
+        with self.assertRaisesRegex(RequestError, "not taken the last images"):
+            submit(inbox, "create_task", args, "coding", [other])
+        self.assertTrue(other.exists())
+        self.assertEqual(len(list(inbox.glob("*.json"))), 1)
 
     def test_staged_images_resolve_ids_in_order_or_not_at_all(self) -> None:
         directory = Path(tempfile.mkdtemp())

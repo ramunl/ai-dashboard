@@ -725,10 +725,11 @@ class ImageUploadTests(unittest.IsolatedAsyncioTestCase):
         request_id = (await response.json())["id"]
         saved = json.loads((self.inbox / f"{request_id}.json").read_text())
         self.assertEqual(
-            saved["args"], {"repo": "repo", "text": "x", "todo": "-", "images": "2"}
+            saved["args"]["images"], [{"name": "1.png"}, {"name": "2.jpg"}]
         )
-        self.assertEqual((self.inbox / f"{request_id}-1.png").read_bytes(), b"\x89PNG")
-        self.assertEqual((self.inbox / f"{request_id}-2.jpg").read_bytes(), b"jpg")
+        folder = self.inbox / "uploads" / request_id
+        self.assertEqual((folder / "1.png").read_bytes(), b"\x89PNG")
+        self.assertEqual((folder / "2.jpg").read_bytes(), b"jpg")
         self.assertEqual(self.staged(), [])
 
     async def test_a_task_names_only_images_that_are_still_staged(self) -> None:
@@ -763,9 +764,9 @@ class ImageUploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.staged(), [])
         self.assertEqual(len(list(self.inbox.glob("*.json"))), 1)
 
-    async def test_a_task_without_images_says_zero(self) -> None:
+    async def test_a_task_without_images_sends_no_images(self) -> None:
         response = await self.post_task("")
         self.assertEqual(response.status, 202)
         request_id = (await response.json())["id"]
         saved = json.loads((self.inbox / f"{request_id}.json").read_text())
-        self.assertEqual(saved["args"]["images"], "0")
+        self.assertNotIn("images", saved["args"])

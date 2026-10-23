@@ -46,12 +46,16 @@ IMAGE_TYPES = {
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
+# The agent's per-request upload folders (ai_agent.image_uploads): inbox/uploads/
+# <request id>/<name>. It keeps at most this many unclaimed at once.
+UPLOADS_DIR = "uploads"
+UPLOAD_BATCHES = 4
 # A staged image no task has taken within this long is deleted.
 STAGED_AFTER_SECONDS = 3600
 
 # Mirrors ai_agent.inbox.ACTIONS in the coding agent. The dashboard sends the
-# staged ids in "images"; submit() replaces them with the count the agent gets,
-# and moves the image files into the inbox beside the request.
+# staged ids in "images"; submit() moves the files into the request's upload
+# folder and replaces the ids with their names, as the agent expects.
 ACTIONS: dict[str, dict] = {
     "use_project": {"name": _NAME},
     "add_repository": {"repository": _REPOSITORY},
@@ -166,12 +170,17 @@ def submit(
 ) -> str:
     """Drop the request in the agent's inbox atomically; return its id.
 
-    Images go in first, as <id>-<n><suffix> beside the request, so the agent
-    never reads a request whose images are still on their way.
+    Images go in first, as uploads/<id>/<n><suffix>, and the request lists
+    their names ({"name": ...}), so the agent never reads a request whose
+    images are still on their way. A task without images sends no "images".
     """
     request_id = secrets.token_hex(8)
-    if "images" in args:
-        args = {**args, "images": str(len(images))}
+    args = {key: value for key, value in args.items() if key != "images"}
+    if images:
+        args["images"] = [
+            {"name": f"{number}{image.suffix}"}
+            for number, image in enumerate(images, 1)
+        ]
     payload = {
         "id": request_id,
         "action": action,
@@ -180,11 +189,14 @@ def submit(
         "requested_by": requested_by,
     }
     inbox.mkdir(parents=True, exist_ok=True)
+    folder = inbox / UPLOADS_DIR / request_id
     moved: list[tuple[Path, Path]] = []
     try:
+        if images:
+            _make_upload_folder(inbox, folder)
         with _MOVE_LOCK:
             for number, image in enumerate(images, 1):
-                target = inbox / f"{request_id}-{number}{image.suffix}"
+                target = folder / f"{number}{image.suffix}"
                 if not image.is_file():
                     raise _gone(image)
                 try:
@@ -207,8 +219,31 @@ def submit(
         # staged images as they were and a retry sees the same state.
         for image, target in moved:
             shutil.move(target, image)
+        shutil.rmtree(folder, ignore_errors=True)
         raise
     return request_id
+
+
+def _make_upload_folder(inbox: Path, folder: Path) -> None:
+    """Create uploads/<id>/, refusing when the agent's batch budget is used up.
+
+    The agent deletes all but the newest UPLOAD_BATCHES unclaimed folders, so
+    a fifth one at once would lose a batch; ask to wait instead.
+    """
+    root = inbox / UPLOADS_DIR
+    root.mkdir(mode=0o700, exist_ok=True)
+    if root.is_symlink():
+        raise RequestError("the agent's upload folder is not a folder")
+    waiting = [
+        path
+        for path in root.iterdir()
+        if path.is_dir() and not (path / ".claimed").exists()
+    ]
+    if len(waiting) >= UPLOAD_BATCHES:
+        raise RequestError(
+            "the coding agent has not taken the last images yet; try again shortly"
+        )
+    folder.mkdir(mode=0o700)
 
 
 def _gone(image: Path) -> RequestError:
