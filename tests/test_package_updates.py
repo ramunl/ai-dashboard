@@ -188,7 +188,9 @@ class UpgradeOutcomeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.report["total"], 9)
         self.assertTrue(service.report["stale"])
 
-    async def test_status_settles_the_counts_when_the_upgrade_says_nothing(self) -> None:
+    async def test_status_settles_the_counts_when_the_upgrade_says_nothing(
+        self,
+    ) -> None:
         status = f"echo '{STATUS}'"
         command, calls = _fake_packages(upgrade="echo '{\"ok\": true}'", status=status)
         service = await self._upgrade(command)

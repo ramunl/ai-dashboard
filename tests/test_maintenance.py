@@ -98,7 +98,7 @@ class InvokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("killed by SIGKILL", result["error"])
 
     async def test_a_signal_during_json_output_is_still_a_failure(self) -> None:
-        path = _script('echo \'{"ok": true}\'\nkill -TERM $$\n')
+        path = _script("echo '{\"ok\": true}'\nkill -TERM $$\n")
         result = await invoke(path, "upgrade", 10, "ai-packages")
         self.assertIs(result["ok"], False)
         self.assertEqual(result["signal"], "SIGTERM")
@@ -116,7 +116,7 @@ class InvokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(result["error"]), maintenance.DIAGNOSTIC_CHARS + 80)
 
     async def test_successful_json_passes_through_unchanged(self) -> None:
-        path = _script("echo '{\"ok\": true, \"upgraded\": 2}'\n")
+        path = _script('echo \'{"ok": true, "upgraded": 2}\'\n')
         result = await invoke(path, "upgrade", 10, "ai-packages")
         self.assertEqual(result, {"ok": True, "upgraded": 2})
 
