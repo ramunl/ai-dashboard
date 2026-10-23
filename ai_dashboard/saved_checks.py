@@ -2,8 +2,9 @@
 
 Disk report and cleanup, package check and upgrade, AI tool check and update:
 without this, every restart or deploy of the dashboard showed "Not checked"
-until the owner ran the check again. Only finished results are kept, never
-"running", so a restart cannot leave a button stuck.
+until the owner ran the check again. Runs in progress are not kept as running:
+an upgrade in flight is saved only so that the next start can settle it as
+unknown, which keeps a restart from leaving a button stuck.
 """
 
 from __future__ import annotations

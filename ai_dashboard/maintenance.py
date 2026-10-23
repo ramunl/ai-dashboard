@@ -26,6 +26,50 @@ RUN_TIMEOUT_SECONDS = 900
 NOT_INSTALLED = (
     "ai-cleanup is not installed on this server (see the ai-ops-agent README)"
 )
+DIAGNOSTIC_LINES = 5  # the last stderr lines kept for a failed run
+DIAGNOSTIC_CHARS = 300  # per line; keeps a runaway log out of the page
+
+
+def _clip(text: str) -> str:
+    return text if len(text) <= DIAGNOSTIC_CHARS else text[: DIAGNOSTIC_CHARS - 1] + "…"
+
+
+def _signal_name(returncode: int) -> str | None:
+    """The signal that ended a process (its return code is negative), or None."""
+    if returncode >= 0:
+        return None
+    try:
+        return signal.Signals(-returncode).name
+    except ValueError:
+        return f"signal {-returncode}"
+
+
+def _failure(
+    name: str, mode: str, returncode: int, answer: object, lines: list
+) -> dict:
+    """A failed run: never ok, even when it printed a JSON answer.
+
+    The command's own error and any fields it reported are kept; with no answer
+    the last stderr line says why, and the exit status says how it ended.
+    """
+    structured = answer.get("error") if isinstance(answer, dict) else None
+    detail = str(structured) if structured else (lines[-1] if lines else "no output")
+    ended = _signal_name(returncode)
+    how = ""
+    if ended:
+        how = f" (killed by {ended})"
+    elif returncode:
+        how = f" (exit code {returncode})"
+    result = dict(answer) if isinstance(answer, dict) else {}
+    result.update(
+        ok=False,
+        error=_clip(f"{name} {mode} failed{how}: {detail}"),
+        exit_code=None if ended else returncode,
+        signal=ended,
+    )
+    if lines:
+        result["diagnostics"] = [_clip(line) for line in lines[-DIAGNOSTIC_LINES:]]
+    return result
 
 
 async def invoke(
@@ -35,7 +79,11 @@ async def invoke(
     name: str = "ai-cleanup",
     extra: tuple[str, ...] = (),
 ) -> dict:
-    """Run ``command mode [extra]``; return its JSON result or an error result."""
+    """Run ``command mode [extra]``; return its JSON result or an error result.
+
+    A nonzero exit is a failure even when it printed JSON. A timeout is marked
+    ``timed_out``: the command was stopped, but what it changed is not known.
+    """
     not_installed = NOT_INSTALLED.replace("ai-cleanup", name)
     try:
         process = await asyncio.create_subprocess_exec(
@@ -59,16 +107,24 @@ async def invoke(
             raise
         return {
             "ok": False,
+            "timed_out": True,
             "error": f"{name} {mode} timed out after {timeout:.0f} s",
         }
+    lines = [
+        line.strip()
+        for line in stderr.decode(errors="replace").splitlines()
+        if line.strip()
+    ]
     try:
-        result = json.loads(stdout.decode(errors="replace"))
+        answer = json.loads(stdout.decode(errors="replace"))
     except ValueError:
-        detail = stderr.decode(errors="replace").strip().splitlines()[-1:] or [
-            "no output"
-        ]
-        return {"ok": False, "error": f"{name} {mode} failed: {detail[0]}"}
-    return result if isinstance(result, dict) else {"ok": False, "error": "bad output"}
+        answer = None
+    returncode = process.returncode
+    if returncode != 0:
+        return _failure(name, mode, returncode, answer, lines)
+    if answer is None:
+        return _failure(name, mode, 0, None, lines)
+    return answer if isinstance(answer, dict) else {"ok": False, "error": "bad output"}
 
 
 class CleanupService:

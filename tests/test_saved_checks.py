@@ -110,6 +110,21 @@ class RestartTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(state["report_at"], float)
         self.assertFalse(state["running"])
 
+    async def test_upgrade_stopped_by_shutdown_comes_back_unknown(self) -> None:
+        command = Path(tempfile.mkdtemp()) / "ai-packages"
+        command.write_text('#!/bin/sh\ncase "$1" in\n  upgrade) sleep 5 ;;\nesac\n')
+        command.chmod(0o755)
+        service = PackageService(str(command), SavedChecks(self.path))
+        service.report = {"ok": True, "total": 3, "checked_at": 1}
+        service.start("upgrade", "ops")
+        await asyncio.sleep(0.1)
+        await service.close()
+        again = PackageService(str(command), SavedChecks(self.path))
+        self.assertEqual(again.last_upgrade["state"], "unknown")
+        self.assertTrue(again.report["stale"])
+        self.assertEqual(again.report["total"], 3)
+        self.assertTrue(again.unsettled_upgrade())
+
     async def test_without_a_file_nothing_is_written(self) -> None:
         service = PackageService(_fake("ai-packages", {"check": '{"ok": true}'}))
         service.start("check", "ops")

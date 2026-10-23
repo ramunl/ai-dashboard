@@ -330,12 +330,11 @@ async def packages_action(request: web.Request) -> web.Response:
     action = payload["action"]
     if not isinstance(action, str) or action not in TIMEOUTS:
         return web.json_response({"error": expected}, status=400, headers=_NO_STORE)
-    if not request.app[PACKAGES].start(action, viewer.bot):
-        return web.json_response(
-            {"error": "a package run is already active"},
-            status=409,
-            headers=_NO_STORE,
-        )
+    service = request.app[PACKAGES]
+    refused = service.refusal(action)
+    if refused:
+        return web.json_response({"error": refused}, status=409, headers=_NO_STORE)
+    service.start(action, viewer.bot)
     return web.json_response({"started": action}, status=202, headers=_NO_STORE)
 
 
@@ -440,6 +439,8 @@ def _running_work(app: web.Application) -> str | None:
         return "a backup"
     if app[PACKAGES].running:
         return f"a package {app[PACKAGES].running}"
+    if app[PACKAGES].unsettled_upgrade():
+        return "a package upgrade with an unknown outcome"
     if app[CLEANUP].running:
         return "a disk cleanup"
     if app[TOOLS].running:
@@ -623,6 +624,12 @@ def build_app(
         await app[DEPLOYMENTS].close()
 
     app.on_cleanup.append(stop_cleanup)
+
+    async def reconcile_packages(_app: web.Application) -> None:
+        # Read-only: settles an upgrade that was in flight at the last shutdown.
+        app[PACKAGES].start_reconcile()
+
+    app.on_startup.append(reconcile_packages)
 
     async def cleanup_reports(_app: web.Application) -> AsyncIterator[None]:
         task = asyncio.create_task(app[CLEANUP].refresh_forever())
