@@ -15,6 +15,7 @@ from ai_dashboard.health import (
     unit_status,
     uptime_of,
 )
+from ai_dashboard.package_updates import package_details, package_outcome
 from ai_dashboard.sources import CODING_SNAPSHOT_FORMATS, agent_view, read_snapshot
 from ai_dashboard.token_usage import usage_view
 
@@ -236,3 +237,16 @@ VIEW_PROVIDERS = {
     # The Ops window shows the overview data plus disk cleanup (added in server).
     "ops": launcher_view,
 }
+
+
+def packages_view(state: dict) -> dict:
+    """Expose optional package details, including results restored from disk."""
+    report = state.get("report")
+    upgrade = state.get("last_upgrade")
+    return {
+        **state,
+        "report": {**report, "packages": package_details(report.get("packages"))}
+        if report
+        else None,
+        "last_upgrade": package_outcome(upgrade) if upgrade else None,
+    }

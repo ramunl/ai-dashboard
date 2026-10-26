@@ -42,6 +42,49 @@ def _names(value: object) -> list[str] | None:
     return None
 
 
+def package_details(value: object) -> list[dict] | None:
+    """Optional CLI detail rows; unknown fields never become UI text.
+
+    The legacy CLI only supplies counts. Missing or malformed details stay
+    unknown, rather than being interpreted as an empty package list.
+    """
+    if not isinstance(value, list):
+        return None
+    rows = []
+    for entry in value:
+        if isinstance(entry, str):
+            entry = {"name": entry}
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            return None
+        rows.append(
+            {
+                key: entry[key]
+                for key in (
+                    "name",
+                    "installed_version",
+                    "candidate_version",
+                    "old_version",
+                    "new_version",
+                    "outcome",
+                    "reason",
+                )
+                if isinstance(entry.get(key), str)
+            }
+        )
+    return rows
+
+
+def package_outcome(answer: dict) -> dict:
+    """Normalize optional detailed upgrade output, retaining legacy totals."""
+    reason = answer.get("unchanged_reason")
+    return {
+        **answer,
+        "package_results": package_details(answer.get("package_results")),
+        "remaining_packages": package_details(answer.get("remaining_packages")),
+        "unchanged_reason": reason if isinstance(reason, str) else None,
+    }
+
+
 def _since(upgrade: dict | None) -> float:
     started = (upgrade or {}).get("started_at")
     return float(started) if _is_number(started) else 0.0
@@ -68,9 +111,26 @@ def _counted(answer: dict, count_key: str, since: float, source: str) -> dict | 
         "untested": _names(answer.get("untested")),
         "checked_at": checked_at,
         "reboot_required": reboot if isinstance(reboot, bool) else None,
+        "packages": package_details(
+            answer.get("remaining_packages" if count_key == "remaining" else "packages")
+        ),
         "source": source,
         "stale": False,
     }
+
+
+def _keep_last_known(evidence: dict, previous: dict | None) -> dict:
+    """Keep the last known package names when the new evidence lists only counts.
+
+    The names are then marked ``details_stale``: they describe the list before
+    the run, not after it. With no packages left there is nothing to keep.
+    """
+    if evidence.get("packages") is not None or not evidence.get("total"):
+        return evidence
+    known = (previous or {}).get("packages")
+    if known is None:
+        return evidence
+    return {**evidence, "packages": known, "details_stale": True}
 
 
 class PackageService:
@@ -183,7 +243,7 @@ class PackageService:
         if result.get("timed_out"):
             state = "unknown"  # killed at the timeout: what it changed is not known
         self.last_upgrade = {
-            **result,
+            **package_outcome(result),
             "state": state,
             "ok": ok,
             "started_at": started,
@@ -199,13 +259,13 @@ class PackageService:
         if evidence is None:
             evidence = await self._read_status(started)
         if evidence is not None:
-            self.report = evidence
+            self.report = _keep_last_known(evidence, self.report)
 
     async def _reconcile(self) -> None:
         try:
             evidence = await self._read_status(_since(self.last_upgrade))
             if evidence is not None:
-                self.report = evidence
+                self.report = _keep_last_known(evidence, self.report)
         finally:
             self.reconciling = False
             self._save()

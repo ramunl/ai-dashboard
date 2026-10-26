@@ -141,6 +141,76 @@ class UpgradeOutcomeTests(unittest.IsolatedAsyncioTestCase):
         await _finished(service)
         return service
 
+    async def test_detailed_unchanged_run_survives_service_and_view(self) -> None:
+        detail = {
+            "ok": True,
+            "upgraded": 0,
+            "remaining": 1,
+            "checked_at": FUTURE,
+            "unchanged_reason": "fixture: held by policy",
+            "package_results": [
+                {
+                    "name": "curl",
+                    "outcome": "unchanged",
+                    "reason": "fixture: held by policy",
+                }
+            ],
+            "remaining_packages": [
+                {
+                    "name": "curl",
+                    "installed_version": "1",
+                    "candidate_version": "2",
+                    "future_field": True,
+                }
+            ],
+            "future_field": {"ignored": True},
+        }
+        command, _ = _fake_packages(upgrade=f"echo '{json.dumps(detail)}'")
+        service = await self._upgrade(command)
+        state = views.packages_view(service.state())
+        self.assertEqual(state["last_upgrade"]["upgraded"], 0)
+        self.assertEqual(
+            state["last_upgrade"]["unchanged_reason"], "fixture: held by policy"
+        )
+        self.assertEqual(
+            state["report"]["packages"],
+            [{"name": "curl", "installed_version": "1", "candidate_version": "2"}],
+        )
+        self.assertEqual(
+            state["last_upgrade"]["package_results"][0]["outcome"], "unchanged"
+        )
+
+    async def test_legacy_zero_upgrade_has_no_invented_reason(self) -> None:
+        result = {"ok": True, "upgraded": 0, "remaining": 1, "checked_at": FUTURE}
+        command, _ = _fake_packages(upgrade=f"echo '{json.dumps(result)}'")
+        service = await self._upgrade(command)
+        state = views.packages_view(service.state())
+        self.assertEqual(state["report"]["total"], 1)
+        self.assertIsNone(state["report"]["packages"])
+        self.assertIsNone(state["last_upgrade"]["unchanged_reason"])
+        self.assertIsNone(state["last_upgrade"]["package_results"])
+
+    async def test_last_known_names_survive_a_run_that_lists_only_counts(self) -> None:
+        names = [{"name": "curl", "installed_version": "1", "candidate_version": "2"}]
+        known = {**OLD_REPORT, "total": 1, "packages": names}
+        result = {"ok": True, "upgraded": 0, "remaining": 1, "checked_at": FUTURE}
+        command, _ = _fake_packages(upgrade=f"echo '{json.dumps(result)}'")
+        service = await self._upgrade(command, report=known)
+        state = views.packages_view(service.state())
+        self.assertEqual(state["report"]["total"], 1)
+        self.assertEqual(state["report"]["packages"], names)
+        self.assertTrue(state["report"]["details_stale"])
+
+    def test_optional_details_tolerate_missing_and_malformed_fields(self) -> None:
+        for value in (None, {}, [None], [{"name": 1}]):
+            self.assertIsNone(package_updates.package_details(value))
+        self.assertEqual(package_updates.package_details([]), [])
+        self.assertIsNone(
+            package_updates.package_outcome({"unchanged_reason": {"bad": "shape"}})[
+                "unchanged_reason"
+            ]
+        )
+
     async def test_empty_output_keeps_the_old_count_stale_and_says_why(self) -> None:
         command, _ = _fake_packages(upgrade="exit 1")
         service = await self._upgrade(command)
@@ -360,10 +430,25 @@ class PackagesEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.calls.exists())
 
     async def test_run_shows_in_the_ops_window_and_refuses_a_second(self) -> None:
-        self.assertEqual(await self._post({"action": "check"}), 202)
-        self.assertEqual(await self._post({"action": "upgrade"}), 409)
-        state = await (await self.client.get("/api/ops", headers=_auth())).json()
-        self.assertEqual(state["packages"]["running"], "check")
+        release = asyncio.Event()
+        invoke = package_updates.invoke
+
+        async def held_check(*args, **kwargs):
+            await release.wait()
+            return await invoke(*args, **kwargs)
+
+        # Hold the fake command until the running state is observed. Wall-clock
+        # sleeps race with the other Ops card providers on a busy test runner.
+        with patch.object(package_updates, "invoke", side_effect=held_check):
+            try:
+                self.assertEqual(await self._post({"action": "check"}), 202)
+                self.assertEqual(await self._post({"action": "upgrade"}), 409)
+                state = await (
+                    await self.client.get("/api/ops", headers=_auth())
+                ).json()
+                self.assertEqual(state["packages"]["running"], "check")
+            finally:
+                release.set()
         for _ in range(50):
             await asyncio.sleep(0.05)
             state = await (await self.client.get("/api/ops", headers=_auth())).json()

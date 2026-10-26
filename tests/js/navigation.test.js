@@ -1242,7 +1242,7 @@ test("Updates card lists what is available and asks before upgrading", async () 
   const page = await openPage("/ops", withPackages({ report: PACKAGE_REPORT }));
   await sleep(60);
   const text = updatesCardOf(page).textContent;
-  assert.match(text, /Available3Security1openssl, curl, vimChecked2m/);
+  assert.match(text, /Available3 · 2m agoSecurity1openssl, curl, vimChecked2m ago/);
   assert.match(text, /Rebootrequired to finish updates/);
   let asked = confirmWith(page, false);
   updateButtons(page)[1].click();

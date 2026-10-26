@@ -15,19 +15,21 @@ let packageAsking = false; // the upgrade confirmation is open
 // The action this page has sent and the server has not reported yet, or null.
 function startingAction(packages) {
   if (!packageStart) return null;
-  const expired = Date.now() - packageStart.at > START_GRACE_MS;
-  if (packages.running || expired) packageStart = null;  // the server's state takes over
+  const expired = !packageStart.sending && Date.now() - packageStart.at > START_GRACE_MS;
+  const finished = packages.last_upgrade && packages.last_upgrade.finished_at;
+  const completed = packageStart.action === "upgrade" && typeof finished === "number" && finished >= packageStart.at / 1000;
+  if (packages.running || completed || expired) packageStart = null;  // the server's state takes over
   return packageStart ? packageStart.action : null;
 }
 
 function startPackageRun(action, button) {
   if (packageStart) return;  // no double start; the server would refuse it too
-  packageStart = { action, at: Date.now() };
+  packageStart = { action, at: Date.now(), sending: true };
   const idleText = button.textContent;
   button.disabled = true;
   button.textContent = "Starting…";
-  postAction("ops/packages", tg ? tg.initData : "", { action })
-    .then(() => refresh())
+  submitPackageAction(action)
+    .then(() => { if (packageStart) packageStart.sending = false; refresh(); })
     .catch((error) => {
       // No refresh here: a refresh would clear the message just shown.
       packageStart = null;
@@ -80,7 +82,13 @@ function packageAgo(timestamp) {
 
 function packageNames(report) {
   const names = [...(report.security || []), ...(report.stable || []), ...(report.untested || [])];
-  if (!names.length) return [];
+  if (Array.isArray(report.packages)) {
+    const rows = report.packages.map(packageDetailRow);
+    // Kept from before the latest run, which reported only counts.
+    if (report.details_stale) rows.unshift(muted("Last known list; the latest run did not list the packages."));
+    return rows;
+  }
+  if (!names.length) return [muted("Package details unavailable; only the total count is available.")];
   const shown = names.slice(0, PACKAGE_NAMES_SHOWN).join(", ");
   const rest = names.length - PACKAGE_NAMES_SHOWN;
   return [el("div", rest > 0 ? `${shown} and ${rest} more` : shown, "card-note")];
@@ -90,7 +98,7 @@ function reportRows(report) {
   if (!report) return [muted("Not checked since the dashboard started")];
   if (!report.ok) return [row("Last check", "failed"), el("div", report.error, "card-note")];
   const label = report.stale ? "Available (cached)" : "Available";
-  const rows = [row(label, report.total ? String(report.total) : "up to date")];
+  const rows = [row(label, `${report.total ? String(report.total) : "up to date"} · ${packageAgo(report.checked_at)}`)];
   if (report.security && report.security.length) rows.push(row("Security", String(report.security.length)));
   rows.push(...packageNames(report));
   // A count from a check is "Checked"; one proven by an upgrade's own status is "Verified".
@@ -109,7 +117,10 @@ function lastUpgradeRows(upgrade) {
   if (state === "accepted" || state === "running") return [row("Last upgrade", "in progress")];
   if (state === "completed") {
     const count = typeof upgrade.upgraded === "number" ? `${upgrade.upgraded} upgraded · ` : "";
-    return [row("Last upgrade", `${count}${packageAgo(upgrade.finished_at)}`)];
+    const rows = [row("Last upgrade", `${count}${packageAgo(upgrade.finished_at)}`)];
+    if (upgrade.upgraded === 0) rows.push(muted(upgrade.unchanged_reason || "Reason unavailable: Ops did not report why nothing changed."));
+    rows.push(...packageOutcomeRows(upgrade));
+    return rows;
   }
   if (state === "unknown") {
     return [row("Last upgrade", "outcome unknown"),
@@ -119,6 +130,7 @@ function lastUpgradeRows(upgrade) {
   if (Array.isArray(upgrade.diagnostics) && upgrade.diagnostics.length) {
     rows.push(el("div", `Last output: ${upgrade.diagnostics.slice(-2).join(" | ")}`, "card-note"));
   }
+  rows.push(...packageOutcomeRows(upgrade));
   return rows;
 }
 
@@ -130,5 +142,20 @@ function updatesCard(view) {
   if (packages.running === "upgrade" || starting === "upgrade" || canUpgrade(packages)) {
     buttons.push(upgradeButton(packages, starting));
   }
-  return card("Updates", ...reportRows(packages.report), ...lastUpgradeRows(packages.last_upgrade), ...buttons);
+  return card("Updates", ...(packageActionError ? [muted(packageActionError)] : []), ...reportRows(packages.report), ...lastUpgradeRows(packages.last_upgrade), ...buttons);
+}
+
+function packageDetailRow(entry) {
+  const versions = [entry.old_version || entry.installed_version, entry.new_version || entry.candidate_version].filter(Boolean).join(" → ");
+  const outcome = ["upgraded", "unchanged", "failed"].includes(entry.outcome) ? entry.outcome : "outcome unavailable";
+  return row(entry.name, [versions, entry.outcome ? outcome : "", entry.reason].filter(Boolean).join(" · "));
+}
+
+function packageOutcomeRows(upgrade) {
+  const rows = Array.isArray(upgrade.package_results) && upgrade.package_results.length
+    ? upgrade.package_results.map(packageDetailRow)
+    : [muted("Per-package outcome details unavailable.")];
+  if (typeof upgrade.remaining === "number") rows.push(row("Remaining after run", String(upgrade.remaining)));
+  if (Array.isArray(upgrade.remaining_packages)) rows.push(...upgrade.remaining_packages.map(packageDetailRow));
+  return rows;
 }
