@@ -211,3 +211,93 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
             (await response.json())["error"], "a package upgrade is running"
         )
         self.assertFalse(self.calls.exists())
+
+
+class IPTVControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_only_fixed_iptv_start_stop_are_forwarded(self):
+        control = ServiceControl("/fake/ai-service")
+        control.allowed = ["iptv-proxy", "ai-dashboard"]
+        with patch.object(
+            service_actions, "invoke", AsyncMock(return_value={"ok": True})
+        ) as invoke:
+            for service, action in [
+                ("sshd", "stop"),
+                ("ai-dashboard", "stop"),
+                ("iptv-proxy", "delete"),
+            ]:
+                self.assertFalse((await control.change(service, action, "ops"))["ok"])
+            invoke.assert_not_awaited()
+            for action in ["start", "stop"]:
+                self.assertTrue(
+                    (await control.change("iptv-proxy", action, "ops"))["ok"]
+                )
+                invoke.assert_awaited_with("/fake/ai-service", action, "iptv-proxy")
+
+    async def test_old_ops_agent_is_explained(self):
+        control = ServiceControl("/fake/ai-service")
+        control.allowed = ALLOWED
+        with patch.object(service_actions, "invoke", AsyncMock()) as invoke:
+            result = await control.change("iptv-proxy", "stop", "ops")
+            self.assertFalse(result["ok"])
+            invoke.assert_not_awaited()
+
+    async def test_iptv_state_uses_docker_not_systemd(self):
+        control = ServiceControl("/fake/ai-service")
+        control.allowed = ["iptv-proxy"]
+        with patch.object(
+            service_actions, "run_command", AsyncMock(return_value="running\n")
+        ) as query:
+            with patch.object(service_actions, "unit_status", AsyncMock()) as systemd:
+                result = await control.state([], None)
+        query.assert_awaited_once_with(
+            "docker", "inspect", "--format", "{{.State.Status}}", "iptv-proxy"
+        )
+        systemd.assert_not_awaited()
+        self.assertEqual(result["services"][0]["state"], "active")
+
+
+class IPTVEndpointTests(EndpointTests):
+    async def change(self, payload, headers=None):
+        return await self.client.post(
+            "/api/ops/service",
+            json=payload,
+            headers=_auth() if headers is None else headers,
+        )
+
+    async def test_auth_and_confirmation_precede_command(self):
+        payload = {"service": "iptv-proxy", "action": "stop", "confirm": "stop"}
+        change = AsyncMock(return_value={"ok": True})
+        with patch.object(self.client.app[server.SERVICES], "change", change):
+            self.assertEqual((await self.change(payload, {})).status, 401)
+            self.assertEqual((await self.change(payload, _auth(1))).status, 403)
+            for bad in [
+                [],
+                {},
+                {"service": "iptv-proxy", "action": "stop"},
+                {**payload, "confirm": "yes"},
+                {**payload, "service": "sshd"},
+                {**payload, "extra": 1},
+                {**payload, "action": []},
+            ]:
+                self.assertEqual((await self.change(bad)).status, 400)
+            response = await self.client.get("/api/ops/service", headers=_auth())
+            self.assertEqual(response.status, 405)
+            change.assert_not_awaited()
+            self.assertEqual((await self.change(payload)).status, 200)
+            change.assert_awaited_once_with("iptv-proxy", "stop", "ops")
+
+    async def test_start_and_partial_failure_response(self):
+        result = {
+            "ok": False,
+            "unit": "inactive",
+            "port": 8080,
+            "port_open": True,
+            "error": "another publisher remains",
+        }
+        with patch.object(
+            self.client.app[server.SERVICES], "change", AsyncMock(return_value=result)
+        ) as change:
+            response = await self.change({"service": "iptv-proxy", "action": "start"})
+            self.assertEqual(response.status, 502)
+            self.assertEqual(await response.json(), result)
+            change.assert_awaited_once_with("iptv-proxy", "start", "ops")

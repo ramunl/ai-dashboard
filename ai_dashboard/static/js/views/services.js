@@ -62,7 +62,7 @@ function serviceRow(row, view) {
   const detail = [row.state];
   if (typeof row.up_seconds === "number") detail.push(`up ${formatDuration(row.up_seconds)}`);
   label.append(title, el("div", detail.join(" · "), "nav-detail"));
-  node.append(label, restartButton(row, view));
+  node.append(label, row.unit === "iptv-proxy" ? iptvControlButtons(view.service_control) : restartButton(row, view));
   return node;
 }
 
@@ -71,4 +71,55 @@ function servicesCard(view) {
   if (!control) return card("Services", muted("Service status unavailable"));
   if (!control.ok) return card("Services", muted(control.error));
   return card("Services", ...control.services.map((row) => serviceRow(row, view)));
+}
+
+// Only IPTV is exposed for start/stop; the server and root CLI check again.
+const iptvActionsPending = new Set();
+let iptvActionNotice = "";
+
+function iptvControlButtons(control) {
+  const allowed = control && control.ok && control.services.some(item => item.unit === "iptv-proxy");
+  if (!allowed) return el("p", "Update the Ops agent to enable IPTV controls.", "card-note");
+  const service = control.services.find(item => item.unit === "iptv-proxy");
+  const group = el("div", null, "iptv-controls");
+  group.append(row("Service", service.state || "unknown"));
+  if (iptvActionNotice) group.append(el("p", iptvActionNotice, "card-note"));
+  for (const [action, label] of [["start", "Start IPTV"], ["stop", "Shut down IPTV"]]) {
+    const button = el("button", label, "action-button");
+    button.type = "button";
+    button.disabled = iptvActionsPending.has("iptv-proxy");
+    button.addEventListener("click", () => {
+      if (iptvActionsPending.has("iptv-proxy")) return;
+      iptvActionsPending.add("iptv-proxy");
+      for (const node of group.querySelectorAll("button")) node.disabled = true;
+      const question = action === "stop"
+        ? "Shut down IPTV? This disconnects all IPTV clients and removes its port 8080 publication."
+        : "Start IPTV and publish port 8080?";
+      askConfirmation(question, async confirmed => {
+        if (!confirmed) {
+          iptvActionsPending.delete("iptv-proxy");
+          for (const node of group.querySelectorAll("button")) node.disabled = false;
+          refresh();
+          return;
+        }
+        iptvActionNotice = action === "stop" ? "Shutting down IPTV…" : "Starting IPTV…";
+        refresh();
+        try {
+          const payload = {service: "iptv-proxy", action};
+          if (action === "stop") payload.confirm = "stop";
+          const result = await postAction("ops/service", tg ? tg.initData : "", payload, 130000);
+          const port = result.port_open === true ? "open" : result.port_open === false ? "closed" : "unknown";
+          iptvActionNotice = `IPTV ${result.unit || "state unknown"} · port 8080 ${port}`;
+        } catch (error) {
+          iptvActionNotice = `IPTV action failed: ${error.message}. Refresh status before retrying.`;
+          showAlert(iptvActionNotice);
+        } finally {
+          iptvActionsPending.delete("iptv-proxy");
+          refresh();
+        }
+      });
+    });
+    group.append(button);
+  }
+  return group;
 }
