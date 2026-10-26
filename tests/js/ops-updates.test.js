@@ -187,3 +187,41 @@ test("a pending POST stays locked beyond the display grace period", async (t) =>
   await sleep(30);
   assert.equal(page.posts.length, 1);
 });
+
+// The poll runs every few seconds, so it usually rebuilds the card while the
+// confirmation is open; the click's button is then no longer on the page.
+test("a poll during the confirmation still shows Starting… when the user answers", async (t) => {
+  let release;
+  const page = open({ world: { ops: opsView({ report: VERIFIED }) },
+    onPost: () => new Promise((resolve) => { release = resolve; }) });
+  t.after(() => page.dom.window.close());
+  await settle(page);
+  const asked = [];
+  page.dom.window.Telegram.WebApp.showConfirm = (_message, callback) => asked.push(callback);
+  upgradeButton(page).click();
+  await page.poll();
+  asked[0](true);
+  await sleep(40);
+  assert.equal(page.posts.length, 1);
+  const starting = [...updatesCard(page).querySelectorAll("button")].find((b) => b.textContent === "Starting…");
+  assert.ok(starting, "the card on the page shows Starting…");
+  assert.equal(starting.disabled, true);
+  release({ ok: true, status: 202, json: async () => ({ started: "upgrade" }) });
+  await sleep(30);
+});
+
+test("a refused start shows its error on the card at once, not at the next poll", async (t) => {
+  const page = open({ world: { ops: opsView({ report: VERIFIED }) }, onPost: async () => (
+    { ok: false, status: 409, json: async () => ({ error: "server refused upgrade" }) }) });
+  t.after(() => page.dom.window.close());
+  await settle(page);
+  const asked = [];
+  page.dom.window.Telegram.WebApp.showConfirm = (_message, callback) => asked.push(callback);
+  upgradeButton(page).click();
+  await page.poll();
+  asked[0](true);
+  await sleep(40);
+  assert.match(cardText(page), /Package upgrade did not start: server refused upgrade/);
+  assert.equal(upgradeButton(page).disabled, false);
+  assert.deepStrictEqual(page.errors, []);
+});
