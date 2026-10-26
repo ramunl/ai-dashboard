@@ -91,7 +91,7 @@ function opsPage(view) {
     title: "Ops agent",
     subtitle: serverSubtitle(view),
     status: pageStatus(view),
-    alert: "",
+    alert: packageActionError,  // a refused package start; kept until the next start
     nodes: [operationsCard(view), servicesCard(view), deploymentsCard(view), ...problemsCards(view), diskUsageCard(view), updatesCard(view), aiToolsCard(view), securityCard(view), clientsCard(view), backupsCard(view), resourcesCard(view), ...rebootCards(view), logsCard()],
   };
 }

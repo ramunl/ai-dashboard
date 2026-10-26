@@ -22,20 +22,18 @@ function startingAction(packages) {
   return packageStart ? packageStart.action : null;
 }
 
-function startPackageRun(action, button) {
+// The card is redrawn from packageStart, never from the button that was clicked:
+// a poll may have rebuilt the card while the confirmation was open.
+function startPackageRun(action) {
   if (packageStart) return;  // no double start; the server would refuse it too
   packageStart = { action, at: Date.now(), sending: true };
-  const idleText = button.textContent;
-  button.disabled = true;
-  button.textContent = "Starting…";
+  refresh();
   submitPackageAction(action)
     .then(() => { if (packageStart) packageStart.sending = false; refresh(); })
-    .catch((error) => {
-      // No refresh here: a refresh would clear the message just shown.
+    .catch(() => {
+      // submitPackageAction keeps the error; the card shows it on this redraw.
       packageStart = null;
-      button.disabled = false;
-      button.textContent = idleText;
-      showAlert(`Package ${action} did not start: ${error.message}`);
+      refresh();
     });
 }
 
@@ -45,7 +43,7 @@ function checkButton(packages, starting) {
   button.disabled = Boolean(packages.running || starting);
   if (packages.running === "check") button.textContent = "Checking…";
   else if (starting === "check") button.textContent = "Starting…";
-  button.addEventListener("click", () => startPackageRun("check", button));
+  button.addEventListener("click", () => startPackageRun("check"));
   return button;
 }
 
@@ -63,7 +61,7 @@ function upgradeButton(packages, starting) {
     packageAsking = true;
     askConfirmation(message, (isConfirmed) => {
       packageAsking = false;
-      if (isConfirmed) startPackageRun("upgrade", button);
+      if (isConfirmed) startPackageRun("upgrade");
     });
   });
   return button;
