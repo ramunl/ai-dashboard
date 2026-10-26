@@ -47,7 +47,7 @@ from ai_dashboard.task_progress import (
 )
 from ai_dashboard.telegram_api import API_BASE, set_menu_button
 from ai_dashboard.tool_updates import ToolService
-from ai_dashboard.views import SUB_WINDOWS, VIEW_PROVIDERS, WINDOWS
+from ai_dashboard.views import SUB_WINDOWS, VIEW_PROVIDERS, WINDOWS, packages_view
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ async def window_data(request: web.Request) -> web.Response:
                 (view.get("resources") or {}).get("uptime_seconds"),
             ),
             "cleanup": request.app[CLEANUP].state(),
-            "packages": request.app[PACKAGES].state(),
+            "packages": packages_view(request.app[PACKAGES].state()),
             "backups": await request.app[BACKUPS].state(),
             "security": request.app[SECURITY].state(),
             "clients": request.app[CLIENTS].state(),
@@ -334,7 +334,12 @@ async def packages_action(request: web.Request) -> web.Response:
     refused = service.refusal(action)
     if refused:
         return web.json_response({"error": refused}, status=409, headers=_NO_STORE)
-    service.start(action, viewer.bot)
+    if not service.start(action, viewer.bot):
+        return web.json_response(
+            {"error": service.refusal(action) or "a package run is already active"},
+            status=409,
+            headers=_NO_STORE,
+        )
     return web.json_response({"started": action}, status=202, headers=_NO_STORE)
 
 

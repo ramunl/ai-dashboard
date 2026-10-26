@@ -99,3 +99,16 @@ function radioList(name, options, current, disabled, onPick) {
   }
   return group;
 }
+
+// Package starts use the Ops endpoint, not requestAction's coding inbox.
+// Keep failures on the card across polling and navigation.
+let packageActionError = "";
+async function submitPackageAction(action) {
+  packageActionError = "";
+  try {
+    return await postAction("ops/packages", tg ? tg.initData : "", { action });
+  } catch (error) {
+    packageActionError = `Package ${action} did not start: ${error.message}`;
+    throw error;
+  }
+}
