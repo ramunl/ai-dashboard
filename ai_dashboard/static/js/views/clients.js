@@ -30,12 +30,13 @@ function clientTrafficRows(service) {
   return rows;
 }
 
-function clientServiceDetails(service) {
+function clientServiceDetails(service, control = null) {
   const serviceKey = service.id || service.name;
   const details = rememberDetails(el("details", null, "clients-service"), ["clients", serviceKey]);
   const count = service.available && typeof service.active === "number"
     ? `${service.active.toLocaleString("en-US")} ${service.unit}` : "Unavailable";
   details.append(el("summary", `${service.name} · ${count}`));
+  if (service.id === "media") details.append(iptvControlButtons(control));
   if (!service.available) details.append(el("p", service.error || "Service data unavailable", "card-note"));
   const fields = [["configured", "Configured profiles"], ["connections", "Incoming TCP connections"],
     ["source_addresses", "Distinct source addresses"], ["streams", "Live streams"],
@@ -77,7 +78,7 @@ function clientsCard(view) {
     const age = Math.max(0, Date.now() / 1000 - report.checked_at);
     nodes.push(el("p", `Updated ${formatDuration(age)} ago · refreshes every 30 seconds while open`, "card-note"));
     if (age > 120) nodes.push(el("p", "These readings are stale.", "card-note"));
-    nodes.push(...(report.services || []).map(clientServiceDetails));
+    nodes.push(...(report.services || []).map(service => clientServiceDetails(service, view.service_control)));
   }
   nodes.push(clientsRefreshButton(state.running));
   return card("Connected clients", ...nodes);

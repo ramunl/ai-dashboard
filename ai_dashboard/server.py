@@ -438,6 +438,42 @@ async def restart_action(request: web.Request) -> web.Response:
     return web.json_response(result, status=202, headers=_NO_STORE)
 
 
+async def service_action(request: web.Request) -> web.Response:
+    """Owner-only IPTV start/stop; require explicit stop confirmation."""
+    settings = request.app[SETTINGS]
+    try:
+        viewer = verify_init_data(
+            _init_data(request), settings.tokens(), settings.owner_id
+        )
+    except InitDataError as error:
+        return web.json_response(
+            {"error": error.reason}, status=error.status, headers=_NO_STORE
+        )
+    try:
+        payload = await request.json()
+    except ValueError:
+        payload = None
+    if not isinstance(payload, dict):
+        return web.json_response({"error": "expected service action"}, status=400)
+    action = payload.get("action")
+    expected = (
+        {"service", "action", "confirm"} if action == "stop" else {"service", "action"}
+    )
+    if (
+        set(payload) != expected
+        or action not in ("start", "stop")
+        or payload.get("service") != "iptv-proxy"
+        or (action == "stop" and payload.get("confirm") != "stop")
+    ):
+        return web.json_response(
+            {"error": "invalid service action or confirmation"}, status=400
+        )
+    result = await request.app[SERVICES].change("iptv-proxy", action, viewer.bot)
+    return web.json_response(
+        result, status=200 if result.get("ok") else 502, headers=_NO_STORE
+    )
+
+
 def _running_work(app: web.Application) -> str | None:
     """What the dashboard itself is running that a reboot would interrupt."""
     if app[BACKUPS].running:
@@ -594,6 +630,7 @@ def build_app(
     app.router.add_post("/api/ops/rollback", rollback_action)
     app.router.add_post("/api/ops/deploy", deploy_action)
     app.router.add_post("/api/ops/restart", restart_action)
+    app.router.add_post("/api/ops/service", service_action)
     app.router.add_post("/api/ops/reboot", reboot_action)
     app.router.add_post("/api/ops/packages", packages_action)
     app.router.add_post("/api/ops/tools", tools_action)

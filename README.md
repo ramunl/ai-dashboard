@@ -524,3 +524,19 @@ notes stay in this browser and reset when its storage is cleared. They do not
 change firewall rules or authenticate a key: the audit supplies a shortened
 key label. A listener is not proof of internet reachability, and expected
 entries are not proof that a server is uncompromised.
+
+### IPTV controls in the Ops Mini App
+
+The Ops Services card and the expanded **Media / IPTV proxy** client panel
+provide **Start IPTV** and **Shut down IPTV**. Shutdown asks for confirmation
+because it disconnects clients. The result shows the verified container and
+port 8080 state; failures remain visible across refreshes. These actions only
+control `iptv-proxy`, using the Ops agent's whitelisted `ai-service` command.
+Other client services are monitoring-only.
+
+Requires ai-ops-agent PR #17 (Docker controls) deployed first, then this
+dashboard version. Restart both services through the normal deployment flow
+so their cached whitelist and page assets are refreshed. No root CLI wrapper
+changes are needed. Container status is read using a fixed Docker inspection;
+if Docker cannot be queried, status is shown as unknown. The existing Docker
+permissions of the dashboard service are required for that read.
