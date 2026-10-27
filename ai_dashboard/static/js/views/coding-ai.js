@@ -72,7 +72,7 @@ function toolModelNodes(entry, roles) {
 function modelsCard(setup) {
   const nodes = [];
   for (const [tool, roles] of toolsInUse(setup)) {
-    const entry = setup.models.find((model) => model.tool === tool);
+    const entry = (Array.isArray(setup.models) ? setup.models : []).find((model) => model && model.tool === tool);
     if (entry) nodes.push(...toolModelNodes(entry, roles));
   }
   const latest = (setup.actions || []).find((result) => result.action === "switch_model");
@@ -91,5 +91,6 @@ function aiToolsPage(view) {
        roleCard(setup, "implementer", "set_implementer", "Implementer"),
        modelsCard(setup)]
     : [setupMissingCard()];
+  nodes.push(codingAuthCard(setup));
   return codingSubPage(view, "AI tools", nodes);
 }
