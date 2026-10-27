@@ -93,3 +93,87 @@ class AgentViewTests(unittest.IsolatedAsyncioTestCase):
             sources.asyncio, "create_subprocess_exec", AsyncMock(side_effect=OSError)
         ):
             self.assertEqual(await sources.service_state("x"), "unknown")
+
+
+class CodingAuthenticationTests(unittest.TestCase):
+    def test_auth_contract_survives_read_path(self) -> None:
+        # Producer: ai-coding-agent 67d9a93, docs/snapshot_publisher.py.md.
+        # Additive format-2 setup.models[].auth; no format bump needed here.
+        records = [
+            {
+                "tool": tool,
+                "auth": {
+                    "status": status,
+                    "method": method,
+                    "checked_at": NOW - 901,
+                    "stale": True,
+                    "relogin_at": deadline,
+                    "days_remaining": days,
+                    "countdown_support": support,
+                    "warnings": warnings,
+                },
+            }
+            for tool, status, method, deadline, days, support, warnings in [
+                (
+                    "codex",
+                    "authenticated",
+                    "oauth",
+                    None,
+                    None,
+                    "no_authoritative_deadline",
+                    ["auth_stale", "check_unavailable"],
+                ),
+                (
+                    "claude-code",
+                    "logged_out",
+                    "none",
+                    NOW,
+                    0,
+                    "supported",
+                    ["login_required", "auth_stale"],
+                ),
+                (
+                    "claude",
+                    "configured_unverified",
+                    "api_key",
+                    None,
+                    None,
+                    "no_authoritative_deadline",
+                    ["auth_stale"],
+                ),
+            ]
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshot.json"
+            for version in sources.CODING_SNAPSHOT_FORMATS:
+                with self.subTest(version=version):
+                    snapshot = {
+                        "format": version,
+                        "updated_at": NOW,
+                        "setup": {"models": records},
+                    }
+                    path.write_text(json.dumps(snapshot))
+                    data, problem = sources.read_snapshot(
+                        path, sources.CODING_SNAPSHOT_FORMATS
+                    )
+                    view = sources.describe("active", data, problem, NOW)
+                    self.assertIsNone(view["problem"])
+                    self.assertFalse(view["stale"])
+                    self.assertEqual(view["snapshot"], snapshot)
+                    # Heartbeat freshness must not refresh auth observations.
+                    auth = view["snapshot"]["setup"]["models"][0]["auth"]
+                    self.assertTrue(auth["stale"])
+                    self.assertEqual(auth["checked_at"], NOW - 901)
+
+    def test_older_snapshot_without_auth_remains_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshot.json"
+            for version in sources.CODING_SNAPSHOT_FORMATS:
+                snapshot = {"format": version, "updated_at": NOW}
+                path.write_text(json.dumps(snapshot))
+                data, problem = sources.read_snapshot(
+                    path, sources.CODING_SNAPSHOT_FORMATS
+                )
+                view = sources.describe("active", data, problem, NOW)
+                self.assertIsNone(view["problem"])
+                self.assertEqual(view["snapshot"], snapshot)

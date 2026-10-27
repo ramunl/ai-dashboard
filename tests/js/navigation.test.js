@@ -1002,7 +1002,9 @@ test("roles are radios and the models card follows the tools in use", async () =
   const server = codingServer({ ...SETUP, planner: "claude", implementer: "codex" });
   const page = await openPage("/coding/ai", server.options);
   await sleep(60);
-  let text = page.doc.querySelector("main").textContent;
+  const modelText = () => [...page.doc.querySelectorAll("main section")]
+    .find(node => node.querySelector("h2")?.textContent === "Models").textContent;
+  let text = modelText();
   assert.match(text, /Claude API · planner/);
   assert.match(text, /Codex · implementer/);
   assert.doesNotMatch(text, /Claude Code/);
@@ -1013,7 +1015,7 @@ test("roles are radios and the models card follows the tools in use", async () =
   server.state.setup = { ...SETUP, planner: "codex", implementer: "claude" };
   page.dom.window.eval("refresh()");
   await sleep(60);
-  text = page.doc.querySelector("main").textContent;
+  text = modelText();
   assert.match(text, /Codex · planner/);
   assert.match(text, /Claude Code · implementer/);
   assert.doesNotMatch(text, /Claude API/);
