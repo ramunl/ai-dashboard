@@ -85,6 +85,7 @@ ACTIONS: dict[str, dict] = {
     "create_autopilot_task": {"repo": _NAME, "text": _TEXT, "todo": _TODO_REF},
     "set_autopilot": {"task": _TASK_ID, "value": ("on", "off")},
     "start_task": {"task": _TASK_ID},
+    "cancel_start": {"task": _TASK_ID},
     "remove_task": {"task": _TASK_ID},
     # Tasks the worker proposed from the server logs: keep or drop.
     "accept_task": {"task": _TASK_ID},

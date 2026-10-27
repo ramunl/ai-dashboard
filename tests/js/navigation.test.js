@@ -1838,6 +1838,20 @@ test("Start planning and Remove ask first and send only the task id", async () =
   assert.deepStrictEqual(page.bodies, [{ action: "remove_task", args: { task: "aaaa0004" } }]);
 });
 
+test("A queued task says it starts next and can be unqueued without a prompt", async () => {
+  const queued = { ...TASKS_LIST.find((task) => task.stage === "todo"), queued: true, note: "starts when the agent is free; now a task is running" };
+  const state = { tasks: [queued], sent: 0 };
+  const page = await openPage("/tasks", tasksServer(state));
+  await sleep(60);
+  assert.deepStrictEqual(taskStatuses(page), ["Starts next"]);
+  const [row] = taskRows(page);
+  assert.match(row.textContent, /starts when the agent is free; now a task is running/);
+  assert.strictEqual(buttonNamed(page, "Start planning"), undefined);
+  buttonNamed(page, "Don't start").click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "cancel_start", args: { task: queued.id } }]);
+});
+
 test("Make task in a todo opens a repository choice in Tasks and sends the todo reference", async () => {
   const state = { tasks: [], sent: 0, actions: [] };
   const page = await openPage("/pm", tasksServer(state));

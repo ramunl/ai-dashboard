@@ -62,7 +62,7 @@ function serviceRow(row, view) {
   const detail = [row.state];
   if (typeof row.up_seconds === "number") detail.push(`up ${formatDuration(row.up_seconds)}`);
   label.append(title, el("div", detail.join(" · "), "nav-detail"));
-  node.append(label, row.unit === "iptv-proxy" ? iptvControlButtons(view.service_control) : restartButton(row, view));
+  node.append(label, restartButton(row, view));
   return node;
 }
 
@@ -70,7 +70,9 @@ function servicesCard(view) {
   const control = view.service_control;
   if (!control) return card("Services", muted("Service status unavailable"));
   if (!control.ok) return card("Services", muted(control.error));
-  return card("Services", ...control.services.map((row) => serviceRow(row, view)));
+  return card("Services", ...control.services
+    .filter((row) => row.unit !== "iptv-proxy")
+    .map((row) => serviceRow(row, view)));
 }
 
 // Only IPTV is exposed for start/stop; the server and root CLI check again.

@@ -141,7 +141,14 @@ function taskActions(task) {
     actions.push(retryButton(task, "claude", "Retry with Claude", "row-button"),
       retryButton(task, "codex", "Retry with Codex", "row-button work-secondary"));
   }
-  if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !task.waiting_for) {
+  if (task.queued && ["todo", "stopped", "blocked", "ops_required"].includes(task.stage)) {
+    // Already asked to start: the agent starts it as soon as it is free.
+    const key = `task:unqueue:${task.id}`;
+    actions.push(taskButton("Don't start", key, "row-button work-secondary", (button) => {
+      button.disabled = true;
+      requestAction(key, "cancel_start", { task: task.id });
+    }));
+  } else if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !task.waiting_for) {
     const key = `task:start:${task.id}`;
     actions.push(taskButton("Start planning", key, "row-button", (button) => {
       button.disabled = true;
@@ -166,7 +173,10 @@ function taskActions(task) {
 
 function taskRow(task) {
   const isWaiting = task.stage === "todo" && Boolean(task.waiting_for);
-  const status = isWaiting ? { label: "Waiting", tone: "todo" }
+  const isQueued = Boolean(task.queued) && !FINISHED_TASK_STAGES.includes(task.stage)
+    && !["planning", "planned", "implementing"].includes(task.stage);
+  const status = isQueued ? { label: "Starts next", tone: "todo" }
+    : isWaiting ? { label: "Waiting", tone: "todo" }
     : TASK_STATUS[taskStage(task)] || { label: task.stage, tone: "todo" };
   const node = el("article", null, "task");
   const badge = el("span", status.label, "task-status");
