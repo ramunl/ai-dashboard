@@ -3,6 +3,12 @@
 const REPOSITORY_PATTERN = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
 let repositoryDraft = ""; // kept across refreshes while the user types
 
+function repositoryName(value) {
+  const name = value.trim().replace(/^https:\/\/github\.com\//i, "")
+    .replace(/\/$/, "").replace(/\.git$/, "");
+  return REPOSITORY_PATTERN.test(name) ? name : null;
+}
+
 function projectsCard(setup) {
   const active = setup.projects.find((project) => project.active);
   const options = setup.projects.map((project) => ({
@@ -22,13 +28,13 @@ function projectsCard(setup) {
 function addRepositoryCard() {
   const input = el("input", null, "text-input");
   input.type = "text";
-  input.placeholder = "owner/repo";
+  input.placeholder = "owner/repo or GitHub URL";
   input.autocapitalize = "off";
   input.spellcheck = false;
   input.value = repositoryDraft;
   const button = el("button", isActionPending("add") ? "Adding…" : "Add", "row-button");
   button.type = "button";
-  const isValid = () => REPOSITORY_PATTERN.test(input.value.trim());
+  const isValid = () => repositoryName(input.value) !== null;
   button.disabled = isActionPending("add") || !isValid();
   input.addEventListener("input", () => {
     repositoryDraft = input.value;
@@ -36,7 +42,7 @@ function addRepositoryCard() {
   });
   button.addEventListener("click", () => {
     if (!isValid()) return;
-    const repository = input.value.trim();
+    const repository = repositoryName(input.value);
     repositoryDraft = "";
     input.blur(); // let the page refresh again
     button.disabled = true;

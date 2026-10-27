@@ -978,6 +978,26 @@ test("add repository: validated input, kept while typing, then sent", async () =
   assert.deepStrictEqual(page.bodies, [{ action: "add_repository", args: { repository: "ramunl/ai-dashboard" } }]);
 });
 
+test("add repository accepts GitHub URLs and sends the repository name", async () => {
+  const page = await openPage("/coding/projects", codingServer().options);
+  await sleep(60);
+  const input = page.doc.querySelector("main input[type=text]");
+  const add = buttonsIn(page, "Add")[0];
+  for (const value of ["https://example.com/ramunl/arkanoid2d", "https://github.com/ramunl/arkanoid2d/issues"]) {
+    input.value = value;
+    input.dispatchEvent(new page.dom.window.Event("input"));
+    assert.strictEqual(add.disabled, true);
+  }
+  for (const value of ["https://github.com/ramunl/arkanoid2d", " https://github.com/ramunl/arkanoid2d.git/ "]) {
+    input.value = value;
+    input.dispatchEvent(new page.dom.window.Event("input"));
+    assert.strictEqual(add.disabled, false);
+  }
+  add.click();
+  await sleep(60);
+  assert.deepStrictEqual(page.bodies, [{ action: "add_repository", args: { repository: "ramunl/arkanoid2d" } }]);
+});
+
 test("roles are radios and the models card follows the tools in use", async () => {
   const server = codingServer({ ...SETUP, planner: "claude", implementer: "codex" });
   const page = await openPage("/coding/ai", server.options);
