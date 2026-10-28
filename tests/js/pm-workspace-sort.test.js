@@ -150,3 +150,87 @@ test("the chosen mode is kept when the active project changes", async () => {
   assert.strictEqual(page.pressed(), "Manual");
   assert.deepStrictEqual(page.titles(), ["Low one", "High one"]);
 });
+
+function assertPriorityRows(page, expected) {
+  const rows = [...page.doc.querySelectorAll(".pm-task")];
+  assert.strictEqual(rows.length, expected.length);
+  rows.forEach((row, index) => {
+    const [title, key, label] = expected[index];
+    assert.strictEqual(row.querySelector(".pm-task-title").textContent, title);
+    const priority = row.querySelector(".pm-priority");
+    assert.strictEqual(priority.dataset.priority, key);
+    assert.strictEqual(priority.textContent, label);
+    assert.strictEqual(priority.hasAttribute("aria-hidden"), false);
+    assert.strictEqual(priority.querySelector("span:not(.pm-priority-dot)").hasAttribute("aria-hidden"), false);
+    const dots = priority.querySelectorAll(".pm-priority-dot");
+    assert.strictEqual(dots.length, 1);
+    assert.strictEqual(dots[0].getAttribute("aria-hidden"), "true");
+    assert.strictEqual(dots[0].textContent, "");
+    assert.strictEqual(priority.querySelector("button, input, [tabindex]"), null);
+    const checkbox = row.querySelector('input[type="checkbox"]');
+    assert.strictEqual(checkbox.getAttribute("aria-label"), `${checkbox.checked ? "Reopen" : "Mark done"}: ${title}`);
+    assert.strictEqual(checkbox.disabled, false);
+  });
+}
+
+test("priority dots and readable labels survive sorting, filtering and polling", async (t) => {
+  const state = { workspace: WORKSPACE };
+  const page = await openPm(state);
+  t.after(() => page.dom.window.close());
+  const high = ["Second", "high", "High priority"];
+  const low = ["First", "low", "Low priority"];
+  const normal = ["Old", "normal", "Normal priority"];
+  assertPriorityRows(page, [high, normal, low]);
+  for (const [mode, expected] of [
+    ["Manual", [low, high, normal]],
+    ["Created", [high, low, normal]],
+    ["Priority", [high, normal, low]],
+  ]) {
+    page.sortButton(mode).click();
+    assertPriorityRows(page, expected);
+  }
+  [...page.doc.querySelectorAll("button")].find(b => b.textContent === "Filter").click();
+  const filter = page.doc.querySelector(".pm-filter-panel select");
+  for (const [key, expected] of [["low", low], ["normal", normal], ["high", high]]) {
+    filter.value = key;
+    filter.dispatchEvent(new page.dom.window.Event("change", { bubbles: true }));
+    assertPriorityRows(page, [expected]);
+  }
+  filter.value = "all";
+  filter.dispatchEvent(new page.dom.window.Event("change", { bubbles: true }));
+  const search = page.doc.querySelector('input[type="search"]');
+  search.value = "First";
+  search.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+  assertPriorityRows(page, [low]);
+  search.value = "";
+  search.dispatchEvent(new page.dom.window.Event("input", { bubbles: true }));
+  [...page.doc.querySelectorAll(".pm-switch-button")].find(b => b.textContent === "All").click();
+  assertPriorityRows(page, [high, ["Done one", "normal", "Normal priority"], normal, low]);
+
+  // Poll replaces priorities as well as rows while retaining the selected sort.
+  state.workspace = { ...WORKSPACE, revision: "r2", items: WORKSPACE.items.map(item =>
+    ({ ...item, priority: item.text === "First" ? "high" : "low" })) };
+  await page.dom.window.eval("refresh()");
+  assertPriorityRows(page, [
+    ["First", "high", "High priority"], ["Done one", "low", "Low priority"],
+    ["Second", "low", "Low priority"], ["Old", "low", "Low priority"],
+  ]);
+  assert.deepStrictEqual(page.bodies, []);
+  assert.deepStrictEqual(page.errors, []);
+});
+
+test("missing and unknown priorities have neutral safe labels", async (t) => {
+  const values = [undefined, null, "", "medium", "urgent", "toString", "__proto__", '<img src=x onerror="alert(1)">'];
+  const state = { workspace: { ...WORKSPACE, items: values.map((priority, index) =>
+    ({ id: String(index), text: `Unknown ${index}`, priority, status: "open", index })) } };
+  const page = await openPm(state);
+  t.after(() => page.dom.window.close());
+  const expected = values.map((_, index) => [`Unknown ${index}`, "unknown", "Unknown priority"]);
+  assertPriorityRows(page, page.titles().map(title => [title, "unknown", "Unknown priority"]));
+  assert.strictEqual(page.doc.querySelector(".pm-task-list img"), null);
+  page.sortButton("Manual").click();
+  assertPriorityRows(page, expected);
+  await page.dom.window.eval("refresh()");
+  assertPriorityRows(page, expected);
+  assert.deepStrictEqual(page.errors, []);
+});

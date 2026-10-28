@@ -104,9 +104,13 @@ function pmTaskRow(item) {
   check.setAttribute("aria-label", `${check.checked ? "Reopen" : "Mark done"}: ${item.text}`);
   check.addEventListener("change", () => pmSend({ action: "update", id: item.id, status: check.checked ? "done" : "open", project: pmUi.workspace.project, revision: pmUi.workspace.revision }));
   entry.append(check, pmButton(item.text, () => { pmUi.editor = { ...item, revision: pmUi.workspace.revision, project: pmUi.workspace.project }; pmPaint(); }, "pm-task-title"));
-  if (item.priority === "high") {
-    const priority = el("span", PM_PRIORITIES.high, "pm-priority"); priority.dataset.priority = "high"; entry.append(priority);
-  }
+  const priorityKey = Object.prototype.hasOwnProperty.call(PM_PRIORITIES, item.priority) ? item.priority : "unknown";
+  const priority = el("span", null, "pm-priority");
+  priority.dataset.priority = priorityKey;
+  const dot = el("span", null, "pm-priority-dot");
+  dot.setAttribute("aria-hidden", "true");
+  priority.append(dot, el("span", priorityKey === "unknown" ? "Unknown priority" : `${PM_PRIORITIES[priorityKey]} priority`));
+  entry.append(priority);
   if (PM_SHOWN_STATUSES.includes(item.status)) entry.append(el("span", PM_STATUSES[item.status], "pm-status"));
   const taskBadge = pmTaskBadge(item);
   if (taskBadge) entry.append(taskBadge);
