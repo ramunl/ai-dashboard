@@ -493,7 +493,7 @@ test("PM workspace shows priority, status and completed filters", async () => {
   const page = await openPage("/pm", { respond: editablePM });
   await sleep(70);
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 2);
-  assert.match(page.text("view"), /High priorityBlocked/);
+  assert.match(page.text("view"), /High priorityUnknown typeBlocked/);
   buttonNamed(page, "Done 1").click();
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 1);
   assert.match(page.text("view"), /Completed task/);
@@ -727,7 +727,7 @@ test("PM quick add saves a normal todo on Enter, once, and keeps the field ready
   await sleep(40);
   assert.strictEqual(bodies.length, 1);
   assert.match(bodies[0].id, /^[a-f0-9]{32}$/);
-  assert.deepStrictEqual({ ...bodies[0], id: "" }, { action: "add", id: "", project: "app", revision: "r1", text: "buy milk", priority: "normal", status: "open" });
+  assert.deepStrictEqual({ ...bodies[0], id: "" }, { action: "add", id: "", project: "app", revision: "r1", text: "buy milk", priority: "normal", type: "feature", status: "open" });
   assert.strictEqual(quickAdd(page).value, "");
   assert.strictEqual(page.doc.activeElement, quickAdd(page));
 });
@@ -769,7 +769,7 @@ test("PM rows show priority labels and badges for unusual statuses", async () =>
   const page = await openPage("/pm", { respond: editablePM });
   await sleep(70);
   const rows = [...page.doc.querySelectorAll(".pm-task")].map((row) => row.textContent);
-  assert.deepStrictEqual(rows, ["High priority taskHigh priorityBlocked", "Normal taskNormal priority"]);
+  assert.deepStrictEqual(rows, ["High priority taskHigh priorityUnknown typeBlocked", "Normal taskNormal priorityUnknown type"]);
 });
 
 test("PM page puts todos and the side card in one layout; rules and About share a card", async () => {

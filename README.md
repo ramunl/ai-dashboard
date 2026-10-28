@@ -234,14 +234,18 @@ bot share one implementation.
 ## PM Todos workspace
 
 The PM window provides project selection and creation, search, status/priority
-filters, priority sorting, add/edit/delete, completion and reopening. Long items
-use two-line previews and a full editor. Drafts, focused inputs and filter state
+filters, priority sorting, add/edit/delete, completion and reopening. Each todo
+shows its type (Feature, Bug or Notice) as text beside its priority. New todos
+default to Feature; a todo without a type shows “Unknown type” and its editor
+offers “Unset”, which sends no type. Long items use two-line previews and a full
+editor. Drafts, focused inputs and filter state
 survive heartbeat refreshes. Versions move into About; the existing Rules card
 remains read-only in this first phase.
 
 Editing requires the PM repository's `/usr/local/sbin/ai-pm-todos` bridge. Deploy
 ai-pm-agent and install its `deploy/ai-pm-todos` wrapper first, then deploy this
-dashboard. `DASHBOARD_PM_COMMAND` can override the trusted executable path.
+dashboard. The type field must be deployed on ai-pm-agent before this dashboard,
+or the PM bridge may reject add and update requests that carry `type`. `DASHBOARD_PM_COMMAND` can override the trusted executable path.
 Without it, the PM snapshot remains visible with an editing-unavailable message.
 
 Owner-signed Telegram authentication is required for workspace reads and actions.

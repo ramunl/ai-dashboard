@@ -18,7 +18,7 @@ function pmProjectPicker(workspace) {
 }
 
 function pmNewTodoDraft(workspace, text) {
-  return { id: crypto.randomUUID().replaceAll("-", ""), text, priority: "normal", status: "open", isNew: true, revision: workspace.revision, project: workspace.project };
+  return { id: crypto.randomUUID().replaceAll("-", ""), text, priority: "normal", type: "feature", status: "open", isNew: true, revision: workspace.revision, project: workspace.project };
 }
 
 function pmNeedsProject(workspace) {
@@ -28,7 +28,7 @@ function pmNeedsProject(workspace) {
   return true;
 }
 
-// Enter saves a Normal-priority todo; the field keeps focus for the next one.
+// Enter saves a Normal-priority Feature todo; the field keeps focus for the next one.
 function pmQuickAdd(workspace) {
   const input = el("input");
   input.type = "text";
@@ -43,7 +43,7 @@ function pmQuickAdd(workspace) {
     const text = input.value.replace(/\s+/g, " ").trim();
     if (!text || pmUi.busy || pmNeedsProject(workspace)) return;
     const draft = pmNewTodoDraft(workspace, text);
-    const isSaved = await pmSend({ action: "add", id: draft.id, project: draft.project, revision: draft.revision, text, priority: draft.priority, status: draft.status });
+    const isSaved = await pmSend({ action: "add", id: draft.id, project: draft.project, revision: draft.revision, text, priority: draft.priority, type: draft.type, status: draft.status });
     if (!isSaved) return;
     pmUi.quick = "";
     pmPaint();
