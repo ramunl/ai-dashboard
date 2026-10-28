@@ -54,6 +54,27 @@ function retryButton(task, tool, label, className) {
   });
 }
 
+// Only the agent can decide whether the finished attempt is safe to archive.
+function canReopenTask(task) {
+  return task.can_reopen === true && ["done", "stopped"].includes(task.stage);
+}
+
+function reopenButton(task) {
+  const key = `task:reopen:${task.id}`;
+  return taskButton("Reopen", key, "row-button", (button) => {
+    button.disabled = true;
+    const origin = generation;
+    askConfirmation(`Reopen "${task.title}" as To do? Fresh planning uses AI tokens and requires approval. Attempt history is preserved; its PM todo stays unchanged.`, (isConfirmed) => {
+      if (origin !== generation) return;
+      if (!isConfirmed) { button.disabled = hasPendingActions(); return; }
+      requestAction(key, "reopen_task", { task: task.id }, (result) => {
+        taskFilter = "active";
+        actionNotice = { text: result.message, until: Date.now() + NOTICE_MS };
+      });
+    });
+  });
+}
+
 // " with Codex" (the planner chosen in Setup), or "" when unknown.
 function plannerText() {
   return taskPlanner ? ` with ${taskPlanner[0].toUpperCase()}${taskPlanner.slice(1)}` : "";
@@ -137,6 +158,7 @@ function taskActions(task) {
     actions.push(taskButton(task.autopilot ? "Autopilot off" : "Autopilot on", key, "row-button work-secondary",
       (button) => { button.disabled = true; requestAction(key, "set_autopilot", { task: task.id, value }); }));
   }
+  if (canReopenTask(task)) actions.push(reopenButton(task));
   if (task.can_retry) {
     actions.push(retryButton(task, "claude", "Retry with Claude", "row-button"),
       retryButton(task, "codex", "Retry with Codex", "row-button work-secondary"));
@@ -148,7 +170,7 @@ function taskActions(task) {
       button.disabled = true;
       requestAction(key, "cancel_start", { task: task.id });
     }));
-  } else if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !task.waiting_for) {
+  } else if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !task.waiting_for && !canReopenTask(task)) {
     const key = `task:start:${task.id}`;
     actions.push(taskButton("Start planning", key, "row-button", (button) => {
       button.disabled = true;

@@ -114,6 +114,23 @@ class CheckTests(unittest.TestCase):
         with self.assertRaises(RequestError):
             check({"action": "start_task", "args": {"task": "1"}})
 
+    def test_reopen_requires_exact_task_id(self) -> None:
+        args = {"task": "0a1b2c3d"}
+        self.assertEqual(
+            check({"action": "reopen_task", "args": args}), ("reopen_task", args)
+        )
+        for invalid in (
+            {},
+            None,
+            {"task": 123},
+            {"task": "ABCDEF12"},
+            {"task": "../task"},
+            {"task": "0a1b2c3d", "tool": "codex"},
+            {"task": "0a1b2c3d", "force": "on"},
+        ):
+            with self.subTest(args=invalid), self.assertRaises(RequestError):
+                check({"action": "reopen_task", "args": invalid})
+
     def test_task_images_are_staged_upload_ids_up_to_three(self) -> None:
         one, two, three = "0123456789abcdef", "fedcba9876543210", "0f1e2d3c4b5a6978"
         for images in ("", one, f"{one},{two}", f"{one},{two},{three}"):

@@ -661,6 +661,37 @@ class ImageUploadTests(unittest.IsolatedAsyncioTestCase):
             "/api/coding/actions", data=json.dumps(body), headers=_auth()
         )
 
+    async def test_reopen_action_authentication_and_validation(self) -> None:
+        body = {"action": "reopen_task", "args": {"task": "0a1b2c3d"}}
+        for headers, status in (({}, 401), (_auth(user_id=1), 403)):
+            response = await self.client.post(
+                "/api/coding/actions", json=body, headers=headers
+            )
+            self.assertEqual(response.status, status)
+        for args in (
+            {},
+            {"task": 1},
+            {"task": "../bad"},
+            {"task": "0a1b2c3d", "tool": "codex"},
+        ):
+            response = await self.client.post(
+                "/api/coding/actions",
+                json={"action": "reopen_task", "args": args},
+                headers=_auth(),
+            )
+            self.assertEqual(response.status, 400)
+        self.assertFalse(self.inbox.exists())
+        response = await self.client.post(
+            "/api/coding/actions", json=body, headers=_auth()
+        )
+        self.assertEqual(response.status, 202)
+        answer = await response.json()
+        saved = json.loads((self.inbox / f"{answer['id']}.json").read_text())
+        self.assertEqual(saved["action"], body["action"])
+        self.assertEqual(saved["args"], body["args"])
+        self.assertEqual(saved["requested_by"], "coding")
+        self.assertEqual(len(list(self.inbox.iterdir())), 1)
+
     async def test_requires_the_owner_before_reading_anything(self) -> None:
         self.assertEqual((await self.image(headers={})).status, 401)
         self.assertEqual((await self.image(headers=_auth(user_id=1))).status, 403)
