@@ -18,9 +18,11 @@ import asyncio
 import logging
 import re
 import subprocess
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
+from weakref import WeakKeyDictionary
 
 from ai_dashboard.deployments import TARGETS
 from ai_dashboard.pm_bridge import invoke_pm
@@ -30,6 +32,34 @@ logger = logging.getLogger(__name__)
 
 CHECK_SECONDS = 300
 MAX_REMEMBERED = 200
+MAX_ANCESTRY_RESULTS = 512
+MAX_GIT_WORKERS = 4
+
+MergeKey = tuple[str, str, str]
+
+
+class _MergeChecks:
+    def __init__(self) -> None:
+        self.results: OrderedDict[MergeKey, bool] = OrderedDict()
+        self.pending: dict[MergeKey, asyncio.Task[bool | None]] = {}
+        self.slots = asyncio.Semaphore(MAX_GIT_WORKERS)
+
+    def finished(self, key: MergeKey, task: asyncio.Task[bool | None]) -> None:
+        self.pending.pop(key, None)
+        self.slots.release()
+        if not task.cancelled():
+            result = task.result()
+            if result is not None:
+                self.results[key] = result
+                self.results.move_to_end(key)
+                while len(self.results) > MAX_ANCESTRY_RESULTS:
+                    self.results.popitem(last=False)
+
+
+# Each service loop shares checks across requests and the background closer.
+_checks: WeakKeyDictionary[asyncio.AbstractEventLoop, _MergeChecks] = (
+    WeakKeyDictionary()
+)
 
 
 def _epoch(value: object) -> float | None:
@@ -43,15 +73,7 @@ def _epoch(value: object) -> float | None:
     return None
 
 
-def contains_merge(repo: str, commit: object, merge: object) -> bool:
-    """Check exact deployed history; timestamps alone cannot prove inclusion."""
-    if repo not in TARGETS or not all(
-        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value)
-        for value in (commit, merge)
-    ):
-        return False
-    if commit == merge:
-        return True
+def _git_contains_merge(repo: str, commit: str, merge: str) -> bool | None:
     try:
         result = subprocess.run(
             ["git", "-C", f"/opt/{repo}", "merge-base", "--is-ancestor", merge, commit],
@@ -60,11 +82,44 @@ def contains_merge(repo: str, commit: object, merge: object) -> bool:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.returncode == 0 if result.returncode in (0, 1) else None
+
+
+async def contains_merge(repo: str, commit: object, merge: object) -> bool:
+    """Check exact deployed history, sharing bounded, cancellation-safe Git work."""
+    if repo not in TARGETS or not all(
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value)
+        for value in (commit, merge)
+    ):
         return False
-    return result.returncode == 0
+    if commit == merge:
+        return True
+    key = (repo, commit, merge)
+    checks = _checks.setdefault(asyncio.get_running_loop(), _MergeChecks())
+    if key in checks.results:
+        checks.results.move_to_end(key)
+        return checks.results[key]
+    if key in checks.pending:
+        return bool(await asyncio.shield(checks.pending[key]))
+
+    await checks.slots.acquire()
+    # Other callers may have completed or started this key while we waited.
+    if key in checks.results:
+        checks.slots.release()
+        checks.results.move_to_end(key)
+        return checks.results[key]
+    if key in checks.pending:
+        checks.slots.release()
+        return bool(await asyncio.shield(checks.pending[key]))
+    worker = asyncio.create_task(asyncio.to_thread(_git_contains_merge, *key))
+    checks.pending[key] = worker
+    # Release only when the worker finishes, even if every caller cancels.
+    worker.add_done_callback(lambda task: checks.finished(key, task))
+    return bool(await asyncio.shield(worker))
 
 
-def deployed_at(tasks: list, deployments: dict) -> dict[str, float]:
+async def deployed_at(tasks: list, deployments: dict) -> dict[str, float]:
     """Task id -> time of the verified deployment that contains its merge."""
     if not deployments.get("ok"):
         return {}
@@ -82,7 +137,7 @@ def deployed_at(tasks: list, deployments: dict) -> dict[str, float]:
             isinstance(merged, (int, float))
             and verified is not None
             and verified >= merged
-            and contains_merge(task.get("repo"), commit, task.get("merge_commit"))
+            and await contains_merge(task.get("repo"), commit, task.get("merge_commit"))
         ):
             result[task["id"]] = verified
     return result
@@ -177,10 +232,10 @@ def todo_badges(tasks: list, deployed: dict[str, float]) -> dict[str, str]:
     return badges
 
 
-def task_progress(tasks: list, deployments: dict, closer: TaskCloser) -> dict:
+async def task_progress(tasks: list, deployments: dict, closer: TaskCloser) -> dict:
     """What the Tasks window adds to the agent's stages."""
     return {
-        "deployed": deployed_at(tasks, deployments),
+        "deployed": await deployed_at(tasks, deployments),
         "deployable": list(TARGETS),
         "closed": [
             task_id
@@ -202,7 +257,9 @@ async def close_forever(
             tasks = await read_tasks()
             if tasks:
                 deployments = await read_deployments()
-                await closer.close_finished(tasks, deployed_at(tasks, deployments))
+                await closer.close_finished(
+                    tasks, await deployed_at(tasks, deployments)
+                )
         except Exception as error:
             logger.warning("Closing finished todos failed (will retry): %s", error)
         await asyncio.sleep(interval)

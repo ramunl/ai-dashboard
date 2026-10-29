@@ -2,11 +2,12 @@ import asyncio
 import json
 import logging
 import tempfile
+import threading
 import time
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import aiohttp
 from aiohttp import web
@@ -15,6 +16,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from ai_dashboard import server, sources
 from ai_dashboard.auth import sign_init_data
 from ai_dashboard.config import BotSource, Settings
+from ai_dashboard.task_progress import close_forever
 from ai_dashboard.telegram_api import set_menu_button
 
 OWNER = 777
@@ -60,6 +62,122 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.service.stop()
         await self.client.close()
+
+    async def _assert_git_responsiveness(self, origin: str, commit: str) -> None:
+        loop = asyncio.get_running_loop()
+        entered = asyncio.Event()
+        release = threading.Event()
+        closed = asyncio.Event()
+        task = {
+            "id": "slow-task",
+            "repo": "ai-dashboard",
+            "stage": "done",
+            "merged_at": 100,
+            "merge_commit": "f" * 40,
+            "todo": "project:todo",
+        }
+        deployments = {
+            "ok": True,
+            "targets": [
+                {
+                    "name": "ai-dashboard",
+                    "status": "healthy",
+                    "current": {"commit": commit * 40, "verified_at": 200},
+                }
+            ],
+        }
+
+        def slow_git(*args, **kwargs):
+            loop.call_soon_threadsafe(entered.set)
+            release.wait(5)
+            return Mock(returncode=0)
+
+        async def close_tasks(tasks, deployed):
+            self.assertEqual(tasks, [task])
+            self.assertEqual(deployed, {"slow-task": 200})
+            closed.set()
+
+        closer = self.client.app[server.CLOSER]
+        with (
+            patch.dict(
+                server.VIEW_PROVIDERS,
+                {
+                    "coding": AsyncMock(return_value={"snapshot": {"tasks": [task]}}),
+                    "pm": AsyncMock(return_value={}),
+                },
+            ),
+            patch.object(
+                self.client.app[server.DEPLOYMENTS],
+                "state",
+                AsyncMock(return_value=deployments),
+            ),
+            patch.object(closer, "close_finished", side_effect=close_tasks),
+            patch.object(server, "invoke_pm", AsyncMock(return_value={"ok": True})),
+            patch(
+                "ai_dashboard.task_progress.subprocess.run", side_effect=slow_git
+            ) as git,
+        ):
+
+            async def request(window):
+                return await self.client.get("/api/" + window, headers=_auth())
+
+            def start(which):
+                if which == "closer":
+                    return asyncio.create_task(
+                        close_forever(
+                            AsyncMock(return_value=[task]),
+                            AsyncMock(return_value=deployments),
+                            closer,
+                            interval=3600,
+                        )
+                    )
+                return asyncio.create_task(request(which))
+
+            pending = {origin: start(origin)}
+            try:
+                await asyncio.wait_for(entered.wait(), 1)
+                for path in ("/healthz", "/api/tokens"):
+                    response = await asyncio.wait_for(
+                        self.client.get(path, headers=_auth()), 1
+                    )
+                    self.assertEqual(response.status, 200)
+                    await response.read()
+                self.assertFalse(pending[origin].done())
+                self.assertFalse(closed.is_set())
+                # All three consumers share the outstanding check and its result.
+                for other in {"coding", "pm", "closer"} - {origin}:
+                    pending[other] = start(other)
+                await asyncio.sleep(0.05)
+                self.assertEqual(git.call_count, 1)
+                self.assertTrue(all(not work.done() for work in pending.values()))
+                release.set()
+                coding = await asyncio.wait_for(pending["coding"], 1)
+                pm = await asyncio.wait_for(pending["pm"], 1)
+                self.assertEqual(
+                    (await coding.json())["task_progress"]["deployed"],
+                    {"slow-task": 200},
+                )
+                self.assertEqual(
+                    (await pm.json())["task_badges"], {"project:todo": "deployed"}
+                )
+                await asyncio.wait_for(closed.wait(), 1)
+                again = await request("coding")
+                await again.read()
+                self.assertEqual(git.call_count, 1)
+            finally:
+                release.set()
+                for work in pending.values():
+                    work.cancel()
+                await asyncio.gather(*pending.values(), return_exceptions=True)
+
+    async def test_slow_coding_git_keeps_server_responsive(self) -> None:
+        await self._assert_git_responsiveness("coding", "a")
+
+    async def test_slow_pm_git_keeps_server_responsive(self) -> None:
+        await self._assert_git_responsiveness("pm", "b")
+
+    async def test_slow_closer_git_keeps_server_responsive(self) -> None:
+        await self._assert_git_responsiveness("closer", "c")
 
     async def test_rollback_requires_owner_signature_and_post(self) -> None:
         route = "/api/ops/rollback"
