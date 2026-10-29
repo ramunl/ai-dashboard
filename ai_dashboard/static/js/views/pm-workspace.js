@@ -1,6 +1,7 @@
 // Todos workspace. Preserve drafts, selected filters and focused inputs on polling.
 const PM_STATUSES = { open: "Open", in_progress: "In progress", blocked: "Blocked", done: "Done" };
 const PM_PRIORITIES = { high: "High", normal: "Normal", low: "Low" };
+const PM_TYPES = { feature: "Feature", bug: "Bug", notice: "Notice" };
 // One of SORT_MODES. Kept across polls and project changes; never saved.
 let todoSortMode = "priority";
 const pmUi = { workspace: null, node: null, filter: "open", priority: "all", search: "", expanded: false, editor: null, busy: false, dragging: false, notice: "", quick: "", filtersOpen: false, layout: null };
@@ -111,6 +112,11 @@ function pmTaskRow(item) {
   dot.setAttribute("aria-hidden", "true");
   priority.append(dot, el("span", priorityKey === "unknown" ? "Unknown priority" : `${PM_PRIORITIES[priorityKey]} priority`));
   entry.append(priority);
+  // Text, not color alone: a missing or unknown type reads "Unknown type".
+  const typeKey = Object.hasOwn(PM_TYPES, item.type) ? item.type : "unknown";
+  const type = el("span", typeKey === "unknown" ? "Unknown type" : PM_TYPES[typeKey], "pm-type");
+  type.dataset.type = typeKey;
+  entry.append(type);
   if (PM_SHOWN_STATUSES.includes(item.status)) entry.append(el("span", PM_STATUSES[item.status], "pm-status"));
   const taskBadge = pmTaskBadge(item);
   if (taskBadge) entry.append(taskBadge);
@@ -176,6 +182,12 @@ function pmMove(item, index) {
   pmSend({ action: "move", id: item.id, project: pmUi.workspace.project, revision: pmUi.workspace.revision, index });
 }
 
+// Unset is first. A stored type this page does not know stays selectable, so saving does not change it.
+function pmTypeChoices(type) {
+  const unknown = type && !Object.hasOwn(PM_TYPES, type) ? Object.fromEntries([[type, "Unknown type"]]) : {};
+  return { "": "Unset", ...PM_TYPES, ...unknown };
+}
+
 function pmEditor() {
   const draft = pmUi.editor, form = el("form", null, "pm-editor");
   form.append(pmButton("Back to todos", pmCloseEditor));
@@ -188,10 +200,14 @@ function pmEditor() {
     form.append(el("h3", draft.isNew ? "Add todo" : "Edit todo"), muted(`Project: ${draft.project}`));
     const text = el("textarea"); text.value = draft.text; text.required = true; text.maxLength = 10000; text.rows = 6;
     text.addEventListener("input", () => { draft.text = text.value; });
-    form.append(pmField("Todo text", text), pmSelect("Priority", PM_PRIORITIES, draft.priority, v => { draft.priority = v; }), pmSelect("Status", PM_STATUSES, draft.status, v => { draft.status = v; }));
+    form.append(pmField("Todo text", text), pmSelect("Priority", PM_PRIORITIES, draft.priority, v => { draft.priority = v; }),
+      pmSelect("Type", pmTypeChoices(draft.type), draft.type || "", v => { draft.type = v || undefined; }),
+      pmSelect("Status", PM_STATUSES, draft.status, v => { draft.status = v; }));
     form.addEventListener("submit", event => {
       event.preventDefault();
-      pmSend({ action: draft.isNew ? "add" : "update", id: draft.id, project: draft.project, revision: draft.revision, text: draft.text.replace(/\s*[\r\n]+\s*/g, " ").trim(), priority: draft.priority, status: draft.status }, true);
+      const payload = { action: draft.isNew ? "add" : "update", id: draft.id, project: draft.project, revision: draft.revision, text: draft.text.replace(/\s*[\r\n]+\s*/g, " ").trim(), priority: draft.priority, status: draft.status };
+      if (draft.type) payload.type = draft.type;  // unset: omitted, so the PM keeps what it has
+      pmSend(payload, true);
     });
     // Make task: hand the todo to the Tasks window, which asks for the repository.
     if (!draft.isNew && draft.status !== "done") form.append(pmButton("Make task", () => {

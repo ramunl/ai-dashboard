@@ -130,6 +130,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .pm-task .pm-priority[data-priority="low"] .pm-priority-dot { background: var(--pm-priority-low, #329653); }
 .pm-task .pm-priority[data-priority="normal"] .pm-priority-dot { background: var(--pm-priority-normal, #a88700); }
 .pm-task .pm-priority[data-priority="high"] .pm-priority-dot { background: var(--pm-priority-high, #d64545); }
+/* Type is plain text beside priority; it wraps onto its own line on narrow screens. */
+.pm-task .pm-type { font-size: 0.72rem; color: var(--hint); border: 1px solid currentColor; border-radius: 0.3rem; padding: 0.05rem 0.35rem; flex-shrink: 1; min-width: 0; overflow-wrap: anywhere; }
 .pm-task-title { text-align: left; font: inherit; color: var(--fg); background: none; border: 0; padding: 0; cursor: pointer; flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pm-notice { margin-bottom: 0.8rem; overflow-wrap: anywhere; }
 .pm-editor .pm-button { margin: 0.4rem 0.4rem 0 0; }
