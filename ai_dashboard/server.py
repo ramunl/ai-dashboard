@@ -114,7 +114,9 @@ async def window_data(request: web.Request) -> web.Response:
             deployments = await request.app[DEPLOYMENTS].state()
             view = {
                 **view,
-                "task_progress": task_progress(tasks, deployments, request.app[CLOSER]),
+                "task_progress": await task_progress(
+                    tasks, deployments, request.app[CLOSER]
+                ),
             }
     if request.match_info["window"] == "pm":
         view = {
@@ -387,7 +389,7 @@ async def _task_badges(app: web.Application, settings: Settings) -> dict:
     tasks = snapshot_tasks(await provider(settings)) if provider else []
     if not tasks:
         return {}
-    return todo_badges(tasks, deployed_at(tasks, await app[DEPLOYMENTS].state()))
+    return todo_badges(tasks, await deployed_at(tasks, await app[DEPLOYMENTS].state()))
 
 
 async def logs_data(request: web.Request) -> web.Response:
