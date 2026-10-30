@@ -159,9 +159,12 @@ function assertPriorityRows(page, expected) {
     assert.strictEqual(row.querySelector(".pm-task-title").textContent, title);
     const priority = row.querySelector(".pm-priority");
     assert.strictEqual(priority.dataset.priority, key);
-    assert.strictEqual(priority.textContent, label);
+    assert.strictEqual(priority.textContent, "");
+    assert.strictEqual(priority.getAttribute("aria-label"), label);
+    assert.strictEqual(priority.title, label);
+    assert.strictEqual(priority.getAttribute("role"), "img");
     assert.strictEqual(priority.hasAttribute("aria-hidden"), false);
-    assert.strictEqual(priority.querySelector("span:not(.pm-priority-dot)").hasAttribute("aria-hidden"), false);
+    assert.strictEqual(priority.querySelector("span:not(.pm-priority-dot)"), null);
     const dots = priority.querySelectorAll(".pm-priority-dot");
     assert.strictEqual(dots.length, 1);
     assert.strictEqual(dots[0].getAttribute("aria-hidden"), "true");
@@ -173,7 +176,7 @@ function assertPriorityRows(page, expected) {
   });
 }
 
-test("priority dots and readable labels survive sorting, filtering and polling", async (t) => {
+test("priority dots and accessible labels survive sorting, filtering and polling", async (t) => {
   const state = { workspace: WORKSPACE };
   const page = await openPm(state);
   t.after(() => page.dom.window.close());

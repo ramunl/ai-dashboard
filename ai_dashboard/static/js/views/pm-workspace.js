@@ -2,6 +2,7 @@
 const PM_STATUSES = { open: "Open", in_progress: "In progress", blocked: "Blocked", done: "Done" };
 const PM_PRIORITIES = { high: "High", normal: "Normal", low: "Low" };
 const PM_TYPES = { feature: "Feature", bug: "Bug", notice: "Notice" };
+const PM_TYPE_ICONS = { feature: "✨", bug: "🐞", notice: "ℹ️" };
 // One of SORT_MODES. Kept across polls and project changes; never saved.
 let todoSortMode = "priority";
 const pmUi = { workspace: null, node: null, filter: "open", priority: "all", search: "", expanded: false, editor: null, busy: false, dragging: false, notice: "", quick: "", filtersOpen: false, layout: null };
@@ -110,11 +111,19 @@ function pmTaskRow(item) {
   priority.dataset.priority = priorityKey;
   const dot = el("span", null, "pm-priority-dot");
   dot.setAttribute("aria-hidden", "true");
-  priority.append(dot, el("span", priorityKey === "unknown" ? "Unknown priority" : `${PM_PRIORITIES[priorityKey]} priority`));
+  const priorityLabel = priorityKey === "unknown" ? "Unknown priority" : `${PM_PRIORITIES[priorityKey]} priority`;
+  priority.setAttribute("role", "img");
+  priority.setAttribute("aria-label", priorityLabel);
+  priority.title = priorityLabel;
+  priority.append(dot);
   entry.append(priority);
-  // Text, not color alone: a missing or unknown type reads "Unknown type".
+  // Icons keep rows compact; accessible names and tooltips retain their meaning.
   const typeKey = Object.hasOwn(PM_TYPES, item.type) ? item.type : "unknown";
-  const type = el("span", typeKey === "unknown" ? "Unknown type" : PM_TYPES[typeKey], "pm-type");
+  const typeLabel = typeKey === "unknown" ? "Unknown type" : PM_TYPES[typeKey];
+  const type = el("span", typeKey === "unknown" ? "?" : PM_TYPE_ICONS[typeKey], "pm-type");
+  type.setAttribute("role", "img");
+  type.setAttribute("aria-label", typeLabel);
+  type.title = typeLabel;
   type.dataset.type = typeKey;
   entry.append(type);
   if (PM_SHOWN_STATUSES.includes(item.status)) entry.append(el("span", PM_STATUSES[item.status], "pm-status"));

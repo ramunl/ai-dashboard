@@ -1,4 +1,4 @@
-// Page tests for the PM todo type: row text beside priority, the editor's Type
+// Page tests for the PM todo type: row icons beside priority, the editor's Type
 // select, and the add/update payloads (pm-workspace.js, pm-toolbar.js).
 const test = require("node:test");
 const assert = require("node:assert");
@@ -66,19 +66,24 @@ async function openPm(state) {
   };
 }
 
-test("rows show the type as text beside the priority, with a neutral fallback", async (t) => {
+test("rows show accessible type icons beside priority, with a neutral fallback", async (t) => {
   const page = await openPm({ workspace: WORKSPACE });
   t.after(() => page.dom.window.close());
   const typeOf = (title) => {
     const type = page.row(title).querySelector(".pm-type");
-    return [type.textContent, type.dataset.type, type.previousElementSibling.classList.contains("pm-priority")];
+    assert.strictEqual(type.getAttribute("role"), "img");
+    assert.strictEqual(type.title, type.getAttribute("aria-label"));
+    return [type.textContent, type.dataset.type, type.previousElementSibling.classList.contains("pm-priority"), type.getAttribute("aria-label")];
   };
-  assert.deepStrictEqual(typeOf("Typed bug"), ["Bug", "bug", true]);
-  assert.deepStrictEqual(typeOf("Typed notice"), ["Notice", "notice", true]);
-  assert.deepStrictEqual(typeOf("Untyped"), ["Unknown type", "unknown", true]);
-  assert.deepStrictEqual(typeOf("Unknown value"), ["Unknown type", "unknown", true]);
-  assert.deepStrictEqual(typeOf("Proto value"), ["Unknown type", "unknown", true]);
-  assert.deepStrictEqual(typeOf("Injected"), ["Unknown type", "unknown", true]);
+  assert.deepStrictEqual(typeOf("Typed bug"), ["🐞", "bug", true, "Bug"]);
+  assert.deepStrictEqual(typeOf("Typed notice"), ["ℹ️", "notice", true, "Notice"]);
+  assert.deepStrictEqual(typeOf("Untyped"), ["?", "unknown", true, "Unknown type"]);
+  assert.deepStrictEqual(typeOf("Unknown value"), ["?", "unknown", true, "Unknown type"]);
+  assert.deepStrictEqual(typeOf("Proto value"), ["?", "unknown", true, "Unknown type"]);
+  assert.deepStrictEqual(typeOf("Injected"), ["?", "unknown", true, "Unknown type"]);
+  const feature = page.dom.window.pmTaskRow({ id: "g".repeat(32), text: "Feature example", priority: "normal", type: "feature", status: "open" }).querySelector(".pm-type");
+  assert.strictEqual(feature.textContent, "✨");
+  assert.strictEqual(feature.getAttribute("aria-label"), "Feature");
   assert.strictEqual(page.doc.querySelector(".pm-task-list img"), null);
   assert.deepStrictEqual(page.errors, []);
 });

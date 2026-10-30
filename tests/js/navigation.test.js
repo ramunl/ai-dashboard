@@ -493,7 +493,7 @@ test("PM workspace shows priority, status and completed filters", async () => {
   const page = await openPage("/pm", { respond: editablePM });
   await sleep(70);
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 2);
-  assert.match(page.text("view"), /High priorityUnknown typeBlocked/);
+  assert.match(page.text("view"), /High priority task\?Blocked/);
   buttonNamed(page, "Done 1").click();
   assert.strictEqual(page.doc.querySelectorAll(".pm-task").length, 1);
   assert.match(page.text("view"), /Completed task/);
@@ -765,11 +765,11 @@ test("PM switch filters Open / Done / All with counts; rare filters hide behind 
   assert.deepStrictEqual([...page.doc.querySelectorAll(".pm-task-title")].map((n) => n.textContent), ["Completed task"]);
 });
 
-test("PM rows show priority labels and badges for unusual statuses", async () => {
+test("PM rows show compact markers and badges for unusual statuses", async () => {
   const page = await openPage("/pm", { respond: editablePM });
   await sleep(70);
   const rows = [...page.doc.querySelectorAll(".pm-task")].map((row) => row.textContent);
-  assert.deepStrictEqual(rows, ["High priority taskHigh priorityUnknown typeBlocked", "Normal taskNormal priorityUnknown type"]);
+  assert.deepStrictEqual(rows, ["High priority task?Blocked", "Normal task?"]);
 });
 
 test("PM page puts todos and the side card in one layout; rules and About share a card", async () => {
