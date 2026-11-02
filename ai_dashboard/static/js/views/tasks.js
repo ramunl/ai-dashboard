@@ -40,15 +40,22 @@ function agoText(seconds) {
 // A stopped task that can be retried, or that a later part waits for, still
 // needs you: it stays under Active.
 function isTaskFinished(task) {
-  return FINISHED_TASK_STAGES.includes(task.stage) && !task.can_retry && !task.blocks;
+  return FINISHED_TASK_STAGES.includes(task.stage) && !task.can_retry && task.can_resume !== true && !task.blocks;
 }
 
-function retryButton(task, tool, label, className) {
-  const key = `task:retry:${task.id}:${tool}`;
+function retryButton(task, tool, label, className, resume = false) {
+  const action = resume ? "resume_task" : "retry_task";
+  const key = `task:${resume ? "resume" : "retry"}:${task.id}:${tool}`;
   return taskButton(label, key, className, (button) => {
     button.disabled = true;
-    askConfirmation(`Run "${task.title}" again with ${label.replace("Retry with ", "")}? Same approved plan, fresh branch; this uses AI tokens and opens a pull request.`, (isConfirmed) => {
-      if (isConfirmed) requestAction(key, "retry_task", { task: task.id, tool });
+    const origin = generation;
+    const name = tool === "codex" ? "Codex" : "Claude";
+    const question = resume
+      ? `Resume "${task.title}" with ${name}? Continue from saved branch and edits. A new AI run inspects remaining work; this uses AI tokens.`
+      : `Start "${task.title}" fresh with ${name}? Same approved plan, clean checkout. Saved work is preserved, but implementation restarts; this uses AI tokens.`;
+    askConfirmation(question, (isConfirmed) => {
+      if (origin !== generation) return;
+      if (isConfirmed) requestAction(key, action, { task: task.id, tool });
       else button.disabled = false;
     });
   });
@@ -159,9 +166,19 @@ function taskActions(task) {
       (button) => { button.disabled = true; requestAction(key, "set_autopilot", { task: task.id, value }); }));
   }
   if (canReopenTask(task)) actions.push(reopenButton(task));
+  if (task.can_resume === true) {
+    actions.push(retryButton(task, "codex", "Resume with Codex", "row-button", true),
+      retryButton(task, "claude", "Resume with Claude", "row-button work-secondary", true));
+  }
   if (task.can_retry) {
-    actions.push(retryButton(task, "claude", "Retry with Claude", "row-button"),
-      retryButton(task, "codex", "Retry with Codex", "row-button work-secondary"));
+    if (task.can_resume !== true) {
+      const unavailable = el("button", "Resume unavailable", "row-button work-secondary");
+      unavailable.disabled = true;
+      unavailable.title = task.resume_reason || "No safe saved checkpoint is available.";
+      actions.push(unavailable);
+    }
+    actions.push(retryButton(task, "claude", "Start fresh with Claude", "row-button work-secondary"),
+      retryButton(task, "codex", "Start fresh with Codex", "row-button work-secondary"));
   }
   if (task.queued && ["todo", "stopped", "blocked", "ops_required"].includes(task.stage)) {
     // Already asked to start: the agent starts it as soon as it is free.
@@ -190,7 +207,13 @@ function taskActions(task) {
       });
     }));
   }
-  return actions.length ? [workActions(...actions)] : [];
+  const notes = [];
+  if (task.can_resume === true && typeof task.resume_summary === "string" && task.resume_summary) {
+    notes.push(el("div", task.resume_summary, "card-note"));
+  } else if (task.can_retry) {
+    notes.push(el("div", `Resume unavailable: ${task.resume_reason || "No safe saved checkpoint is available."}`, "card-note"));
+  }
+  return actions.length ? [...notes, workActions(...actions)] : [];
 }
 
 function taskRow(task) {

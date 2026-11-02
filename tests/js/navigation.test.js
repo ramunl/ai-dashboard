@@ -2250,11 +2250,11 @@ test("a failed run can be retried with Claude or Codex and stays under Active", 
     onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0051" }) }) });
   await sleep(60);
   assert.match(page.doc.querySelector(".task-switch").textContent, /Active 1/);
-  assert.ok(buttonNamed(page, "Retry with Codex"));
+  assert.ok(buttonNamed(page, "Start fresh with Codex"));
   const asked = confirmWith(page, true);
-  buttonNamed(page, "Retry with Claude").click();
+  buttonNamed(page, "Start fresh with Claude").click();
   await sleep(60);
-  assert.match(asked[0], /again with Claude\? Same approved plan/);
+  assert.match(asked[0], /fresh with Claude\? Same approved plan/);
   assert.deepStrictEqual(page.bodies, [{ action: "retry_task", args: { task: "0a1b2c3d", tool: "claude" } }]);
 });
 
@@ -2399,4 +2399,35 @@ test("security reviews separate port exposure from configuration and can be undo
   [...card.querySelectorAll("button")].find((item) => item.textContent === "Review again").click();
   await sleep(100);
   assert.match(securityCardOf(page).textContent, /2 login identity\/identities to review/);
+});
+
+test("oversized plans show scope advice and milestones before approval without sending actions", async () => {
+  const plan = { ...PLAN, scope_assessment: { recommend_split: true,
+    reason: "Likely exceeds a single implementation run <script>unsafe</script>",
+    milestones: [null, "invalid", { title: "Persist checkpoint", acceptance: "Round-trip saved state" },
+      { title: "Resume worker", acceptance: "Continue interrupted changes" }] } };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan }));
+  await sleep(60);
+  const advice = page.doc.querySelector(".plan-scope-advice");
+  assert.match(advice.textContent, /Split recommended/);
+  assert.match(advice.textContent, /Round-trip saved state/);
+  assert.equal(advice.querySelector("script"), null);
+  assert.ok(buttonNamed(page, "Approve"));
+  assert.ok(buttonNamed(page, "Revise"));
+  assert.equal(page.bodies.length, 0);
+  assert.equal(buttonNamed(page, "Split into tasks"), undefined);
+});
+
+test("direct bugfix scope advice appears before confirm without a plan revision action", async () => {
+  const page = await openPage("/coding", codingWork({ pending_branch: "fix/large-bug",
+    pending_scope_assessment: { recommend_split: true, reason: "Several independently testable fixes",
+      milestones: [{ title: "Fix checkpoint", acceptance: "Interrupted state persists" }] } }));
+  await sleep(60);
+  const advice = page.doc.querySelector(".plan-scope-advice");
+  assert.match(advice.textContent, /Use Cancel, then plan one independently testable milestone/);
+  assert.match(advice.textContent, /Interrupted state persists/);
+  assert.ok(buttonNamed(page, "Confirm and run"));
+  assert.ok(buttonNamed(page, "Cancel"));
+  assert.equal(buttonNamed(page, "Revise"), undefined);
+  assert.equal(page.bodies.length, 0);
 });

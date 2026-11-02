@@ -164,6 +164,14 @@ class CheckTests(unittest.TestCase):
             }
         )
         check({"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "claude"}})
+        check({"action": "resume_task", "args": {"task": "0a1b2c3d", "tool": "codex"}})
+        for args in (
+            {"task": "../x", "tool": "codex"},
+            {"task": "0a1b2c3d", "tool": "unknown"},
+            {"task": "0a1b2c3d", "tool": "codex", "ref": "HEAD"},
+        ):
+            with self.assertRaises(RequestError):
+                check({"action": "resume_task", "args": args})
         with self.assertRaises(RequestError):
             check({"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "gpt"}})
         check({"action": "accept_task", "args": {"task": "0a1b2c3d"}})
