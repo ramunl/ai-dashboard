@@ -68,11 +68,12 @@ function pendingRows(snapshot) {
       const label = names.length === 1 ? `Move to ${names[0]}` : "Split into tasks";
       buttons.push(splitButton(isElsewhere ? "row-button" : "row-button work-secondary", label));
     }
-    return [...rows, ...planDetails(plan),
+    return [...rows, ...planScopeAdvice(plan), ...planDetails(plan),
       workActions(...buttons, reviseButton(), cancelButton("the pending plan")), ...reviseRows()];
   }
   if (snapshot.pending_branch) {
     return [row("Ready to run", snapshot.pending_branch),
+      ...planScopeAdvice({ scope_assessment: snapshot.pending_scope_assessment }, false),
       workActions(runButton(snapshot.pending_branch), cancelButton("the pending change"))];
   }
   if (snapshot.awaiting_bugfix_answer) return bugfixRows(snapshot);

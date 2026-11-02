@@ -60,7 +60,7 @@ test("eligibility is explicit, including derived Deployed; Retry keeps its meani
   p.tasks = [{ ...task, stage: "stopped", can_retry: true }];
   await p.refresh();
   assert.equal(p.button("Start planning"), undefined);
-  p.button("Retry with Codex").click();
+  p.button("Start fresh with Codex").click();
   assert.match(p.confirmations[0].message, /Same approved plan/);
 });
 
@@ -161,4 +161,35 @@ test("unanswered submission times out without reporting success", async t => {
   assert.match(p.w.document.getElementById("alert").textContent, /Not sent: no answer.*refresh before retrying/);
   assert.equal(p.w.eval("taskFilter"), "finished");
   assert.equal(p.button("Reopen").disabled, false);
+});
+
+test("resume requires explicit checkpoint eligibility; fresh and resume remain distinct", async t => {
+  const p = await page(t, [{ ...task, stage: "stopped", can_reopen: false, can_retry: true,
+    can_resume: true, resume_summary: "Saved changes in three files" }]);
+  p.w.eval('taskFilter = "all"'); await p.refresh();
+  assert.match(p.w.document.body.textContent, /Saved changes in three files/);
+  assert.equal(p.posts.length, 0);
+  const resume = p.button("Resume with Codex"); resume.click(); resume.click();
+  assert.equal(p.confirmations.length, 1);
+  assert.match(p.confirmations[0].message, /Continue from saved branch and edits/);
+  p.confirmations[0].callback(false); assert.equal(resume.disabled, false);
+  resume.click(); p.confirmations[1].callback(true); await tick();
+  assert.deepEqual(p.posts, [{ action: "resume_task", args: { task: task.id, tool: "codex" } }]);
+});
+
+test("missing or rejected checkpoints explain why resume is unavailable", async t => {
+  const p = await page(t);
+  p.w.eval('taskFilter = "all"');
+  for (const eligible of [undefined, false, "true"]) {
+    p.tasks = [{ ...task, stage: "stopped", can_retry: true, can_resume: eligible,
+      resume_reason: "Checkpoint base changed" }];
+    await p.refresh();
+    assert.equal(p.button("Resume with Codex"), undefined);
+    assert.equal(p.button("Resume unavailable").disabled, true);
+    assert.match(p.w.document.body.textContent, /Resume unavailable: Checkpoint base changed/);
+  }
+  p.button("Start fresh with Codex").click();
+  assert.match(p.confirmations[0].message, /Saved work is preserved, but implementation restarts/);
+  p.confirmations[0].callback(true); await tick();
+  assert.deepEqual(p.posts, [{ action: "retry_task", args: { task: task.id, tool: "codex" } }]);
 });

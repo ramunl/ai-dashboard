@@ -34,6 +34,31 @@ function planRepositories(plan) {
   return nodes;
 }
 
+// Scope advice stays visible before approval; revising still needs confirmation.
+function planScopeAdvice(plan, hasPlan = true) {
+  const scope = plan.scope_assessment;
+  if (!scope || scope.recommend_split !== true) return [];
+  const box = el("div", null, "plan-scope-advice");
+  box.setAttribute("role", "note");
+  box.append(el("strong", "Split recommended before implementation"));
+  if (typeof scope.reason === "string") box.append(el("p", scope.reason.slice(0, 500), "card-note"));
+  const milestones = Array.isArray(scope.milestones) ? scope.milestones.filter(item => item && typeof item === "object" && !Array.isArray(item)).slice(0, 5) : [];
+  if (milestones.length) {
+    const list = el("ol", null, "plan-list");
+    for (const milestone of milestones) {
+      const item = el("li");
+      item.append(el("strong", typeof milestone.title === "string" ? milestone.title.slice(0, 200) : "Milestone"));
+      if (typeof milestone.acceptance === "string") item.append(el("div", milestone.acceptance.slice(0, 500), "card-note"));
+      list.append(item);
+    }
+    box.append(el("div", "Suggested milestones", "card-subtitle"), list);
+  }
+  box.append(el("p", hasPlan
+    ? "Use Revise to narrow this plan to one independently testable milestone. Approving still runs the whole plan."
+    : "Use Cancel, then plan one independently testable milestone. Confirming still runs the whole change.", "card-note"));
+  return [box];
+}
+
 function planDetails(plan) {
   if (typeof plan.summary !== "string") return [];  // an agent that predates the outline
   const steps = plan.steps || [];
