@@ -378,6 +378,12 @@ the active project); in Tasks a later part shows **Waiting** until the part
 before it has a pull request. A plan for one other repository (the task was made in
 the wrong project) shows **Move to <repository>** instead.
 
+A same-repository plan with at least two suggested milestones also offers
+**Split into tasks** when the coding agent supports milestone splitting.
+After confirmation, each milestone becomes an ordered task with its acceptance
+check; the original TODO link stays with the last task. Older agents retain
+**Revise** guidance until the coding agent is updated.
+
 When a bug report needs more detail, the card shows the agent's questions
 (published as `bugfix_questions`, bounded and redacted) with an answer field;
 the answer becomes the words after `/answer`.

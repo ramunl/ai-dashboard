@@ -63,10 +63,11 @@ function pendingRows(snapshot) {
       buttons.push(workButton("Approve", "work:approve", "row-button",
         (button) => sendWork("work:approve", "approve_plan", {}, button)));
     }
-    if (!plan.approved && (names.length > 1 || isElsewhere)) {
+    if (!plan.approved && (names.length > 1 || isElsewhere || plan.can_split_milestones === true)) {
       // One other repository: the task was made in the wrong project; move it there.
-      const label = names.length === 1 ? `Move to ${names[0]}` : "Split into tasks";
-      buttons.push(splitButton(isElsewhere ? "row-button" : "row-button work-secondary", label));
+      const byMilestone = !isElsewhere && names.length < 2;
+      const label = isElsewhere && names.length === 1 ? `Move to ${names[0]}` : "Split into tasks";
+      buttons.push(splitButton(isElsewhere ? "row-button" : "row-button work-secondary", label, byMilestone));
     }
     return [...rows, ...planScopeAdvice(plan), ...planDetails(plan),
       workActions(...buttons, reviseButton(), cancelButton("the pending plan")), ...reviseRows()];

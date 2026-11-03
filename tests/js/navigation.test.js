@@ -2431,3 +2431,35 @@ test("direct bugfix scope advice appears before confirm without a plan revision 
   assert.equal(buttonNamed(page, "Revise"), undefined);
   assert.equal(page.bodies.length, 0);
 });
+
+
+test("same-repository milestone split offers a confirmed split action", async () => {
+  const plan = { ...PLAN, repositories: [{ name: "repo", changes: "context controls" }],
+    can_split_milestones: true, scope_assessment: { recommend_split: true,
+      milestones: [{ title: "Persist", acceptance: "Round trip" }, { title: "Inspect", acceptance: "Owner only" }] } };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan }));
+  await sleep(60);
+  assert.match(page.doc.querySelector(".plan-scope-advice").textContent, /Use Split into tasks/);
+  assert.ok(buttonNamed(page, "Split into tasks"));
+  assert.equal(page.bodies.length, 0);
+  const asked = confirmWith(page, true);
+  buttonNamed(page, "Split into tasks").click();
+  await sleep(100);
+  assert.match(asked[0], /one task per suggested milestone/);
+  assert.deepStrictEqual(page.bodies, [{ action: "split_plan", args: {} }]);
+});
+
+test("milestone splitting waits for confirmation and is hidden after approval", async () => {
+  const plan = { ...PLAN, can_split_milestones: true,
+    scope_assessment: { recommend_split: true, milestones: [
+      { title: "Persist", acceptance: "Round trip" }, { title: "Inspect", acceptance: "Owner only" }] } };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan }));
+  await sleep(60);
+  confirmWith(page, false);
+  buttonNamed(page, "Split into tasks").click();
+  await sleep(60);
+  assert.equal(page.bodies.length, 0);
+  const approved = await openPage("/coding", codingWork({ pending_plan: { ...plan, approved: true } }));
+  await sleep(60);
+  assert.equal(buttonNamed(approved, "Split into tasks"), undefined);
+});

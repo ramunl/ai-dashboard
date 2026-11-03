@@ -54,7 +54,9 @@ function planScopeAdvice(plan, hasPlan = true) {
     box.append(el("div", "Suggested milestones", "card-subtitle"), list);
   }
   box.append(el("p", hasPlan
-    ? "Use Revise to narrow this plan to one independently testable milestone. Approving still runs the whole plan."
+    ? (plan.can_split_milestones === true
+      ? "Use Split into tasks to create ordered milestone tasks. Each is planned separately when it starts. Approving still runs the whole plan."
+      : "Use Revise to narrow this plan to one independently testable milestone. Approving still runs the whole plan.")
     : "Use Cancel, then plan one independently testable milestone. Confirming still runs the whole change.", "card-note"));
   return [box];
 }
@@ -76,8 +78,10 @@ function planDetails(plan) {
 }
 
 // A plan for several repositories: one To do task per repository, in order.
-function splitButton(className, label = "Split into tasks") {
-  const question = label === "Split into tasks"
+function splitButton(className, label = "Split into tasks", byMilestone = false) {
+  const question = byMilestone
+    ? "Split into one task per suggested milestone in this repository? The plan is dropped; tasks run in order and each is planned again when it starts (AI tokens)."
+    : label === "Split into tasks"
     ? "Split into one task per repository? The plan is dropped; each part is planned again in its own repository when it starts (AI tokens)."
     : `${label}? The plan is dropped and a To do task is made there, planned again in that repository when it starts (AI tokens).`;
   return workButton(label, "work:split", className,
