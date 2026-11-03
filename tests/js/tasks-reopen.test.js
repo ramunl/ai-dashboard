@@ -193,3 +193,33 @@ test("missing or rejected checkpoints explain why resume is unavailable", async 
   p.confirmations[0].callback(true); await tick();
   assert.deepEqual(p.posts, [{ action: "retry_task", args: { task: task.id, tool: "codex" } }]);
 });
+
+
+test("waiting tasks can request fresh checks, with confirmation and duplicate protection", async t => {
+  const waiting = { ...task, stage: "todo", can_reopen: false,
+    waiting_for: "dependency evidence unknown; fresh verification required" };
+  const p = await page(t, [waiting]);
+  p.w.eval('taskFilter = "all"');
+  await p.refresh();
+  assert.equal(p.button("Start planning"), undefined);
+  const check = p.button("Check prerequisites and start");
+  assert.ok(check);
+  check.click(); check.click();
+  assert.equal(p.confirmations.length, 1);
+  assert.match(p.confirmations[0].message, /If they pass, start planning/);
+  assert.match(p.confirmations[0].message, /uses AI tokens/);
+  assert.match(p.confirmations[0].message, /task stays waiting/);
+  assert.equal(p.posts.length, 0);
+  p.confirmations[0].callback(false);
+  assert.equal(check.disabled, false);
+  check.click(); p.confirmations[1].callback(true);
+  await tick();
+  assert.deepEqual(p.posts, [{ action: "start_task", args: { task: task.id } }]);
+  check.click();
+  assert.equal(p.posts.length, 1);
+  p.actions = [{ id: "request1", status: "failed", message: "This part waits: predecessor is unmerged." }];
+  await p.refresh();
+  assert.match(p.w.document.getElementById("alert").textContent, /predecessor is unmerged/);
+  assert.equal(p.w.document.querySelector(".task-status").textContent, "Waiting");
+  assert.equal(p.button("Check prerequisites and start").disabled, false);
+});
