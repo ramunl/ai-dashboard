@@ -544,3 +544,9 @@ so their cached whitelist and page assets are refreshed. No root CLI wrapper
 changes are needed. Container status is read using a fixed Docker inspection;
 if Docker cannot be queried, status is shown as unknown. The existing Docker
 permissions of the dashboard service are required for that read.
+
+
+Waiting tasks offer **Check prerequisites and start** even when the worker is
+off. After confirmation, the coding agent verifies current prerequisite evidence
+and starts planning only if it passes; otherwise it reports the reason and keeps
+the task waiting. No dependency override is created.

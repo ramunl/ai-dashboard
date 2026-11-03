@@ -2203,7 +2203,7 @@ test("a multi-repository plan that includes the active project offers Approve an
   assert.deepStrictEqual(workButtons(page), ["Approve", "Split into tasks", "Revise", "Cancel"]);
 });
 
-test("a part that waits for the one before it shows Waiting and cannot start", async () => {
+test("a waiting part offers a prerequisite check while keeping its Waiting status", async () => {
   const tasks = [{ id: "0a1b2c3d", title: "drag todos (ai-dashboard, part 2/2)", repo: "ai-dashboard", stage: "todo",
     part: 2, parts: 2, waiting_for: "drag todos (ai-pm-agent, part 1/2)" }];
   const page = await openPage("/tasks", { latencyMs: 10, respond: async (name) => ({ ok: true, status: 200,
@@ -2213,6 +2213,8 @@ test("a part that waits for the one before it shows Waiting and cannot start", a
   assert.strictEqual(row.querySelector(".task-status").textContent, "Waiting");
   assert.match(row.textContent, /starts after: drag todos \(ai-pm-agent, part 1\/2\)/);
   assert.strictEqual(buttonNamed(page, "Start planning"), undefined);
+  assert.ok(buttonNamed(page, "Check prerequisites and start"));
+  assert.equal(page.bodies.length, 0);
 });
 
 test("a plan for one other repository offers Move to it instead of Approve", async () => {

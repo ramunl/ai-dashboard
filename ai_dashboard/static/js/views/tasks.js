@@ -187,11 +187,15 @@ function taskActions(task) {
       button.disabled = true;
       requestAction(key, "cancel_start", { task: task.id });
     }));
-  } else if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !task.waiting_for && !canReopenTask(task)) {
+  } else if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !canReopenTask(task)) {
     const key = `task:start:${task.id}`;
-    actions.push(taskButton("Start planning", key, "row-button", (button) => {
+    const label = task.waiting_for ? "Check prerequisites and start" : "Start planning";
+    const question = task.waiting_for
+      ? `Check prerequisites for "${task.title}"? If they pass, start planning in ${task.repo}${plannerText()} (uses AI tokens). If they do not pass, the task stays waiting.`
+      : `Plan "${task.title}" in ${task.repo}${plannerText()}? This uses AI tokens.`;
+    actions.push(taskButton(label, key, "row-button", (button) => {
       button.disabled = true;
-      askConfirmation(`Plan "${task.title}" in ${task.repo}${plannerText()}? This uses AI tokens.`, (isConfirmed) => {
+      askConfirmation(question, (isConfirmed) => {
         if (isConfirmed) requestAction(key, "start_task", { task: task.id });
         else button.disabled = false;
       });
