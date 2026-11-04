@@ -51,6 +51,7 @@ function codingCards(snapshot) {
     setupCard(snapshot.setup || null),
     workCard(snapshot),
     ...runOutcomeCard(snapshot.last_run_outcome),
+    ...contextCards(snapshot),
     card(
       "Providers",
       row("Planner", snapshot.planning_agent),

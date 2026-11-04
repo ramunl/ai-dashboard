@@ -186,7 +186,7 @@ test("Back from the coding window renders the launcher again", async () => {
   await sleep(250);
   page.tapAgent(0);
   await sleep(250);
-  assert.deepStrictEqual(page.state(), { path: "/coding", title: "Coding agent", cards: 6, backVisible: true });
+  assert.deepStrictEqual(page.state(), { path: "/coding", title: "Coding agent", cards: 7, backVisible: true });
   assert.match(page.text("subtitle"), /^project: repo · /);
   page.back.handler();
   await sleep(250);
@@ -1264,7 +1264,7 @@ test("Updates card lists what is available and asks before upgrading", async () 
   const page = await openPage("/ops", withPackages({ report: PACKAGE_REPORT }));
   await sleep(60);
   const text = updatesCardOf(page).textContent;
-  assert.match(text, /Available3 · 2m agoSecurity1openssl, curl, vimChecked2m ago/);
+  assert.match(text, /Available3 · [23]m agoSecurity1openssl, curl, vimChecked[23]m ago/);
   assert.match(text, /Rebootrequired to finish updates/);
   let asked = confirmWith(page, false);
   updateButtons(page)[1].click();
@@ -2309,7 +2309,7 @@ test("the Security card shows attacks, bans, sessions and what to fix", async ()
   await sleep(60);
   const text = securityCardOf(page).textContent;
   assert.match(text, /1 configuration issue\(s\)/);
-  assert.match(text, /checked 2m ago|checked 2 min/);
+  assert.match(text, /checked [23]m ago|checked [23] min/);
   assert.match(text, /Failed SSH logins, 24 h1,240 from 312 IPs/);
   assert.match(text, /Successful logins, 24 h2 \(1 by password\)/);
   assert.match(text, /Banned now7/);

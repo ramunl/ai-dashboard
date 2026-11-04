@@ -20,6 +20,13 @@ const TASK_STATUS = {
 const TASK_FILTERS = { active: "Active", finished: "Finished", all: "All" };
 // "PR open" counts as finished here: the agent's part is over, it waits on review.
 const FINISHED_TASK_STAGES = ["pr", "done", "stopped"];
+// Context status (CTX05) shown beside each task; absent fields stay unknown.
+const CONTEXT_TASK_STATUS = {
+  ok: { label: "Context OK", tone: "done" },
+  stale: { label: "Context stale", tone: "attention" },
+  blocked: { label: "Context blocked", tone: "attention" },
+  unknown: { label: "Context unknown", tone: "todo" },
+};
 
 let taskFilter = "active";
 let taskPlanner = "";  // "codex" or "claude": who plans, from Setup › AI tools
@@ -122,6 +129,48 @@ function taskMeta(task) {
   meta.append(parts.join(" · "));
   if (task.pr_url) meta.append(" · ", openLink(task.pr_url));
   return meta;
+}
+
+// Context evidence the agent published for the task (CTX05). PR / merged /
+// deployed are shown separately from the status line; missing evidence stays
+// unknown rather than guessed.
+function contextEvidence(status) {
+  const evidence = status && status.evidence;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return [];
+  const nodes = [];
+  if (typeof evidence.pr === "string" && evidence.pr) {
+    const link = openLink(evidence.pr);
+    const line = el("div", null, "context-evidence");
+    line.append(el("span", "PR evidence "), link);
+    nodes.push(line);
+  }
+  if (evidence.merged === true) nodes.push(el("div", "Merged", "context-evidence"));
+  if (evidence.deployed === true) nodes.push(el("div", "Deployed", "context-evidence"));
+  return nodes;
+}
+
+// The task's prerequisite context: a precise reason plus dependency blockers.
+function taskContext(task) {
+  const status = task.context_status;
+  if (!status || typeof status !== "object" || Array.isArray(status)) {
+    return [el("div", "Context unknown", "card-note context-status")];
+  }
+  const nodes = [];
+  const shown = CONTEXT_TASK_STATUS[status.status] || CONTEXT_TASK_STATUS.unknown;
+  const line = el("div", null, "context-status");
+  const badge = el("span", shown.label, "task-status");
+  badge.dataset.tone = shown.tone;
+  line.append(el("span", "Context"), badge);
+  if (typeof status.reason === "string" && status.reason.trim()) {
+    line.append(" ", el("span", status.reason, "card-note"));
+  }
+  nodes.push(line);
+  if (Array.isArray(status.blockers) && status.blockers.length) {
+    nodes.push(el("div", `Dependency blocked by: ${status.blockers.join(" · ")}`,
+      "card-note context-blockers"));
+  }
+  nodes.push(...contextEvidence(status));
+  return nodes;
 }
 
 // A task the worker proposed from the server logs: accept it or drop it.
@@ -230,7 +279,7 @@ function taskRow(task) {
   const node = el("article", null, "task");
   const badge = el("span", status.label, "task-status");
   badge.dataset.tone = status.tone;
-  node.append(el("div", task.title, "task-title"), badge, taskMeta(task), ...taskActions(task));
+  node.append(el("div", task.title, "task-title"), badge, taskMeta(task), ...taskContext(task), ...taskActions(task));
   return node;
 }
 
