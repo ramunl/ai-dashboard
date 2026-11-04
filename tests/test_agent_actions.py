@@ -256,24 +256,31 @@ class CheckTests(unittest.TestCase):
             ("context_reject_v1", {**decide, "id": "zzzzzzzz"}),
             ("context_reject_v1", {**decide, "revision": None}),
         ):
-            with self.subTest(action=action, args=args), self.assertRaises(RequestError):
+            with (
+                self.subTest(action=action, args=args),
+                self.assertRaises(RequestError),
+            ):
                 check({"action": action, "args": args})
 
     def test_submit_omits_requested_by_for_context_actions(self) -> None:
         cases = {
             "context_inspect_v1": {
-                "scope": "task", "kind": "evidence", "id": "0a1b2c3d"
+                "scope": "task",
+                "kind": "evidence",
+                "id": "0a1b2c3d",
             },
-            "context_link_v1": {
-                "scope": "task", "kind": "packet", "id": "0a1b2c3d"
-            },
+            "context_link_v1": {"scope": "task", "kind": "packet", "id": "0a1b2c3d"},
             "context_approve_v1": {
-                "scope": "initiative", "id": "5a9c68fe",
-                "decision": "dependency:repo:ramunl/ai-dashboard", "revision": "2",
+                "scope": "initiative",
+                "id": "5a9c68fe",
+                "decision": "dependency:repo:ramunl/ai-dashboard",
+                "revision": "2",
             },
             "context_reject_v1": {
-                "scope": "initiative", "id": "5a9c68fe",
-                "decision": "dependency:repo:ramunl/ai-dashboard", "revision": "2",
+                "scope": "initiative",
+                "id": "5a9c68fe",
+                "decision": "dependency:repo:ramunl/ai-dashboard",
+                "revision": "2",
             },
         }
         for action, args in cases.items():
@@ -281,9 +288,7 @@ class CheckTests(unittest.TestCase):
                 folder = Path(tempfile.mkdtemp()) / "inbox"
                 request_id = submit(folder, action, args, "coding")
                 saved = json.loads((folder / f"{request_id}.json").read_text())
-                self.assertEqual(
-                    set(saved), {"id", "action", "args", "requested_at"}
-                )
+                self.assertEqual(set(saved), {"id", "action", "args", "requested_at"})
                 self.assertNotIn("requested_by", saved)
 
     def test_submit_keeps_requested_by_for_other_actions(self) -> None:
@@ -316,9 +321,7 @@ class CheckTests(unittest.TestCase):
         new = {
             **old,
             "context_recovery_pending": True,
-            "initiatives": [
-                {"id": "5a9c68fe", "health": "stale", "packets": []}
-            ],
+            "initiatives": [{"id": "5a9c68fe", "health": "stale", "packets": []}],
             "tasks": [
                 {
                     "id": "0a1b2c3d",
