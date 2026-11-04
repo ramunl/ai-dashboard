@@ -20,6 +20,7 @@ from ai_dashboard.agent_actions import (
 )
 from ai_dashboard.auth import sign_init_data
 from ai_dashboard.config import BotSource, Settings
+from ai_dashboard.sources import CODING_SNAPSHOT_FORMATS, read_snapshot
 
 OWNER = 777
 TOKEN = "111:CODING"
@@ -203,6 +204,144 @@ class CheckTests(unittest.TestCase):
         ):
             with self.assertRaises(RequestError, msg=str(body)):
                 check(body)
+
+    def test_context_actions_validate_scope_kind_id_revision_decision(self) -> None:
+        inspect = {"scope": "task", "kind": "evidence", "id": "0a1b2c3d"}
+        self.assertEqual(
+            check({"action": "context_inspect_v1", "args": inspect}),
+            ("context_inspect_v1", inspect),
+        )
+        self.assertEqual(
+            check({"action": "context_link_v1", "args": inspect}),
+            ("context_link_v1", inspect),
+        )
+        decide = {
+            "scope": "initiative",
+            "id": "5a9c68fe",
+            "decision": "dependency:repo:ramunl/ai-dashboard",
+            "revision": "2",
+        }
+        self.assertEqual(
+            check({"action": "context_approve_v1", "args": decide}),
+            ("context_approve_v1", decide),
+        )
+        self.assertEqual(
+            check({"action": "context_reject_v1", "args": decide}),
+            ("context_reject_v1", decide),
+        )
+
+    def test_context_actions_refuse_wrong_fields(self) -> None:
+        inspect = {"scope": "task", "kind": "evidence", "id": "0a1b2c3d"}
+        decide = {
+            "scope": "initiative",
+            "id": "5a9c68fe",
+            "decision": "dependency:repo:ramunl/ai-dashboard",
+            "revision": "2",
+        }
+        for action, args in (
+            ("context_inspect_v1", {**inspect, "scope": "repo"}),
+            ("context_inspect_v1", {**inspect, "kind": "Evidence"}),
+            ("context_inspect_v1", {**inspect, "id": "ABCDEF12"}),
+            ("context_inspect_v1", {**inspect, "id": "123"}),
+            ("context_inspect_v1", {**inspect, "revision": "2"}),
+            ("context_inspect_v1", {"scope": "task", "kind": "evidence"}),
+            ("context_link_v1", {**inspect, "kind": "path/../../x"}),
+            ("context_approve_v1", {**decide, "revision": "0"}),
+            ("context_approve_v1", {**decide, "revision": "1.5"}),
+            ("context_approve_v1", {**decide, "revision": "-1"}),
+            ("context_approve_v1", {**decide, "decision": "dependency repo"}),
+            ("context_approve_v1", {**decide, "decision": ""}),
+            ("context_approve_v1", {**decide, "kind": "decision"}),
+            ("context_reject_v1", {**decide, "scope": "branch"}),
+            ("context_reject_v1", {**decide, "id": "zzzzzzzz"}),
+            ("context_reject_v1", {**decide, "revision": None}),
+        ):
+            with (
+                self.subTest(action=action, args=args),
+                self.assertRaises(RequestError),
+            ):
+                check({"action": action, "args": args})
+
+    def test_submit_omits_requested_by_for_context_actions(self) -> None:
+        cases = {
+            "context_inspect_v1": {
+                "scope": "task",
+                "kind": "evidence",
+                "id": "0a1b2c3d",
+            },
+            "context_link_v1": {"scope": "task", "kind": "packet", "id": "0a1b2c3d"},
+            "context_approve_v1": {
+                "scope": "initiative",
+                "id": "5a9c68fe",
+                "decision": "dependency:repo:ramunl/ai-dashboard",
+                "revision": "2",
+            },
+            "context_reject_v1": {
+                "scope": "initiative",
+                "id": "5a9c68fe",
+                "decision": "dependency:repo:ramunl/ai-dashboard",
+                "revision": "2",
+            },
+        }
+        for action, args in cases.items():
+            with self.subTest(action=action):
+                folder = Path(tempfile.mkdtemp()) / "inbox"
+                request_id = submit(folder, action, args, "coding")
+                saved = json.loads((folder / f"{request_id}.json").read_text())
+                self.assertEqual(set(saved), {"id", "action", "args", "requested_at"})
+                self.assertNotIn("requested_by", saved)
+
+    def test_submit_keeps_requested_by_for_other_actions(self) -> None:
+        inbox = Path(tempfile.mkdtemp()) / "inbox"
+        request_id = submit(inbox, "set_planner", {"value": "claude"}, "coding")
+        saved = json.loads((inbox / f"{request_id}.json").read_text())
+        self.assertEqual(saved["requested_by"], "coding")
+        self.assertEqual(
+            set(saved), {"id", "action", "args", "requested_at", "requested_by"}
+        )
+
+    def test_context_args_pass_through_unchanged(self) -> None:
+        inbox = Path(tempfile.mkdtemp()) / "inbox"
+        args = {
+            "scope": "initiative",
+            "id": "5a9c68fe",
+            "decision": "dependency:repo:ramunl/ai-dashboard",
+            "revision": "2",
+        }
+        request_id = submit(inbox, "context_approve_v1", dict(args), "coding")
+        saved = json.loads((inbox / f"{request_id}.json").read_text())
+        self.assertEqual(saved["args"], args)
+
+    def test_snapshots_pass_context_fields_through_unchanged(self) -> None:
+        old = {
+            "format": 1,
+            "updated_at": time.time(),
+            "tasks": [{"id": "0a1b2c3d", "stage": "todo"}],
+        }
+        new = {
+            **old,
+            "context_recovery_pending": True,
+            "initiatives": [{"id": "5a9c68fe", "health": "stale", "packets": []}],
+            "tasks": [
+                {
+                    "id": "0a1b2c3d",
+                    "stage": "blocked",
+                    "context_status": {"status": "blocked", "reason": "x"},
+                }
+            ],
+        }
+        for data in (old, new):
+            with self.subTest(format=data["format"]):
+                path = Path(tempfile.mkdtemp()) / "snapshot.json"
+                path.write_text(json.dumps(data))
+                snapshot, problem = read_snapshot(path, CODING_SNAPSHOT_FORMATS)
+                self.assertIsNone(problem)
+                self.assertEqual(snapshot, data)
+        malformed = Path(tempfile.mkdtemp()) / "snapshot.json"
+        malformed.write_text("{not json")
+        snapshot, problem = read_snapshot(malformed, CODING_SNAPSHOT_FORMATS)
+        self.assertIsNone(snapshot)
+        self.assertIsNotNone(problem)
 
     def test_submit_writes_one_complete_request(self) -> None:
         inbox = Path(tempfile.mkdtemp()) / "inbox"

@@ -35,6 +35,15 @@ _PERCENT = re.compile(r"^([0-9]|[1-8][0-9]|90)$")  # reserve, 0-90 %
 _TODO_REF = re.compile(r"^(-|[A-Za-z0-9._-]{1,64}:[A-Za-z0-9]{1,64})$")
 # Up to MAX_IMAGES staged uploads for a task: their ids, comma-separated, or "".
 _UPLOADS = re.compile(r"^(?:[0-9a-f]{16}(?:,[0-9a-f]{16}){0,2})?$")
+# Context controls (CTX05), mirrored from ai_agent.context_controls. The scope
+# is a task or an initiative; the id is its 8-hex id. kind names which part of
+# the context to inspect or re-link; decision is a bounded code the agent
+# assigns, and revision is the decision revision being approved or rejected.
+_CONTEXT_SCOPE = re.compile(r"^(task|initiative)$")
+_CONTEXT_KIND = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+_CONTEXT_ID = re.compile(r"^[0-9a-f]{8}$")
+_CONTEXT_DECISION = re.compile(r"^[a-z][a-z0-9_.:/-]{1,127}$")
+_CONTEXT_REVISION = re.compile(r"^[1-9][0-9]{0,8}$")
 
 # Images a task may carry, and how each one is kept: only the declared type
 # picks the suffix. The bytes are never parsed here; the agent checks them.
@@ -105,7 +114,44 @@ ACTIONS: dict[str, dict] = {
     # Daily code review: proposals per review (0 = off), and review now.
     "worker_reviews": {"value": _REVIEWS},
     "worker_review": {},
+    # Context (CTX05): inspect or refresh prerequisite evidence, re-link a
+    # handoff packet, or approve / reject a pending decision at a revision.
+    # The dashboard only queues these: the agent re-validates and, for an
+    # approve/reject, confirms in the owner's chat before it applies.
+    "context_inspect_v1": {
+        "scope": _CONTEXT_SCOPE,
+        "kind": _CONTEXT_KIND,
+        "id": _CONTEXT_ID,
+    },
+    "context_link_v1": {
+        "scope": _CONTEXT_SCOPE,
+        "kind": _CONTEXT_KIND,
+        "id": _CONTEXT_ID,
+    },
+    "context_approve_v1": {
+        "scope": _CONTEXT_SCOPE,
+        "id": _CONTEXT_ID,
+        "decision": _CONTEXT_DECISION,
+        "revision": _CONTEXT_REVISION,
+    },
+    "context_reject_v1": {
+        "scope": _CONTEXT_SCOPE,
+        "id": _CONTEXT_ID,
+        "decision": _CONTEXT_DECISION,
+        "revision": _CONTEXT_REVISION,
+    },
 }
+
+# Context envelopes omit requested_by: the agent refuses a context request that
+# carries one, so submit() must not add it for these actions.
+_CONTEXT_ACTIONS = frozenset(
+    (
+        "context_inspect_v1",
+        "context_link_v1",
+        "context_approve_v1",
+        "context_reject_v1",
+    )
+)
 
 
 class RequestError(Exception):
@@ -190,8 +236,9 @@ def submit(
         "action": action,
         "args": args,
         "requested_at": time.time(),
-        "requested_by": requested_by,
     }
+    if action not in _CONTEXT_ACTIONS:
+        payload["requested_by"] = requested_by
     inbox.mkdir(parents=True, exist_ok=True)
     folder = inbox / UPLOADS_DIR / request_id
     moved: list[tuple[Path, Path]] = []
