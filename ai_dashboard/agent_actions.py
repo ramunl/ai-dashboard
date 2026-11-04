@@ -97,6 +97,7 @@ ACTIONS: dict[str, dict] = {
     # Archive the finished attempt and return to To do for fresh planning.
     "reopen_task": {"task": _TASK_ID},
     "cancel_start": {"task": _TASK_ID},
+    "stop_task": {"task": _TASK_ID, "token": re.compile(r"[a-f0-9]{32}")},
     "remove_task": {"task": _TASK_ID},
     # Tasks the worker proposed from the server logs: keep or drop.
     "accept_task": {"task": _TASK_ID},

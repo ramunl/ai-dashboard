@@ -223,3 +223,21 @@ test("waiting tasks can request fresh checks, with confirmation and duplicate pr
   assert.equal(p.w.document.querySelector(".task-status").textContent, "Waiting");
   assert.equal(p.button("Check prerequisites and start").disabled, false);
 });
+
+test("stop implementation confirms exact attempt, cancellation sends nothing, stopping is disabled", async t => {
+  const running = { ...task, stage: "implementing", can_reopen: false, can_stop: true, stopping: false, stop_token: "a".repeat(32) };
+  const p = await page(t, [running]);
+  p.w.eval('taskFilter = "all"'); await p.refresh();
+  const button = p.button("Stop implementation");
+  assert.ok(button);
+  button.click();
+  assert.match(p.confirmations[0].message, /saved work will be preserved/);
+  p.confirmations[0].callback(false);
+  assert.equal(p.posts.length, 0);
+  button.click(); p.confirmations[1].callback(true); await tick();
+  assert.deepEqual(p.posts, [{ action: "stop_task", args: { task: task.id, token: "a".repeat(32) } }]);
+  p.tasks = [{ ...running, stopping: true }]; await p.refresh();
+  assert.ok(p.button("Stopping…").disabled);
+  p.tasks = [{ ...running, can_stop: false }]; await p.refresh();
+  assert.equal(p.button("Stop implementation"), undefined);
+});

@@ -202,6 +202,24 @@ function proposalActions(task) {
 function taskActions(task) {
   if (task.stage === "proposed") return proposalActions(task);
   const actions = [];
+  if (task.can_stop === true) {
+    if (task.stopping === true) {
+      const stopping = el("button", "Stopping…", "row-button work-secondary");
+      stopping.disabled = true;
+      actions.push(stopping);
+    } else {
+      const key = `task:stop:${task.id}`;
+      actions.push(taskButton("Stop implementation", key, "row-button work-secondary", (button) => {
+        button.disabled = true;
+        const origin = generation;
+        askConfirmation(`Stop "${task.title}"? The provider will stop and saved work will be preserved. Wait for recovery before resuming.`, (confirmed) => {
+          if (origin !== generation) return;
+          if (confirmed) requestAction(key, "stop_task", { task: task.id, token: task.stop_token });
+          else button.disabled = false;
+        });
+      }));
+    }
+  }
   if (task.stage === "ops_required") {
     actions.push(taskButton("Open Ops", `task:ops:${task.id}`, "row-button", () => navigate("ops")));
   }

@@ -556,3 +556,10 @@ Waiting tasks offer **Check prerequisites and start** even when the worker is
 off. After confirmation, the coding agent verifies current prerequisite evidence
 and starts planning only if it passes; otherwise it reports the reason and keeps
 the task waiting. No dependency override is created.
+
+Active task-bound provider runs offer **Stop implementation** with confirmation.
+The button changes to **Stopping…** while provider shutdown and saved-work
+recovery finish. Stale attempt controls are rejected; Git publication and CI
+polling do not offer provider cancellation. The backend determines whether
+Resume is safe after a stop. Legacy agents without stop capabilities retain
+the existing UI.
