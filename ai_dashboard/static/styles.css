@@ -340,7 +340,10 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .task { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 0.7rem; padding: 0.65rem 0; border-top: 1px solid var(--divider); }
 .task-switch { display: flex; margin-bottom: 0.4rem; }
 .task-switch .pm-switch-button { flex: 1; }
-.task-title { overflow-wrap: anywhere; }
+/* Only the title and stage share columns; notes and context span the card. */
+.task > * { grid-column: 1 / -1; min-width: 0; }
+.task > .task-title { grid-column: 1; grid-row: 1; overflow-wrap: anywhere; }
+.task > .task-status { grid-column: 2; grid-row: 1; justify-self: end; }
 .task-meta { grid-column: 1 / -1; color: var(--hint); font-size: 0.8rem; overflow-wrap: anywhere; }
 .task-evidence { grid-column: 1 / -1; font-size: 0.8rem; color: var(--hint); }
 .task-evidence pre { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; }
