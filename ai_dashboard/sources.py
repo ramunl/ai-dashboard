@@ -16,8 +16,10 @@ from ai_dashboard.commands import run_command
 from ai_dashboard.config import BotSource
 
 SNAPSHOT_FORMAT = 1
-# Coding v2 only adds optional token_usage; other publishers still use v1.
-CODING_SNAPSHOT_FORMATS = (1, 2)
+# Coding v2 adds optional token_usage with fixed codex/claude tools; v3 (DS08)
+# adds registry-described tools plus optional cost/billing fields. Other
+# publishers (PM, Ops) still publish and read format 1 only.
+CODING_SNAPSHOT_FORMATS = (1, 2, 3)
 # The coding agent rewrites its snapshot at least every 30 s (heartbeat).
 STALE_AFTER_SECONDS = 90
 
