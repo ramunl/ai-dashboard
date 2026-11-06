@@ -250,9 +250,18 @@ class CheckTests(unittest.TestCase):
         caps = capabilities(_registry_snapshot())
         check({"action": "set_planner", "args": {"value": "gpt"}}, caps)
         check({"action": "set_implementer", "args": {"value": "codex"}}, caps)
-        check({"action": "switch_model", "args": {"tool": "codex", "model": "gpt-5"}}, caps)
-        check({"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "gpt"}}, caps)
-        check({"action": "resume_task", "args": {"task": "0a1b2c3d", "tool": "codex"}}, caps)
+        check(
+            {"action": "switch_model", "args": {"tool": "codex", "model": "gpt-5"}},
+            caps,
+        )
+        check(
+            {"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "gpt"}},
+            caps,
+        )
+        check(
+            {"action": "resume_task", "args": {"task": "0a1b2c3d", "tool": "codex"}},
+            caps,
+        )
         for body in (
             {"action": "set_planner", "args": {"value": "claude"}},
             {"action": "set_implementer", "args": {"value": "claude"}},
@@ -274,14 +283,47 @@ class CheckTests(unittest.TestCase):
             "registry",
             {**registry, "format": "1"},
             {**registry, "format": 2},
-            {**registry, "tools": {**registry["tools"], "gpt": {**gpt, "manageable": "no"}}},
-            {**registry, "tools": {**registry["tools"], "gpt": {**gpt, "model": "../x"}}},
-            {**registry, "tools": {**registry["tools"], "gpt": {**gpt, "models": ["ok", 3]}}},
-            {**registry, "tools": {**registry["tools"], "gpt": {k: v for k, v in gpt.items() if k != "model"}}},
+            {
+                **registry,
+                "tools": {**registry["tools"], "gpt": {**gpt, "manageable": "no"}},
+            },
+            {
+                **registry,
+                "tools": {**registry["tools"], "gpt": {**gpt, "model": "../x"}},
+            },
+            {
+                **registry,
+                "tools": {**registry["tools"], "gpt": {**gpt, "models": ["ok", 3]}},
+            },
+            {
+                **registry,
+                "tools": {
+                    **registry["tools"],
+                    "gpt": {k: v for k, v in gpt.items() if k != "model"},
+                },
+            },
             {**registry, "tools": {**registry["tools"], "bad id": codex}},
-            {**registry, "roles": {**registry["roles"], "planner": {"tool": "gpt", "options": []}}},
-            {**registry, "roles": {**registry["roles"], "implementer": {"tool": "gpt", "options": ["gpt", "missing"]}}},
-            {**registry, "roles": {**registry["roles"], "planner": {"tool": "missing", "options": ["gpt"]}}},
+            {
+                **registry,
+                "roles": {
+                    **registry["roles"],
+                    "planner": {"tool": "gpt", "options": []},
+                },
+            },
+            {
+                **registry,
+                "roles": {
+                    **registry["roles"],
+                    "implementer": {"tool": "gpt", "options": ["gpt", "missing"]},
+                },
+            },
+            {
+                **registry,
+                "roles": {
+                    **registry["roles"],
+                    "planner": {"tool": "missing", "options": ["gpt"]},
+                },
+            },
         ]
         for value in cases:
             with self.subTest(registry=value):
@@ -598,7 +640,9 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         (self.tmp / "snapshot.json").write_text(json.dumps(_registry_snapshot()))
         accepted = await self.post({"action": "set_planner", "args": {"value": "gpt"}})
         self.assertEqual(accepted.status, 202)
-        refused = await self.post({"action": "set_planner", "args": {"value": "claude"}})
+        refused = await self.post(
+            {"action": "set_planner", "args": {"value": "claude"}}
+        )
         self.assertEqual(refused.status, 400)
         switch = await self.post(
             {"action": "switch_model", "args": {"tool": "codex", "model": "gpt-5"}}
@@ -609,7 +653,9 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         snapshot = _registry_snapshot()
         snapshot["registry"]["tools"]["gpt"]["manageable"] = "no"
         (self.tmp / "snapshot.json").write_text(json.dumps(snapshot))
-        accepted = await self.post({"action": "set_planner", "args": {"value": "codex"}})
+        accepted = await self.post(
+            {"action": "set_planner", "args": {"value": "codex"}}
+        )
         self.assertEqual(accepted.status, 202)
         refused = await self.post({"action": "set_planner", "args": {"value": "gpt"}})
         self.assertEqual(refused.status, 400)
