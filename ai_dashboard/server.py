@@ -18,6 +18,7 @@ from ai_dashboard.agent_actions import (
     IMAGE_TYPES,
     MAX_IMAGE_BYTES,
     RequestError,
+    capabilities,
     check,
     staged_images,
     submit,
@@ -36,7 +37,7 @@ from ai_dashboard.pm_bridge import invoke_pm, register_pm_routes
 from ai_dashboard.saved_checks import SavedChecks
 from ai_dashboard.security import SECURITY, register_security
 from ai_dashboard.service_actions import ServiceControl
-from ai_dashboard.sources import service_state
+from ai_dashboard.sources import CODING_SNAPSHOT_FORMATS, read_snapshot, service_state
 from ai_dashboard.task_progress import (
     TaskCloser,
     close_forever,
@@ -263,8 +264,20 @@ async def coding_action(request: web.Request) -> web.Response:
     if (request.content_length or 0) > MAX_ACTION_BODY_BYTES:
         return web.json_response({"error": "request too large"}, status=413)
     try:
-        action, args = check(json.loads(await request.text()))
-    except (ValueError, RequestError) as error:
+        body = json.loads(await request.text())
+    except ValueError as error:
+        return web.json_response({"error": f"bad request: {error}"}, status=400)
+    # The coding agent's own snapshot, not the request, decides which tools and
+    # providers a setup request may name; an old or broken snapshot keeps the
+    # legacy codex/claude allowlist.
+    snapshot = None
+    if bot.snapshot_file is not None:
+        snapshot, _ = await asyncio.to_thread(
+            read_snapshot, bot.snapshot_file, CODING_SNAPSHOT_FORMATS
+        )
+    try:
+        action, args = check(body, capabilities(snapshot))
+    except RequestError as error:
         return web.json_response({"error": f"bad request: {error}"}, status=400)
     images: list[Path] = []
     if action == "create_task" and args["images"]:

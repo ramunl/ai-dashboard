@@ -21,18 +21,35 @@ function setupLink(label, value, path) {
   return node;
 }
 
-function setupCard(setup) {
+function setupCard(setup, snapshot) {
   if (!setup) return setupMissingCard();
   const active = setup.projects.find((project) => project.active);
-  const claude = setup.models.find((model) => model.tool === "claude");
-  const tools = [`planner ${setup.planner}`, `implementer ${setup.implementer}`];
-  if (claude) tools.push(claude.model);
+  const model = codingToolsModel(snapshot);
+  const tools = model && model.registry
+    ? [`planner ${codingSetupTool(model, "planner")}`, `implementer ${codingSetupTool(model, "implementer")}`]
+    : setupToolLine(setup);
   return card(
     "Setup",
     setupLink("Project", active ? active.name : "—", "coding/projects"),
     setupLink("AI tools", tools.join(" · "), "coding/ai"),
     setupLink("Logs", "The agent's journal, live", "coding/logs"),
   );
+}
+
+// The old snapshot: "planner codex", "implementer codex", plus the Claude model.
+function setupToolLine(setup) {
+  const claude = (Array.isArray(setup.models) ? setup.models : []).find((model) => model && model.tool === "claude");
+  const tools = [`planner ${setup.planner}`, `implementer ${setup.implementer}`];
+  if (claude && claude.model) tools.push(claude.model);
+  return tools;
+}
+
+// The registry snapshot: the current provider+model for one role.
+function codingSetupTool(model, role) {
+  const entry = model.roles[role];
+  const tool = model.tools[entry.tool];
+  if (!tool) return entry.current;
+  return tool.model ? `${tool.label} · ${tool.model}` : tool.label;
 }
 
 function runOutcomeCard(outcome) {
@@ -48,7 +65,7 @@ function codingCards(snapshot) {
   if (!snapshot) return [card("Coding agent", muted("No data from the agent yet."))];
   return [
     card("Now", ...runningRows(snapshot.running)),
-    setupCard(snapshot.setup || null),
+    setupCard(snapshot.setup || null, snapshot),
     workCard(snapshot),
     ...runOutcomeCard(snapshot.last_run_outcome),
     ...contextCards(snapshot),
@@ -58,7 +75,7 @@ function codingCards(snapshot) {
       row("Implementer", snapshot.implementation_agent),
       row("Verbosity", snapshot.verbosity),
     ),
-    limitsCard(snapshot.limits),
+    limitsCard(snapshot.limits, snapshot.registry),
     card("Versions", el("pre", [snapshot.version, snapshot.core].filter(Boolean).join("\n"))),
   ];
 }

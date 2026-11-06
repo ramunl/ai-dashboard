@@ -5,7 +5,7 @@ const path = require("node:path");
 const {JSDOM} = require("jsdom");
 function setup() {
   const dom = new JSDOM("<main></main>", {runScripts:"outside-only"});
-  for (const file of ["dom.js", "views/security.js", "views/limits.js", "views/tasks.js", "views/pm.js", "views/pm-toolbar.js"]) {
+  for (const file of ["dom.js", "registry.js", "views/security.js", "views/limits.js", "views/tasks.js", "views/pm.js", "views/pm-toolbar.js"]) {
     dom.window.eval(fs.readFileSync(path.join(__dirname,"../../ai_dashboard/static/js",file),"utf8"));
   }
   return dom;

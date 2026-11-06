@@ -6,7 +6,7 @@ const { JSDOM } = require("jsdom");
 
 function page() {
   const dom = new JSDOM("<main></main>", { runScripts: "outside-only" });
-  for (const file of ["dom.js", "views/coding.js", "views/tasks.js"]) {
+  for (const file of ["dom.js", "registry.js", "views/coding.js", "views/tasks.js"]) {
     dom.window.eval(fs.readFileSync(path.join(__dirname, "../../ai_dashboard/static/js", file), "utf8"));
   }
   dom.window.hasPendingActions = () => false;
