@@ -227,7 +227,8 @@ def parse_usage(snapshot: object, today: date) -> ParsedUsage:
 
 def _cost_aggregate(group: list[Usage], kind: str) -> dict | None:
     """Sum one cost kind only; mixed currencies stay unavailable, never merged."""
-    costs = [row.cost for row in group if row.cost is not None and row.cost.kind == kind]
+    rows = [row for row in group if row.cost is not None]
+    costs = [row.cost for row in rows if row.cost.kind == kind]
     if not costs:
         return None
     currencies = {cost.currency for cost in costs}
