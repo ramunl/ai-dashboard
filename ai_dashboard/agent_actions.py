@@ -219,6 +219,22 @@ LEGACY_CAPABILITIES = Capabilities(
 )
 
 
+def registry_tools(snapshot: object | None) -> dict[str, dict] | None:
+    """Return the DS05 registry's validated tools map, or None for legacy.
+
+    The map is ``{tool id: {label, provider, model, models, manageable}}``.
+    token_usage reads it to accept registry tool ids and their provider/model
+    instead of the fixed codex/claude tools. A missing or malformed registry
+    returns None, so a value from a broken or stale snapshot is never trusted.
+    """
+    registry = snapshot.get("registry") if isinstance(snapshot, dict) else None
+    if not isinstance(registry, dict):
+        return None
+    if type(registry.get("format")) is not int or registry["format"] != REGISTRY_FORMAT:
+        return None
+    return _registry_tools(registry.get("tools"))
+
+
 def capabilities(snapshot: object | None) -> Capabilities | None:
     """Return the DS05 registry's validated allowlists, or None for legacy.
 
@@ -226,14 +242,10 @@ def capabilities(snapshot: object | None) -> Capabilities | None:
     LEGACY_CAPABILITIES, so an old snapshot keeps today's codex/claude
     choices and a bad registry can never widen what a request may send.
     """
-    registry = snapshot.get("registry") if isinstance(snapshot, dict) else None
-    if not isinstance(registry, dict):
-        return None
-    if type(registry.get("format")) is not int or registry["format"] != REGISTRY_FORMAT:
-        return None
-    tools = _registry_tools(registry.get("tools"))
+    tools = registry_tools(snapshot)
     if tools is None:
         return None
+    registry = snapshot.get("registry")
     roles = _registry_roles(registry.get("roles"), tools)
     if roles is None:
         return None

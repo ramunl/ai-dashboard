@@ -2,8 +2,9 @@
 
 `/tokens` is read-only. It reads the configured Coding snapshot from disk;
 `GET /api/tokens` uses the existing Telegram initData owner authentication.
-It exposes normalized usage, coverage, freshness and data-quality warnings,
-never the rest of the snapshot. No provider calls or server changes are made.
+It exposes normalized usage, cost, coverage, freshness and data-quality
+warnings, never the rest of the snapshot. No provider calls or server changes
+are made.
 
 ## Schema dependency
 
@@ -40,14 +41,82 @@ local timezone. Roles are `planner` and `implementer`; tools are `codex` and
 `claude`. Counts are nonnegative integers, excluding booleans. `unknown` must
 not exceed `calls`; a bucket with no measured calls cannot have positive tokens.
 
-Coding reads explicitly accept formats 1 and 2. PM and other bot reads still
-accept format 1. Format 1, omitted usage, and unsupported formats mean usage
-is unavailable, never zero. Invalid containers invalidate the section;
-invalid dates, roles, tools, counts, out-of-window dates and ambiguous duplicate
-buckets are omitted with logs and public warnings. Logs never quote raw snapshot
-values. Extra fields are not returned. The parser does not import agent code.
+### DS08 optional usage/cost contract (format 3)
 
-## Token semantics
+DS08 keeps format 2's fields and generalizes the buckets to the DS05 registry,
+so a bucket names any registry tool id instead of the fixed `codex`/`claude`
+pair. It also adds optional cost and billing labels. This is the contract this
+consumer builds against, and it tolerates every new field's absence:
+
+```json
+{
+  "format": 3,
+  "updated_at": 1792584000,
+  "registry": {
+    "format": 1,
+    "roles": { "planner": {"tool": "opencode", "options": ["opencode", "codex"]},
+               "implementer": {"tool": "codex", "options": ["opencode", "codex"]} },
+    "tools": {
+      "opencode": {"label": "OpenCode", "provider": "deepseek",
+                   "model": "deepseek-v4-pro", "models": ["deepseek-v4-pro"],
+                   "manageable": true}
+    },
+    "providers": {
+      "deepseek": {"label": "DeepSeek Pro", "kind": "api", "limits": "deepseek"}
+    }
+  },
+  "token_usage": {
+    "window_days": 90,
+    "balance": {"kind": "reported", "amount": 12.34, "currency": "USD"},
+    "days": [
+      {
+        "date": "2026-11-05",
+        "usage": [
+          {
+            "role": "planner",
+            "tool": "opencode",
+            "calls": 3,
+            "unknown": 1,
+            "tokens": 150,
+            "cost": {
+              "kind": "estimated",
+              "amount": 0.42,
+              "currency": "USD",
+              "rate_basis": "per_1m_tokens"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Field rules for format 3:
+
+- `tool` must be a key of the snapshot's validated DS05 `registry.tools`.
+  A format-3 snapshot without a valid registry makes usage unavailable: the
+  tool ids cannot be trusted. `provider` and `model` are resolved from that
+  registry (a tool's `provider` id and its `model` id or null), never read
+  from the bucket.
+- `cost` is optional. When present it must be `{kind, amount, currency,
+  rate_basis}` with `kind` `"estimated"` or `"reported"`, `amount` a finite
+  nonnegative number, `currency` a nonempty string, and `rate_basis` a
+  nonempty string or null. A malformed `cost` is dropped with a warning while
+  the bucket's token counts are kept.
+- `balance` is optional. When present it must be `{kind, amount, currency}`
+  with the same `kind`/`amount`/`currency` rules. A missing, null or malformed
+  balance is unavailable — never zero, never guessed.
+
+Coding reads explicitly accept formats 1, 2 and 3. PM and other bot reads
+still accept format 1. Format 1, omitted usage, and unsupported formats mean
+usage is unavailable, never zero. Invalid containers invalidate the section;
+invalid dates, roles, tools, counts, out-of-window dates and ambiguous
+duplicate buckets are omitted with logs and public warnings. Logs never quote
+raw snapshot values. Extra fields are not returned. The parser does not import
+agent code.
+
+## Token and cost semantics
 
 The dashboard sums upstream `tokens` once; it does not add any other provider
 fields. These are reported counts, not billing totals:
@@ -63,6 +132,15 @@ Unknown calls contribute no tokens. An all-unknown bucket displays unavailable;
 a measured zero displays 0. Mixed buckets show the reported sum alongside the
 unknown call count. Absent role/tool buckets display unavailable. Aggregate
 counts combine only validated rows, so warnings imply incomplete totals.
+
+Costs are labels, not billing totals either. Estimated and reported costs are
+aggregated and displayed in separate columns and are never added together.
+Each cost keeps its own currency; a group whose buckets disagree on currency
+is unavailable rather than summed in a mixed currency. Rate bases are shown
+next to the amount, and an unavailable balance is labeled unavailable, never
+drawn as zero or as subscription quota. A snapshot without cost or balance
+fields shows no dollar figure at all — old snapshots never get backfilled
+dollars or invented input/output splits.
 
 ## Coverage and freshness
 
@@ -90,10 +168,14 @@ generation guards so slow requests cannot overwrite a newer page.
 
 Python tests cover malformed and legacy inputs, omission warnings, duplicates,
 zero/unknown counts, safe output, retention, ISO-year boundaries, leap dates,
-freshness, compatibility, and authenticated/unauthenticated API access. jsdom
-tests cover tables and text safety, unavailable/empty/error states, launcher and
-Back navigation, slow/hung requests, and stale response races. The existing
-script-name uniqueness test includes the new script from index.html.
+freshness, compatibility, and authenticated/unauthenticated API access. DS08
+tests add registry-driven tools (including a third tool), normalized
+provider/model/label output, estimated-vs-reported cost labels, currency and
+rate-basis handling, balance availability, malformed cost/balance, mixed
+currencies, and format-2/format-3 coexistence. jsdom tests cover tables and
+text safety, unavailable/empty/error states, cost columns and billing labels,
+launcher and Back navigation, slow/hung requests, and stale response races. The
+existing script-name uniqueness test includes the new script from index.html.
 
 Run `python3 -m pytest -q`, `npm test`, `ruff check .`, and
 `ruff format --check ai_dashboard tests`. Format only touched Python files.

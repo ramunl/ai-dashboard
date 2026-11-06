@@ -19,6 +19,16 @@ const usage = { available: true, timezone: "UTC", warnings: [], stale: false, ag
   coverage: { window_days: 90, start: "2023-12-03", end: "2024-03-01", reported_days: 1 },
   totals, periods: { day: [period], week: [{ ...period, period: "2024-W09" }], month: [{ ...period, period: "2024-02" }] } };
 const launcher = { resources: null, services: [], agents: [], problems: [] };
+const registryTotals = [
+  { role: "planner", tool: "opencode", tool_label: "OpenCode", provider: "deepseek", model: "deepseek-v4-pro", tokens: 1500, calls: 4, unknown: 0,
+    cost_estimated: { amount: 0.42, currency: "USD", rate_bases: ["per_1m_tokens"] },
+    cost_reported: { amount: 1.1, currency: "USD", rate_bases: [] } },
+  { role: "implementer", tool: "codex", tool_label: "Codex", provider: "openai", model: "gpt-5.2-codex", tokens: null, calls: 1, unknown: 1,
+    cost_estimated: null, cost_reported: null },
+];
+const registryUsage = { ...usage, registry: true,
+  billing: { balance: { kind: "reported", amount: 12.34, currency: "USD" } },
+  totals: registryTotals };
 const answer = body => ({ ok: true, json: async () => body });
 function open(respond, url = "/tokens", popstate = true) {
   const errors = [];
@@ -126,4 +136,53 @@ test("Tokens Back fallback works without popstate", async t => {
   p.dom.window.goBack(); await sleep(360);
   assert.equal(p.dom.window.location.pathname, "/");
   assert.equal(p.doc.getElementById("title").textContent, "AI Agents");
+});
+
+test("Tokens renders registry tools, provider/model and separate cost labels", async t => {
+  const p = open(() => Promise.resolve(answer(registryUsage)));
+  t.after(() => p.dom.window.close()); await sleep(30);
+  assert.match(p.text(), /OpenCode/);
+  assert.match(p.text(), /deepseek · deepseek-v4-pro/);
+  assert.match(p.text(), /0\.42 USD/);
+  assert.match(p.text(), /1\.10 USD/);
+  assert.match(p.text(), /per_1m_tokens/);
+  assert.match(p.text(), /Reported balance/);
+  assert.match(p.text(), /12\.34 USD/);
+  const headings = [...p.doc.querySelectorAll("th[scope=col]")].map(n => n.textContent);
+  assert.ok(headings.includes("Estimated cost"));
+  assert.ok(headings.includes("Reported cost"));
+  const row = p.doc.querySelector('th[scope="row"]').closest("tr");
+  const cells = [...row.querySelectorAll("td")].map(n => n.textContent);
+  assert.ok(cells.some(n => n.includes("0.42 USD")));
+  assert.ok(cells.some(n => n.includes("1.10 USD")));
+});
+
+test("Tokens shows an unavailable balance without inventing a figure", async t => {
+  const data = { ...registryUsage, billing: { balance: null } };
+  const p = open(() => Promise.resolve(answer(data)));
+  t.after(() => p.dom.window.close()); await sleep(30);
+  assert.match(p.text(), /Account balance/);
+  assert.doesNotMatch(p.text(), /12\.34/);
+});
+
+test("Tokens treats malicious provider/model/cost/balance text as text", async t => {
+  const evil = '<img src=x onerror="alert(1)">';
+  const data = { ...registryUsage, billing: { balance: { kind: "estimated", amount: 1, currency: evil } },
+    totals: [{ ...registryTotals[0], provider: evil, model: evil,
+      cost_estimated: { amount: 1, currency: evil, rate_bases: [evil] } }] };
+  const p = open(() => Promise.resolve(answer(data)));
+  t.after(() => p.dom.window.close()); await sleep(30);
+  assert.ok(p.text().includes(evil));
+  assert.equal(p.doc.querySelector("img"), null);
+});
+
+test("Tokens old snapshot shows no invented dollars in the cost columns", async t => {
+  const p = open(null);
+  t.after(() => p.dom.window.close()); await sleep(30);
+  assert.match(p.text(), /Estimated cost/);
+  assert.match(p.text(), /Reported cost/);
+  const costCells = [...p.doc.querySelectorAll("tbody tr")]
+    .flatMap(tr => [...tr.querySelectorAll("td")].slice(-2));
+  assert.ok(costCells.length > 0);
+  assert.ok(costCells.every(n => n.textContent === "Unavailable"));
 });

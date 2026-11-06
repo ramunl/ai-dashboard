@@ -1,4 +1,4 @@
-"""Normalize Coding's format-2 usage contract without importing agent code."""
+"""Normalize Coding's usage and optional cost contract without importing agent code."""
 
 from __future__ import annotations
 
@@ -9,12 +9,34 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
+from ai_dashboard.agent_actions import registry_tools
 from ai_dashboard.sources import STALE_AFTER_SECONDS
 
 logger = logging.getLogger(__name__)
 ROLES = ("planner", "implementer")
-TOOLS = ("codex", "claude")
+# Format 2 predates the DS05 registry: its buckets name these two fixed tools.
+LEGACY_TOOLS = ("codex", "claude")
 WINDOW_DAYS = 90
+COST_KINDS = ("estimated", "reported")
+
+
+@dataclass(frozen=True)
+class Cost:
+    """One validated optional cost label: never mixed with another kind."""
+
+    kind: str
+    amount: float
+    currency: str
+    rate_basis: str | None
+
+
+@dataclass(frozen=True)
+class Balance:
+    """One validated optional account-balance label."""
+
+    kind: str
+    amount: float
+    currency: str
 
 
 @dataclass(frozen=True)
@@ -27,15 +49,17 @@ class Usage:
     calls: int
     unknown: int
     tokens: int
+    cost: Cost | None = None
 
 
 @dataclass(frozen=True)
 class ParsedUsage:
-    """Validated buckets and omission reasons for a snapshot."""
+    """Validated buckets, balance and omission reasons for a snapshot."""
 
     available: bool
     rows: tuple[Usage, ...]
     warnings: tuple[str, ...]
+    balance: Balance | None = None
 
 
 def _day(value: object) -> date | None:
@@ -48,37 +72,104 @@ def _day(value: object) -> date | None:
     return parsed if parsed.isoformat() == value else None
 
 
-def _row(value: object, day: date) -> Usage | None:
+def _cost(value: object, warnings: Counter[str]) -> Cost | None:
+    """Validate an optional cost label, omitting a malformed one only."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        warnings["Malformed cost omitted"] += 1
+        return None
+    kind, amount = value.get("kind"), value.get("amount")
+    currency, basis = value.get("currency"), value.get("rate_basis")
+    if (
+        kind not in COST_KINDS
+        or type(amount) not in (int, float)
+        or not math.isfinite(amount)
+        or amount < 0
+        or not isinstance(currency, str)
+        or not currency.strip()
+        or (basis is not None and (not isinstance(basis, str) or not basis.strip()))
+    ):
+        warnings["Malformed cost omitted"] += 1
+        return None
+    return Cost(kind, float(amount), currency, basis or None)
+
+
+def _balance(value: object, warnings: Counter[str]) -> Balance | None:
+    """Validate the optional account balance, omitting a malformed one only."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        warnings["Malformed balance omitted"] += 1
+        return None
+    kind, amount, currency = (
+        value.get("kind"),
+        value.get("amount"),
+        value.get("currency"),
+    )
+    if (
+        kind not in COST_KINDS
+        or type(amount) not in (int, float)
+        or not math.isfinite(amount)
+        or amount < 0
+        or not isinstance(currency, str)
+        or not currency.strip()
+    ):
+        warnings["Malformed balance omitted"] += 1
+        return None
+    return Balance(kind, float(amount), currency)
+
+
+def _row(
+    value: object,
+    day: date,
+    tool_ids: tuple[str, ...],
+    warnings: Counter[str],
+) -> Usage | None:
     if not isinstance(value, dict):
         return None
     role, tool = value.get("role"), value.get("tool")
     counts = [value.get(key) for key in ("calls", "unknown", "tokens")]
-    if role not in ROLES or tool not in TOOLS:
+    if role not in ROLES or tool not in tool_ids:
         return None
     if any(type(count) is not int or count < 0 for count in counts):
         return None
     calls, unknown, tokens = counts
     if unknown > calls or (calls == unknown and tokens != 0):
         return None
-    return Usage(day, role, tool, calls, unknown, tokens)
+    return Usage(
+        day, role, tool, calls, unknown, tokens, _cost(value.get("cost"), warnings)
+    )
+
+
+def _tool_ids(snapshot: object, fmt: object) -> tuple[tuple[str, ...], dict | None]:
+    """The tools a snapshot's buckets may name, plus their registry entries."""
+    if fmt == 2:
+        return LEGACY_TOOLS, None
+    if fmt != 3:
+        return (), None
+    tools = registry_tools(snapshot)
+    return (tuple(tools), tools) if tools else ((), None)
 
 
 def parse_usage(snapshot: object, today: date) -> ParsedUsage:
     """Omit invalid/duplicate buckets; never interpolate raw data into warnings."""
     warnings: Counter[str] = Counter()
     rows: list[Usage] = []
+    balance: Balance | None = None
 
     def result(available: bool) -> ParsedUsage:
         messages = tuple(f"{reason} ({count})" for reason, count in warnings.items())
         for message in messages:
             logger.warning("Token usage: %s", message)
-        return ParsedUsage(available, tuple(rows), messages)
+        return ParsedUsage(available, tuple(rows), messages, balance)
 
     if not isinstance(snapshot, dict) or type(snapshot.get("format")) is not int:
         warnings["Snapshot unavailable or invalid"] += 1
         return result(False)
-    if snapshot["format"] != 2:
-        warnings["Usage requires Coding snapshot format 2"] += 1
+    fmt = snapshot["format"]
+    if fmt not in (2, 3):
+        warnings["Usage requires Coding snapshot format 2 or 3"] += 1
         return result(False)
     section = snapshot.get("token_usage")
     if section is None:
@@ -92,6 +183,11 @@ def parse_usage(snapshot: object, today: date) -> ParsedUsage:
     ):
         warnings["Unsupported usage container or retention window"] += 1
         return result(False)
+    tool_ids, _registry = _tool_ids(snapshot, fmt)
+    if fmt == 3 and not tool_ids:
+        warnings["Usage requires a valid tool registry"] += 1
+        return result(False)
+    balance = _balance(section.get("balance") if fmt == 3 else None, warnings)
     days = section["days"]
     # A duplicate is ambiguous: exclude all copies, rather than count one twice.
     dates = Counter(
@@ -119,7 +215,7 @@ def parse_usage(snapshot: object, today: date) -> ParsedUsage:
             and isinstance(entry.get("tool"), str)
         )
         for entry in item["usage"]:
-            row = _row(entry, day)
+            row = _row(entry, day, tool_ids, warnings)
             if row is None:
                 warnings["Invalid role, tool or counts omitted"] += 1
             elif keys[(row.role, row.tool)] != 1:
@@ -129,29 +225,57 @@ def parse_usage(snapshot: object, today: date) -> ParsedUsage:
     return result(True)
 
 
-def _totals(rows: list[Usage]) -> list[dict]:
+def _cost_aggregate(group: list[Usage], kind: str) -> dict | None:
+    """Sum one cost kind only; mixed currencies stay unavailable, never merged."""
+    costs = [row.cost for row in group if row.cost is not None and row.cost.kind == kind]
+    if not costs:
+        return None
+    currencies = {cost.currency for cost in costs}
+    return {
+        "amount": sum(cost.amount for cost in costs) if len(currencies) == 1 else None,
+        "currency": next(iter(currencies)) if len(currencies) == 1 else None,
+        "rate_bases": sorted({cost.rate_basis for cost in costs if cost.rate_basis}),
+    }
+
+
+def _totals(
+    rows: list[Usage],
+    tool_ids: tuple[str, ...] = LEGACY_TOOLS,
+    registry: dict | None = None,
+) -> list[dict]:
     totals = []
     for role in ROLES:
-        for tool in TOOLS:
+        for tool in tool_ids:
             group = [row for row in rows if row.role == role and row.tool == tool]
             calls = sum(row.calls for row in group)
             unknown = sum(row.unknown for row in group)
+            entry = registry.get(tool) if registry else None
             totals.append(
                 {
                     "role": role,
                     "tool": tool,
+                    "tool_label": entry["label"] if entry else None,
+                    "provider": entry["provider"] if entry else None,
+                    "model": entry["model"] if entry else None,
                     "calls": calls if group else None,
                     "unknown": unknown if group else None,
                     "tokens": sum(row.tokens for row in group)
                     if group and (calls > unknown or calls == 0)
                     else None,
                     "reported_days": len({row.day for row in group}),
+                    "cost_estimated": _cost_aggregate(group, "estimated"),
+                    "cost_reported": _cost_aggregate(group, "reported"),
                 }
             )
     return totals
 
 
-def aggregate(rows: tuple[Usage, ...], period: str) -> list[dict]:
+def aggregate(
+    rows: tuple[Usage, ...],
+    period: str,
+    tool_ids: tuple[str, ...] = LEGACY_TOOLS,
+    registry: dict | None = None,
+) -> list[dict]:
     """Sum only retained reported buckets, keeping ISO years with ISO weeks."""
     groups: dict[str, list[Usage]] = {}
     for row in rows:
@@ -182,16 +306,18 @@ def aggregate(rows: tuple[Usage, ...], period: str) -> list[dict]:
                 "calendar_days": (end - start).days + 1,
                 # Upstream publishes neither tracking start nor continuity.
                 "partial": True,
-                "totals": _totals(group),
+                "totals": _totals(group, tool_ids, registry),
             }
         )
     return result
 
 
 def usage_view(snapshot: object, now: float) -> dict:
-    """Return only normalized usage, coverage and snapshot freshness."""
+    """Return only normalized usage, cost, coverage and snapshot freshness."""
     today = datetime.fromtimestamp(now, UTC).date()
     parsed = parse_usage(snapshot, today)
+    fmt = snapshot.get("format") if isinstance(snapshot, dict) else None
+    tool_ids, registry = _tool_ids(snapshot, fmt)
     stamp = snapshot.get("updated_at") if isinstance(snapshot, dict) else None
     valid_stamp = (
         type(stamp) in (int, float) and 0 <= stamp <= now and math.isfinite(stamp)
@@ -201,8 +327,10 @@ def usage_view(snapshot: object, now: float) -> dict:
     if not valid_stamp:
         warnings.append("Snapshot freshness unavailable")
     days = sorted({row.day for row in parsed.rows})
+    balance = parsed.balance
     return {
         "available": parsed.available,
+        "registry": registry is not None,
         "timezone": "UTC",
         "updated_at": stamp if valid_stamp else None,
         "age_seconds": age,
@@ -217,8 +345,22 @@ def usage_view(snapshot: object, now: float) -> dict:
             "reported_days": len(days),
             "continuous": False,
         },
-        "totals": _totals(list(parsed.rows)),
+        "totals": _totals(list(parsed.rows), tool_ids, registry),
         "periods": {
-            kind: aggregate(parsed.rows, kind) for kind in ("day", "week", "month")
+            kind: aggregate(parsed.rows, kind, tool_ids, registry)
+            for kind in ("day", "week", "month")
         },
+        "billing": (
+            {
+                "balance": {
+                    "kind": balance.kind,
+                    "amount": balance.amount,
+                    "currency": balance.currency,
+                }
+                if balance
+                else None
+            }
+            if fmt == 3
+            else None
+        ),
     }
