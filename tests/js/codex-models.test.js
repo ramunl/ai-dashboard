@@ -12,7 +12,7 @@ function modelsPage({ confirm = true, pending = false, error = null } = {}) {
   win.isActionPending = () => pending;
   win.askConfirmation = (message, callback) => { confirmations.push(message); callback(confirm); };
   win.requestAction = (key, action, args) => requests.push({ key, action, ...args });
-  for (const file of ["dom.js", "actions-ui.js", "views/coding-ai.js"]) {
+  for (const file of ["dom.js", "registry.js", "actions-ui.js", "views/coding-ai.js"]) {
     win.eval(fs.readFileSync(path.join(__dirname, "../../ai_dashboard/static/js", file), "utf8"));
   }
   win.askConfirmation = (message, callback) => { confirmations.push(message); callback(confirm); };
@@ -22,7 +22,7 @@ function modelsPage({ confirm = true, pending = false, error = null } = {}) {
   const setup = { planner: "codex", implementer: "codex", actions: [], models: [
     { tool: "codex", model: "default", manageable: true, choices: ["default", "codex-test"], choices_error: error },
   ] };
-  win.document.querySelector("main").append(win.modelsCard(setup));
+  win.document.querySelector("main").append(win.modelsCard(win.codingToolsFromSetup(setup), setup));
   return { dom, win, requests, confirmations, inputs: [...win.document.querySelectorAll("input")] };
 }
 

@@ -29,7 +29,8 @@ const CONTEXT_TASK_STATUS = {
 };
 
 let taskFilter = "active";
-let taskPlanner = "";  // "codex" or "claude": who plans, from Setup › AI tools
+let taskPlanner = "";  // who plans: the registry label or the legacy codex/claude value
+let taskTools = null;  // the normalized DS05/legacy tools model from the snapshot
 let taskDraft = null;  // { text, todo } handed over by the PM window's Make task
 let taskRepo = "";
 let taskAutopilot = false;  // the Make a task sheet's Autopilot box
@@ -50,13 +51,12 @@ function isTaskFinished(task) {
   return FINISHED_TASK_STAGES.includes(task.stage) && !task.can_retry && task.can_resume !== true && !task.blocks;
 }
 
-function retryButton(task, tool, label, className, resume = false) {
+function retryButton(task, tool, name, label, className, resume = false) {
   const action = resume ? "resume_task" : "retry_task";
   const key = `task:${resume ? "resume" : "retry"}:${task.id}:${tool}`;
   return taskButton(label, key, className, (button) => {
     button.disabled = true;
     const origin = generation;
-    const name = tool === "codex" ? "Codex" : "Claude";
     const question = resume
       ? `Resume "${task.title}" with ${name}? Continue from saved branch and edits. A new AI run inspects remaining work; this uses AI tokens.`
       : `Start "${task.title}" fresh with ${name}? Same approved plan, clean checkout. Saved work is preserved, but implementation restarts; this uses AI tokens.`;
@@ -66,6 +66,25 @@ function retryButton(task, tool, label, className, resume = false) {
       else button.disabled = false;
     });
   });
+}
+
+// The tools a retry/resume may pick, from the registry's implementer options,
+// or the legacy codex/claude pair on an old snapshot. Resume keeps the old
+// codex-first order; a fresh start lists claude first, as before.
+function retryChoices(resume) {
+  if (taskTools && taskTools.registry) {
+    const tools = taskTools.roles.implementer.options.map((option) => ({ id: option.value, label: option.label }));
+    return resume ? tools : [...tools].reverse();
+  }
+  const legacy = [{ id: "codex", label: "Codex" }, { id: "claude", label: "Claude" }];
+  return resume ? legacy : [...legacy].reverse();
+}
+
+function retryButtons(task, resume) {
+  return retryChoices(resume).map((choice, index) =>
+    retryButton(task, choice.id, choice.label,
+      resume ? `Resume with ${choice.label}` : `Start fresh with ${choice.label}`,
+      resume && index === 0 ? "row-button" : "row-button work-secondary", resume));
 }
 
 // Only the agent can decide whether the finished attempt is safe to archive.
@@ -234,8 +253,7 @@ function taskActions(task) {
   }
   if (canReopenTask(task)) actions.push(reopenButton(task));
   if (task.can_resume === true) {
-    actions.push(retryButton(task, "codex", "Resume with Codex", "row-button", true),
-      retryButton(task, "claude", "Resume with Claude", "row-button work-secondary", true));
+    actions.push(...retryButtons(task, true));
   }
   if (task.can_retry) {
     if (task.can_resume !== true) {
@@ -244,8 +262,7 @@ function taskActions(task) {
       unavailable.title = task.resume_reason || "No safe saved checkpoint is available.";
       actions.push(unavailable);
     }
-    actions.push(retryButton(task, "claude", "Start fresh with Claude", "row-button work-secondary"),
-      retryButton(task, "codex", "Start fresh with Codex", "row-button work-secondary"));
+    actions.push(...retryButtons(task, false));
   }
   if (task.queued && ["todo", "stopped", "blocked", "ops_required"].includes(task.stage)) {
     // Already asked to start: the agent starts it as soon as it is free.
@@ -347,19 +364,23 @@ function autopilotBox() {
 function tasksPage(view) {
   const setup = setupOf(view);
   settleActions(setup);
-  taskPlanner = (setup && setup.planner) || "";
-  taskProgress = { deployed: {}, deployable: [], closed: [], ...(view.task_progress || {}) };
   const snapshot = view.snapshot;
+  const model = codingToolsModel(snapshot);
+  taskTools = model;
+  taskPlanner = (model && model.registry
+    ? (model.roles.planner.options.find((option) => option.value === model.roles.planner.current) || {}).label || model.roles.planner.current
+    : ((setup && setup.planner) || ""));
+  taskProgress = { deployed: {}, deployable: [], closed: [], ...(view.task_progress || {}) };
   const tasks = (snapshot && snapshot.tasks) || null;
   const problem = view.problem ? `coding agent ${view.problem}` : "";
   const page = { title: "Tasks", subtitle: "", status: view.problem ? "bad" : "ok", alert: problem || actionNoticeText() };
-  if (!tasks || !setup) {
+  if (!tasks) {
     return { ...page, nodes: [card("Tasks", muted("Update the coding agent to keep tasks here."))] };
   }
   const waiting = tasks.filter((task) => ["planned", "proposed"].includes(task.stage)).length;
   page.subtitle = `${tasks.length} task${tasks.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} need${waiting === 1 ? "s" : ""} you` : ""}`;
   if (taskPlanner) page.subtitle += ` · planner ${taskPlanner}`;
-  const nodes = taskDraft ? [makeTaskCard(setup), tasksCard(tasks)] : [tasksCard(tasks)];
+  const nodes = taskDraft && setup ? [makeTaskCard(setup), tasksCard(tasks)] : [tasksCard(tasks)];
   if (snapshot.worker) nodes.push(workerCard(snapshot.worker));
   return { ...page, nodes };
 }

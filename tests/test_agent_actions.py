@@ -13,6 +13,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from ai_dashboard import server
 from ai_dashboard.agent_actions import (
     RequestError,
+    capabilities,
     check,
     staged_images,
     submit,
@@ -31,6 +32,37 @@ def _auth(user_id: int = OWNER) -> dict:
         {"auth_date": str(int(time.time())), "user": json.dumps({"id": user_id})}, TOKEN
     )
     return {"Authorization": "tma " + init}
+
+
+def _registry_snapshot() -> dict:
+    """A valid DS05 registry with a third provider (gpt) and one unmanageable tool."""
+    return {
+        "format": 2,
+        "updated_at": time.time(),
+        "registry": {
+            "format": 1,
+            "roles": {
+                "planner": {"tool": "codex", "options": ["codex", "gpt"]},
+                "implementer": {"tool": "gpt", "options": ["gpt", "codex"]},
+            },
+            "tools": {
+                "codex": {
+                    "label": "Codex",
+                    "provider": "openai",
+                    "model": "default",
+                    "models": ["default"],
+                    "manageable": True,
+                },
+                "gpt": {
+                    "label": "GPT",
+                    "provider": "openai",
+                    "model": "gpt-4",
+                    "models": ["gpt-4"],
+                    "manageable": False,
+                },
+            },
+        },
+    }
 
 
 class CheckTests(unittest.TestCase):
@@ -203,6 +235,70 @@ class CheckTests(unittest.TestCase):
             {"action": "switch_model", "args": {"tool": "claude-code", "model": "m"}},
         ):
             with self.assertRaises(RequestError, msg=str(body)):
+                check(body)
+
+    def test_registry_capabilities_derive_each_allowlist(self) -> None:
+        caps = capabilities(_registry_snapshot())
+        self.assertEqual(caps.planner, ("codex", "gpt"))
+        self.assertEqual(caps.implementer, ("gpt", "codex"))
+        # Only manageable tools may switch models; retry/resume re-run the
+        # implementer, so they accept exactly its options.
+        self.assertEqual(caps.switch_tools, ("codex",))
+        self.assertEqual(caps.retry_tools, ("gpt", "codex"))
+
+    def test_registry_capabilities_accept_the_registry_and_refuse_legacy(self) -> None:
+        caps = capabilities(_registry_snapshot())
+        check({"action": "set_planner", "args": {"value": "gpt"}}, caps)
+        check({"action": "set_implementer", "args": {"value": "codex"}}, caps)
+        check({"action": "switch_model", "args": {"tool": "codex", "model": "gpt-5"}}, caps)
+        check({"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "gpt"}}, caps)
+        check({"action": "resume_task", "args": {"task": "0a1b2c3d", "tool": "codex"}}, caps)
+        for body in (
+            {"action": "set_planner", "args": {"value": "claude"}},
+            {"action": "set_implementer", "args": {"value": "claude"}},
+            {"action": "switch_model", "args": {"tool": "gpt", "model": "gpt-5"}},
+            {"action": "switch_model", "args": {"tool": "claude", "model": "claude-x"}},
+            {"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "claude"}},
+            {"action": "resume_task", "args": {"task": "0a1b2c3d", "tool": "claude"}},
+        ):
+            with self.subTest(body=body), self.assertRaises(RequestError):
+                check(body, caps)
+
+    def test_registry_capabilities_fall_back_when_malformed(self) -> None:
+        registry = _registry_snapshot()["registry"]
+        codex = registry["tools"]["codex"]
+        gpt = registry["tools"]["gpt"]
+        cases = [
+            None,
+            {},
+            "registry",
+            {**registry, "format": "1"},
+            {**registry, "format": 2},
+            {**registry, "tools": {**registry["tools"], "gpt": {**gpt, "manageable": "no"}}},
+            {**registry, "tools": {**registry["tools"], "gpt": {**gpt, "model": "../x"}}},
+            {**registry, "tools": {**registry["tools"], "gpt": {**gpt, "models": ["ok", 3]}}},
+            {**registry, "tools": {**registry["tools"], "gpt": {k: v for k, v in gpt.items() if k != "model"}}},
+            {**registry, "tools": {**registry["tools"], "bad id": codex}},
+            {**registry, "roles": {**registry["roles"], "planner": {"tool": "gpt", "options": []}}},
+            {**registry, "roles": {**registry["roles"], "implementer": {"tool": "gpt", "options": ["gpt", "missing"]}}},
+            {**registry, "roles": {**registry["roles"], "planner": {"tool": "missing", "options": ["gpt"]}}},
+        ]
+        for value in cases:
+            with self.subTest(registry=value):
+                self.assertIsNone(capabilities({"registry": value}))
+
+    def test_legacy_fallback_keeps_codex_claude_only(self) -> None:
+        check({"action": "set_planner", "args": {"value": "claude"}})
+        check({"action": "set_implementer", "args": {"value": "codex"}})
+        check({"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "codex"}})
+        check({"action": "resume_task", "args": {"task": "0a1b2c3d", "tool": "claude"}})
+        for body in (
+            {"action": "set_planner", "args": {"value": "gpt"}},
+            {"action": "set_implementer", "args": {"value": "gpt"}},
+            {"action": "retry_task", "args": {"task": "0a1b2c3d", "tool": "gpt"}},
+            {"action": "resume_task", "args": {"task": "0a1b2c3d", "tool": "gpt"}},
+        ):
+            with self.subTest(body=body), self.assertRaises(RequestError):
                 check(body)
 
     def test_context_actions_validate_scope_kind_id_revision_decision(self) -> None:
@@ -497,6 +593,26 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(not_json.status, 400)
         self.assertFalse(self.inbox.exists())
+
+    async def test_registry_snapshot_drives_the_action_allowlist(self) -> None:
+        (self.tmp / "snapshot.json").write_text(json.dumps(_registry_snapshot()))
+        accepted = await self.post({"action": "set_planner", "args": {"value": "gpt"}})
+        self.assertEqual(accepted.status, 202)
+        refused = await self.post({"action": "set_planner", "args": {"value": "claude"}})
+        self.assertEqual(refused.status, 400)
+        switch = await self.post(
+            {"action": "switch_model", "args": {"tool": "codex", "model": "gpt-5"}}
+        )
+        self.assertEqual(switch.status, 202)
+
+    async def test_malformed_registry_snapshot_keeps_legacy_allowlist(self) -> None:
+        snapshot = _registry_snapshot()
+        snapshot["registry"]["tools"]["gpt"]["manageable"] = "no"
+        (self.tmp / "snapshot.json").write_text(json.dumps(snapshot))
+        accepted = await self.post({"action": "set_planner", "args": {"value": "codex"}})
+        self.assertEqual(accepted.status, 202)
+        refused = await self.post({"action": "set_planner", "args": {"value": "gpt"}})
+        self.assertEqual(refused.status, 400)
 
     async def test_refuses_when_agent_is_down(self) -> None:
         with patch.object(server, "service_state", AsyncMock(return_value="failed")):
