@@ -273,8 +273,7 @@ def _registry_tools(value: object) -> dict[str, dict] | None:
             )
             or not isinstance(models, list)
             or any(
-                not isinstance(item, str) or not _MODEL.match(item)
-                for item in models
+                not isinstance(item, str) or not _MODEL.match(item) for item in models
             )
         ):
             return None
@@ -319,9 +318,7 @@ class RequestError(Exception):
 _MOVE_LOCK = threading.Lock()
 
 
-def check(
-    body: object, caps: Capabilities | None = None
-) -> tuple[str, dict[str, str]]:
+def check(body: object, caps: Capabilities | None = None) -> tuple[str, dict[str, str]]:
     """Return (action, args) for a well-formed request body, else raise.
 
     caps is the validated DS05 capability allowlist from capabilities(); None
