@@ -404,17 +404,22 @@ function taskActions(task) {
   return actions.length ? [...notes, workActions(...actions)] : [];
 }
 
-function taskRow(task) {
+function taskRow(task, runProgress) {
   const isWaiting = task.stage === "todo" && Boolean(task.waiting_for);
   const isQueued = Boolean(task.queued) && !FINISHED_TASK_STAGES.includes(task.stage)
     && !["planning", "planned", "implementing"].includes(task.stage);
   const status = isQueued ? { label: "Starts next", tone: "todo" }
     : isWaiting ? { label: "Waiting", tone: "todo" }
     : TASK_STATUS[taskStage(task)] || { label: task.stage, tone: "todo" };
+  // The active run's progress belongs only to the task it names; a run for a
+  // different task (or a stale snapshot) never leaks onto this row.
+  const progressNodes = runProgress && runProgress.task_id === task.id
+    ? progressRows(runProgress) : [];
   const node = el("article", null, "task");
   const badge = el("span", status.label, "task-status");
   badge.dataset.tone = status.tone;
-  node.append(el("div", task.title, "task-title"), badge, taskMeta(task), ...taskContext(task), ...taskActions(task));
+  node.append(el("div", task.title, "task-title"), badge, taskMeta(task),
+    ...progressNodes, ...taskContext(task), ...taskActions(task));
   return node;
 }
 
@@ -437,11 +442,11 @@ function taskFilterSwitch(tasks) {
   return group;
 }
 
-function tasksCard(tasks) {
+function tasksCard(tasks, runProgress) {
   const shown = tasks.filter((task) => taskFilter === "all"
     || (taskFilter === "finished") === isTaskFinished(task));
   // Newest first: the task just made is the one to look at.
-  const rows = [...shown].reverse().map(taskRow);
+  const rows = [...shown].reverse().map((task) => taskRow(task, runProgress));
   if (!rows.length) rows.push(muted(tasks.length ? "No tasks here." : "No tasks yet. Open a todo in the PM window and tap Make task."));
   return card("Tasks", taskFilterSwitch(tasks), ...rows);
 }
@@ -472,6 +477,7 @@ function tasksPage(view) {
     : ((setup && setup.planner) || ""));
   taskProgress = { deployed: {}, deployable: [], closed: [], ...(view.task_progress || {}) };
   const tasks = (snapshot && snapshot.tasks) || null;
+  const runProgress = (snapshot && snapshot.progress) || null;
   const problem = view.problem ? `coding agent ${view.problem}` : "";
   const page = { title: "Tasks", subtitle: "", status: view.problem ? "bad" : "ok", alert: problem || actionNoticeText() };
   if (!tasks) {
@@ -480,7 +486,7 @@ function tasksPage(view) {
   const waiting = tasks.filter((task) => ["planned", "proposed"].includes(task.stage)).length;
   page.subtitle = `${tasks.length} task${tasks.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} need${waiting === 1 ? "s" : ""} you` : ""}`;
   if (taskPlanner) page.subtitle += ` · planner ${taskPlanner}`;
-  const nodes = taskDraft && setup ? [makeTaskCard(setup), tasksCard(tasks)] : [tasksCard(tasks)];
+  const nodes = taskDraft && setup ? [makeTaskCard(setup), tasksCard(tasks, runProgress)] : [tasksCard(tasks, runProgress)];
   if (snapshot.worker) nodes.push(workerCard(snapshot.worker));
   return { ...page, nodes };
 }
