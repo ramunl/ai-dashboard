@@ -8,6 +8,51 @@ function runningRows(running) {
   ];
 }
 
+// The active run's bounded progress (progress01): stage, elapsed, last activity
+// and the attempt id. Idle and legacy snapshots have no "progress", and unknown
+// values stay unknown rather than being guessed.
+const PROGRESS_STAGE_LABELS = {
+  proposed: "Proposed",
+  todo: "To do",
+  planning: "Planning",
+  planned: "Needs approval",
+  implementing: "Implementing",
+  blocked: "Blocked",
+  ops_required: "Needs Ops action",
+  ended: "Run ended",
+  pr: "PR open",
+  done: "Done",
+  deployed: "Deployed",
+  stopped: "Stopped",
+};
+
+function progressRows(progress) {
+  if (!progress || typeof progress !== "object" || Array.isArray(progress)) return [];
+  const has = (key) => key in progress;
+  // A legacy "progress" shape has none of the v1 fields: render nothing rather
+  // than guessing a stage or an age.
+  if (!has("stage") && !has("elapsed") && !has("last_activity")
+    && !has("task_id") && !has("attempt_id")) return [];
+  const stage = typeof progress.stage === "string" && progress.stage
+    ? PROGRESS_STAGE_LABELS[progress.stage] || progress.stage
+    : "Unknown";
+  const elapsed = Number.isFinite(progress.elapsed)
+    ? formatDuration(Math.max(0, progress.elapsed))
+    : "unknown";
+  const activity = Number.isFinite(progress.last_activity)
+    ? `${formatDuration(Math.max(0, Date.now() / 1000 - progress.last_activity))} ago`
+    : "no activity update available";
+  const rows = [
+    row("Stage", stage),
+    row("Elapsed", elapsed),
+    row("Last activity", activity),
+  ];
+  if (typeof progress.attempt_id === "string" && progress.attempt_id) {
+    rows.push(row("Attempt", progress.attempt_id));
+  }
+  return rows;
+}
+
 function setupLink(label, value, path) {
   const node = el("a", null, "nav-row");
   node.href = "/" + path;
@@ -64,7 +109,7 @@ function runOutcomeCard(outcome) {
 function codingCards(snapshot) {
   if (!snapshot) return [card("Coding agent", muted("No data from the agent yet."))];
   return [
-    card("Now", ...runningRows(snapshot.running)),
+    card("Now", ...runningRows(snapshot.running), ...progressRows(snapshot.progress)),
     setupCard(snapshot.setup || null, snapshot),
     workCard(snapshot),
     ...runOutcomeCard(snapshot.last_run_outcome),
