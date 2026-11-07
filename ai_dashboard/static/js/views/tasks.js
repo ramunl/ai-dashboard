@@ -20,12 +20,37 @@ const TASK_STATUS = {
 const TASK_FILTERS = { active: "Active", finished: "Finished", all: "All" };
 // "PR open" counts as finished here: the agent's part is over, it waits on review.
 const FINISHED_TASK_STAGES = ["pr", "done", "stopped"];
-// Context status (CTX05) shown beside each task; absent fields stay unknown.
+// Context status (CTX09) shown beside each task. The coding agent publishes a
+// v1 "context_status" (health, freshness, evidence_state, observed_at,
+// omission_count, truncation_count, packet_refs, dependency_blockers); a
+// pre-v1 snapshot still carries the legacy status/reason/blockers/evidence
+// shape, which renders unchanged. Absent fields stay unknown.
 const CONTEXT_TASK_STATUS = {
+  healthy: { label: "Context healthy", tone: "done" },
+  degraded: { label: "Context degraded", tone: "attention" },
+  blocked: { label: "Context blocked", tone: "attention" },
+  unavailable: { label: "Context unavailable", tone: "todo" },
+  unknown: { label: "Context unknown", tone: "todo" },
+};
+// The legacy CTX05 status values, kept for pre-v1 snapshots.
+const LEGACY_CONTEXT_TASK_STATUS = {
   ok: { label: "Context OK", tone: "done" },
   stale: { label: "Context stale", tone: "attention" },
   blocked: { label: "Context blocked", tone: "attention" },
   unknown: { label: "Context unknown", tone: "todo" },
+};
+// v1 evidence_state codes get a human label; an unknown code renders as itself
+// rather than being guessed.
+const CONTEXT_EVIDENCE_STATE = {
+  none: "No evidence",
+  partial: "Partial evidence",
+  complete: "Complete evidence",
+};
+// v1 dependency blocker codes are "kind:value"; the known kinds get a phrase,
+// unknown codes stay as the raw code so no detail is dropped.
+const CONTEXT_DEPENDENCY_BLOCKERS = {
+  dependency: "Dependency not merged",
+  evidence: "Evidence missing",
 };
 
 let taskFilter = "active";
@@ -150,9 +175,8 @@ function taskMeta(task) {
   return meta;
 }
 
-// Context evidence the agent published for the task (CTX05). PR / merged /
-// deployed are shown separately from the status line; missing evidence stays
-// unknown rather than guessed.
+// Legacy CTX05 context evidence: PR / merged / deployed are shown separately
+// from the status line; missing evidence stays unknown rather than guessed.
 function contextEvidence(status) {
   const evidence = status && status.evidence;
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return [];
@@ -168,14 +192,78 @@ function contextEvidence(status) {
   return nodes;
 }
 
-// The task's prerequisite context: a precise reason plus dependency blockers.
-function taskContext(task) {
-  const status = task.context_status;
-  if (!status || typeof status !== "object" || Array.isArray(status)) {
-    return [el("div", "Context unknown", "card-note context-status")];
+// Age from the v1 observed_at timestamp; a missing one stays "age unknown".
+function taskContextAge(observedAt) {
+  if (typeof observedAt !== "number" || !Number.isFinite(observedAt)) return "age unknown";
+  return `age ${formatDuration(Math.max(0, Date.now() / 1000 - observedAt))}`;
+}
+
+// A v1 dependency blocker code rendered through the label map, or as itself.
+function taskContextBlocker(code) {
+  if (typeof code !== "string" || !code) return "";
+  const split = code.indexOf(":");
+  const kind = split === -1 ? code : code.slice(0, split);
+  const label = CONTEXT_DEPENDENCY_BLOCKERS[kind];
+  if (!label) return code;
+  const rest = split === -1 ? "" : code.slice(split + 1);
+  return rest ? `${label}: ${rest}` : label;
+}
+
+// A v1 packet reference: only its id and checksum, never its contents.
+function taskContextPacket(packet) {
+  if (!packet || typeof packet !== "object" || Array.isArray(packet)) return null;
+  const parts = [];
+  if (typeof packet.packet_id === "string" && packet.packet_id) {
+    parts.push(`packet ${packet.packet_id}`);
   }
+  if (typeof packet.sha256 === "string" && packet.sha256) {
+    parts.push(`sha256 ${packet.sha256}`);
+  }
+  return parts.length ? el("div", parts.join(" · "), "card-note context-packet") : null;
+}
+
+// The v1 context_status row: health badge plus freshness, evidence_state, age,
+// counts, dependency blockers and packet refs on one status line.
+function contextV1Rows(status) {
   const nodes = [];
-  const shown = CONTEXT_TASK_STATUS[status.status] || CONTEXT_TASK_STATUS.unknown;
+  const shown = CONTEXT_TASK_STATUS[status.health] || CONTEXT_TASK_STATUS.unknown;
+  const line = el("div", null, "context-status");
+  const badge = el("span", shown.label, "task-status");
+  badge.dataset.tone = shown.tone;
+  line.append(el("span", "Context"), badge);
+  const meta = [];
+  if (typeof status.freshness === "string" && status.freshness) {
+    meta.push(`freshness ${status.freshness}`);
+  }
+  if (typeof status.evidence_state === "string" && status.evidence_state) {
+    meta.push(CONTEXT_EVIDENCE_STATE[status.evidence_state] || status.evidence_state);
+  }
+  meta.push(taskContextAge(status.observed_at));
+  if (Number.isInteger(status.omission_count) || Number.isInteger(status.truncation_count)) {
+    const counts = [];
+    if (Number.isInteger(status.omission_count)) counts.push(`${status.omission_count} omitted`);
+    if (Number.isInteger(status.truncation_count)) counts.push(`${status.truncation_count} truncated`);
+    meta.push(counts.join(", "));
+  }
+  if (meta.length) line.append(" ", el("span", meta.join(" · "), "card-note"));
+  nodes.push(line);
+  if (Array.isArray(status.dependency_blockers) && status.dependency_blockers.length) {
+    nodes.push(el("div", `Dependency blocked by: ${status.dependency_blockers.map(taskContextBlocker).join(" · ")}`,
+      "card-note context-blockers"));
+  }
+  const packets = Array.isArray(status.packet_refs) ? status.packet_refs : [];
+  for (const packet of packets) {
+    const ref = taskContextPacket(packet);
+    if (ref) nodes.push(ref);
+  }
+  return nodes;
+}
+
+// The legacy CTX05 context_status row: a precise reason plus dependency
+// blockers and PR / merged / deployed evidence.
+function contextLegacyRows(status) {
+  const nodes = [];
+  const shown = LEGACY_CONTEXT_TASK_STATUS[status.status] || LEGACY_CONTEXT_TASK_STATUS.unknown;
   const line = el("div", null, "context-status");
   const badge = el("span", shown.label, "task-status");
   badge.dataset.tone = shown.tone;
@@ -190,6 +278,18 @@ function taskContext(task) {
   }
   nodes.push(...contextEvidence(status));
   return nodes;
+}
+
+// The task's prerequisite context: v1 when the status carries a health, the
+// legacy shape when it carries a status, unknown otherwise.
+function taskContext(task) {
+  const status = task.context_status;
+  if (!status || typeof status !== "object" || Array.isArray(status)) {
+    return [el("div", "Context unknown", "card-note context-status")];
+  }
+  if (typeof status.health === "string") return contextV1Rows(status);
+  if (typeof status.status === "string") return contextLegacyRows(status);
+  return [el("div", "Context unknown", "card-note context-status")];
 }
 
 // A task the worker proposed from the server logs: accept it or drop it.

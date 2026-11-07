@@ -25,7 +25,29 @@ const base = {
   core: "2",
 };
 
+const observed = (offset = -3600) => Math.floor(Date.now() / 1000) + offset;
+
+// The coding agent's v1 initiative context_status.
+const context = (over = {}) => ({
+  health: "healthy",
+  freshness: "fresh",
+  evidence_state: "complete",
+  observed_at: observed(),
+  omission_count: 0,
+  truncation_count: 1,
+  packet_refs: [{ packet_id: "p1", sha256: "a".repeat(64) }],
+  dependency_blockers: ["dependency:repo:ramunl/ai-dashboard"],
+  ...over,
+});
+
 const initiative = (over = {}) => ({
+  id: "5a9c68fe",
+  context_status: context(),
+  ...over,
+});
+
+// A pre-v1 initiative: the old top-level fields, plus the legacy decision.
+const legacyInitiative = (over = {}) => ({
   id: "5a9c68fe",
   health: "ok",
   freshness: "fresh",
@@ -68,28 +90,47 @@ async function page(t, snapshot = {}) {
   return state;
 }
 
-test("context card renders health, freshness, age, counts, packets and blockers", async t => {
-  const p = await page(t, { initiatives: [initiative()] });
-  const card = [...p.w.document.querySelectorAll("section")]
+function contextCard(p) {
+  return [...p.w.document.querySelectorAll("section")]
     .find(s => s.querySelector("h2") && s.querySelector("h2").textContent === "Context");
+}
+
+test("context card renders v1 health, freshness, evidence_state, age, counts, packet refs and blockers", async t => {
+  const p = await page(t, { initiatives: [initiative()] });
+  const card = contextCard(p);
   assert.ok(card);
   assert.match(card.textContent, /5a9c68fe/);
   assert.match(card.textContent, /Healthy/);
   assert.match(card.textContent, /freshness fresh/);
+  assert.match(card.textContent, /evidence_state complete/);
   assert.match(card.textContent, /age 1h 0m/);
-  assert.match(card.textContent, /1 truncated/);
+  assert.match(card.textContent, /0 omitted, 1 truncated/);
   assert.match(card.textContent, /packet p1/);
   assert.match(card.textContent, /sha256 a{64}/);
   assert.match(card.textContent, /Blocked by: dependency:repo:ramunl\/ai-dashboard/);
 });
 
+test("the v1 field names are read, not the old ones", async t => {
+  const p = await page(t, { initiatives: [initiative({ context_status: context({
+    packets: [{ packet_id: "p1", sha256: "a".repeat(64) }],
+    omissions: 3, truncations: 4,
+    packet_refs: [], omission_count: undefined, truncation_count: undefined,
+  }) })] });
+  const card = contextCard(p);
+  assert.ok(card);
+  assert.doesNotMatch(card.textContent, /packet p1/);
+  assert.doesNotMatch(card.textContent, /3 omitted/);
+  assert.doesNotMatch(card.textContent, /4 truncated/);
+});
+
 test("initiative fields are HTML-escaped, never injected", async t => {
   const attack = '<img src=x onerror="globalThis.pwned=1">';
-  const p = await page(t, { initiatives: [initiative({
-    freshness: attack, packets: [{ packet_id: attack, sha256: attack }], blockers: [attack],
-  })] });
-  const card = [...p.w.document.querySelectorAll("section")]
-    .find(s => s.querySelector("h2") && s.querySelector("h2").textContent === "Context");
+  const p = await page(t, { initiatives: [initiative({ context_status: context({
+    freshness: attack, evidence_state: attack,
+    packet_refs: [{ packet_id: attack, sha256: attack }],
+    dependency_blockers: [attack],
+  }) })] });
+  const card = contextCard(p);
   assert.ok(card);
   assert.ok(!card.querySelector("img"));
   assert.ok(!card.innerHTML.includes("<img"));
@@ -97,14 +138,26 @@ test("initiative fields are HTML-escaped, never injected", async t => {
   assert.ok(card.textContent.includes(attack));
 });
 
-test("old snapshots degrade to an empty card; unknown health stays unknown", async t => {
+test("old snapshots degrade to an empty card; legacy initiatives stay unknown", async t => {
   const p = await page(t, {});
   assert.match(p.w.document.body.textContent, /No context published yet/);
-  p.snapshot.initiatives = [initiative({ health: "unknown", freshness: undefined,
-    age_seconds: undefined, packets: [], blockers: [] })];
+  p.snapshot.initiatives = [legacyInitiative()];
   await p.refresh();
-  assert.match(p.w.document.body.textContent, /Unknown/);
-  assert.match(p.w.document.body.textContent, /age unknown/);
+  const card = contextCard(p);
+  assert.ok(card);
+  assert.match(card.textContent, /5a9c68fe/);
+  assert.match(card.textContent, /Unknown/);
+  assert.match(card.textContent, /age unknown/);
+  // The old top-level health/freshness/counts are not synthesised into v1.
+  assert.doesNotMatch(card.textContent, /Healthy/);
+  assert.doesNotMatch(card.textContent, /freshness fresh/);
+  assert.doesNotMatch(card.textContent, /truncated/);
+});
+
+test("a null observed_at renders age unknown instead of a guess", async t => {
+  const p = await page(t, { initiatives: [initiative({ context_status: context({ observed_at: null }) })] });
+  const card = contextCard(p);
+  assert.match(card.textContent, /age unknown/);
 });
 
 test("context_recovery_pending surfaces a warning line", async t => {
@@ -133,8 +186,14 @@ test("inspect and link queue envelopes after confirmation", async t => {
     args: { scope: "initiative", kind: "packet", id: "5a9c68fe" } }]);
 });
 
-test("approve opens a revision input seeded with the published revision", async t => {
+test("v1 initiatives drop the decision field, so approve/reject do not render", async t => {
   const p = await page(t, { initiatives: [initiative()] });
+  assert.equal(p.button("Approve"), undefined);
+  assert.equal(p.button("Reject"), undefined);
+});
+
+test("approve opens a revision input seeded with the legacy decision's revision", async t => {
+  const p = await page(t, { initiatives: [legacyInitiative()] });
   p.button("Approve").click();
   await tick();
   const input = p.w.document.querySelector('input[aria-label="Decision revision"]');
@@ -151,7 +210,7 @@ test("approve opens a revision input seeded with the published revision", async 
 });
 
 test("reject uses the revision the owner typed", async t => {
-  const p = await page(t, { initiatives: [initiative()] });
+  const p = await page(t, { initiatives: [legacyInitiative()] });
   p.button("Reject").click();
   await tick();
   const input = p.w.document.querySelector('input[aria-label="Decision revision"]');
@@ -182,7 +241,7 @@ test("a slow context submit shows pending, then times out when the agent never s
 });
 
 test("navigation cancels an in-flight context confirmation", async t => {
-  const p = await page(t, { initiatives: [initiative()] });
+  const p = await page(t, { initiatives: [legacyInitiative()] });
   p.button("Approve").click();
   await tick();
   p.button("Send approve").click();
