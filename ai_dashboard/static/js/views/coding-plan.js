@@ -80,7 +80,7 @@ function planDetails(plan) {
 // A plan for several repositories: one To do task per repository, in order.
 function splitButton(className, label = "Split into tasks", byMilestone = false) {
   const question = byMilestone
-    ? "Split into one task per suggested milestone in this repository? The plan is dropped; tasks run in order and each is planned again when it starts (AI tokens)."
+    ? "Split into one task per suggested milestone in its assigned repository? The plan is dropped; tasks run in order and each is planned again when it starts (AI tokens)."
     : label === "Split into tasks"
     ? "Split into one task per repository? The plan is dropped; each part is planned again in its own repository when it starts (AI tokens)."
     : `${label}? The plan is dropped and a To do task is made there, planned again in that repository when it starts (AI tokens).`;
