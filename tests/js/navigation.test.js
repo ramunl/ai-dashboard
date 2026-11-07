@@ -2465,3 +2465,14 @@ test("milestone splitting waits for confirmation and is hidden after approval", 
   await sleep(60);
   assert.equal(buttonNamed(approved, "Split into tasks"), undefined);
 });
+
+
+test("switching the active project does not rebind a pending plan", async () => {
+  const plan = { ...PLAN, repository: "ai-dashboard",
+    repositories: [{ name: "ai-pm-agent", changes: "Verify baseline" }] };
+  const page = await openPage("/coding", codingWork({ pending_plan: plan,
+    project: { name: "ai-pm-agent", repository: "o/pm", branch: "main" } }));
+  await sleep(60);
+  assert.deepStrictEqual(workButtons(page), ["Move to ai-pm-agent", "Revise", "Cancel"]);
+  assert.equal(buttonNamed(page, "Approve"), undefined);
+});

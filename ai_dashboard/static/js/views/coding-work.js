@@ -55,7 +55,9 @@ function pendingRows(snapshot) {
     const state = plan.approved ? "approved" : "waiting for approval";
     const rows = [row("Plan", `${plan.feature} · revision ${plan.revision}`), el("div", state, "card-note")];
     const names = planRepositoryNames(plan);
-    const active = snapshot.project && snapshot.project.name;
+    // Project selection does not rebind a plan that was prepared elsewhere.
+    const active = typeof plan.repository === "string" && plan.repository
+      ? plan.repository : snapshot.project && snapshot.project.name;
     const isElsewhere = names.length > 0 && Boolean(active) && !names.includes(active);
     const buttons = [];
     if (plan.approved) buttons.push(runButton(snapshot.pending_branch || "the approved plan"));
