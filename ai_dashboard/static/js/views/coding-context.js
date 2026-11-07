@@ -1,13 +1,37 @@
-// Coding › Context card (CTX05): the prerequisite evidence the coding agent
+// Coding › Context card (CTX09): the prerequisite evidence the coding agent
 // keeps for each initiative. Only non-secret facts are rendered — the
-// initiative id, health/freshness labels, age, omission/truncation counts,
-// packet_id + sha256 refs and blocker codes. Never summaries, paths or
-// transcripts. An agent without the fields degrades to an empty card.
+// initiative id, health/freshness labels, age, evidence state, omission/
+// truncation counts, packet_id + sha256 refs and dependency blocker codes.
+// Never summaries, paths or transcripts.
+//
+// The coding agent publishes the v1 context under "context_status" on each
+// initiative:
+//
+//   {
+//     "id": "5a9c68fe",
+//     "context_status": {
+//       "health": "healthy" | "degraded" | "blocked" | "unavailable" | "unknown",
+//       "freshness": "fresh" | "stale" | ...,        // or null
+//       "evidence_state": "none" | "partial" | "complete",  // or null
+//       "observed_at": 1720000000,                    // epoch seconds, or null
+//       "omission_count": 0,
+//       "truncation_count": 1,
+//       "packet_refs": [{"packet_id": "...", "sha256": "..."}],
+//       "dependency_blockers": ["dependency:repo:x/y", ...],
+//     },
+//     "decision": {...}   // legacy only; v1 initiatives drop it
+//   }
+//
+// A pre-v1 snapshot keeps the old top-level health/freshness/omissions/
+// truncations/packets/blockers fields; those are not read here, so an old
+// initiative degrades to Unknown health and empty evidence rather than
+// breaking or synthesising values.
 
 const CONTEXT_HEALTH = {
-  ok: { label: "Healthy", tone: "done" },
-  stale: { label: "Stale", tone: "attention" },
+  healthy: { label: "Healthy", tone: "done" },
+  degraded: { label: "Degraded", tone: "attention" },
   blocked: { label: "Blocked", tone: "attention" },
+  unavailable: { label: "Unavailable", tone: "todo" },
   unknown: { label: "Unknown", tone: "todo" },
 };
 
@@ -16,9 +40,11 @@ const CONTEXT_HEALTH = {
 let contextEditor = null;
 let contextRevisionDraft = "";
 
-function contextAge(seconds) {
-  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return "age unknown";
-  return `age ${formatDuration(Math.max(0, seconds))}`;
+// Age is derived from the v1 observed_at timestamp; a missing or malformed
+// timestamp stays "age unknown" instead of being guessed.
+function contextAge(observedAt) {
+  if (typeof observedAt !== "number" || !Number.isFinite(observedAt)) return "age unknown";
+  return `age ${formatDuration(Math.max(0, Date.now() / 1000 - observedAt))}`;
 }
 
 // A packet reference: only its id and checksum, never its contents.
@@ -134,6 +160,8 @@ function contextActions(initiative) {
       { scope: "initiative", kind: "packet", id },
       `Re-link the handoff packet for initiative ${id}? This uses AI tokens.`),
   ];
+  // v1 initiatives drop the decision field; approve/reject render only for a
+  // legacy snapshot that still publishes one.
   const decision = initiative.decision;
   if (decision && typeof decision === "object" && typeof decision.code === "string" && decision.code) {
     buttons.push(
@@ -144,8 +172,16 @@ function contextActions(initiative) {
   return workActions(...buttons);
 }
 
+// The v1 context_status object, or null when the initiative predates it.
+function initiativeContext(initiative) {
+  const ctx = initiative && initiative.context_status;
+  if (!ctx || typeof ctx !== "object" || Array.isArray(ctx)) return null;
+  return ctx;
+}
+
 function initiativeRow(initiative) {
-  const health = CONTEXT_HEALTH[initiative.health] || CONTEXT_HEALTH.unknown;
+  const ctx = initiativeContext(initiative);
+  const health = CONTEXT_HEALTH[ctx && ctx.health] || CONTEXT_HEALTH.unknown;
   const node = el("article", null, "task context-initiative");
   const head = el("div");
   const badge = el("span", health.label, "task-status");
@@ -154,24 +190,27 @@ function initiativeRow(initiative) {
   node.append(head);
 
   const meta = [];
-  if (typeof initiative.freshness === "string" && initiative.freshness) {
-    meta.push(`freshness ${initiative.freshness}`);
+  if (ctx && typeof ctx.freshness === "string" && ctx.freshness) {
+    meta.push(`freshness ${ctx.freshness}`);
   }
-  meta.push(contextAge(initiative.age_seconds));
-  if (Number.isInteger(initiative.omissions) || Number.isInteger(initiative.truncations)) {
+  if (ctx && typeof ctx.evidence_state === "string" && ctx.evidence_state) {
+    meta.push(`evidence_state ${ctx.evidence_state}`);
+  }
+  meta.push(contextAge(ctx && ctx.observed_at));
+  if (ctx && (Number.isInteger(ctx.omission_count) || Number.isInteger(ctx.truncation_count))) {
     const counts = [];
-    if (Number.isInteger(initiative.omissions)) counts.push(`${initiative.omissions} omitted`);
-    if (Number.isInteger(initiative.truncations)) counts.push(`${initiative.truncations} truncated`);
+    if (Number.isInteger(ctx.omission_count)) counts.push(`${ctx.omission_count} omitted`);
+    if (Number.isInteger(ctx.truncation_count)) counts.push(`${ctx.truncation_count} truncated`);
     meta.push(counts.join(", "));
   }
   if (meta.length) node.append(el("div", meta.join(" · "), "task-meta"));
 
-  const packets = Array.isArray(initiative.packets) ? initiative.packets : [];
+  const packets = ctx && Array.isArray(ctx.packet_refs) ? ctx.packet_refs : [];
   for (const packet of packets) {
     const line = contextPacket(packet);
     if (line) node.append(line);
   }
-  node.append(...contextBlockers(initiative.blockers));
+  node.append(...contextBlockers(ctx && ctx.dependency_blockers));
   node.append(contextActions(initiative), ...contextEditorRows(initiative));
   return node;
 }
