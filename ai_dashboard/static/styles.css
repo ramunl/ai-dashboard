@@ -435,3 +435,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   outline: 2px solid var(--link, #2a7ae2);
   outline-offset: 2px;
 }
+
+/* Context age is explanatory; raw packet references remain available on demand. */
+.context-details { font-size: 0.8rem; color: var(--hint); }
+.context-details > summary { cursor: pointer; color: var(--link); padding: 0.2rem 0; }
