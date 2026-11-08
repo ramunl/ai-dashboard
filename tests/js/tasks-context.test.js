@@ -74,7 +74,7 @@ test("v1 context_status renders health, freshness, evidence_state, age, counts, 
   assert.match(row.textContent, /Context blocked/);
   assert.match(row.textContent, /freshness fresh/);
   assert.match(row.textContent, /Partial evidence/);
-  assert.match(row.textContent, /age 1h 0m/);
+  assert.match(row.textContent, /Captured 1h 0m ago/);
   assert.match(row.textContent, /1 omitted, 2 truncated/);
   assert.match(row.textContent, /Dependency blocked by: Dependency not merged: repo:x\/y · Evidence missing: pr/);
   assert.match(row.textContent, /packet p1/);
@@ -132,10 +132,10 @@ test("context fields are HTML-escaped, never injected", async t => {
 
 test("absent, unknown or unavailable context gets its own label", async t => {
   const p = await page(t, [task()]);
-  assert.match(p.w.document.querySelector(".task").textContent, /Context unknown/);
+  assert.match(p.w.document.querySelector(".task").textContent, /Context not recorded/);
   p.tasks = [task({ health: "unknown" })];
   await p.refresh();
-  assert.match(p.w.document.querySelector(".task").textContent, /Context unknown/);
+  assert.match(p.w.document.querySelector(".task").textContent, /Context not recorded/);
   p.tasks = [task({ health: "unavailable" })];
   await p.refresh();
   assert.match(p.w.document.querySelector(".task").textContent, /Context unavailable/);
@@ -143,7 +143,7 @@ test("absent, unknown or unavailable context gets its own label", async t => {
 
 test("a null observed_at renders age unknown instead of a guess", async t => {
   const p = await page(t, [task(context({ observed_at: null }))]);
-  assert.match(p.w.document.querySelector(".task").textContent, /age unknown/);
+  assert.match(p.w.document.querySelector(".task").textContent, /Capture time unavailable/);
 });
 
 test("unknown evidence_state and blocker codes render as themselves, never guessed", async t => {
@@ -155,4 +155,50 @@ test("unknown evidence_state and blocker codes render as themselves, never guess
   assert.match(row.textContent, /mystery/);
   assert.doesNotMatch(row.textContent, /Complete evidence|Partial evidence|No evidence/);
   assert.match(row.textContent, /Dependency blocked by: unknown:thing/);
+});
+
+
+test("not-planned and planning context are neutral and explained", async t => {
+  const p = await page(t, [task(context({ health: "unknown", evidence_state: "not_planned",
+    packet_refs: [], observed_at: null, omission_count: null, truncation_count: null,
+    dependency_blockers: [] }), { stage: "todo" })]);
+  assert.equal(p.w.document.querySelector(".context-status .task-status").textContent, "Context not planned yet");
+  p.tasks[0].stage = "planning";
+  await p.refresh();
+  assert.equal(p.w.document.querySelector(".context-status .task-status").textContent, "Preparing context");
+});
+
+test("old captures stay neutral, and completed captures are historical", async t => {
+  const status = context({ health: "degraded", freshness: "stale", evidence_state: "stale",
+    truncation_count: 0, dependency_blockers: [] });
+  const p = await page(t, [task(status, { stage: "planned" })]);
+  const badge = () => p.w.document.querySelector(".context-status .task-status");
+  assert.equal(badge().textContent, "Context recorded");
+  assert.equal(badge().dataset.tone, "todo");
+  assert.equal(p.w.document.querySelector(".context-details").open, false);
+  p.tasks[0].stage = "done";
+  await p.refresh();
+  assert.equal(badge().textContent, "Historical context");
+  assert.equal(p.w.document.querySelector(".task").textContent.includes("Context degraded"), false);
+});
+
+test("historical missing metadata and unknown prerequisite checks are explained", async t => {
+  const p = await page(t, [task(context({ health: "unknown", evidence_state: "metadata_unavailable",
+    packet_refs: [], observed_at: null, truncation_count: null, omission_count: null,
+    dependency_blockers: ["dependency_unknown"] }), { stage: "done" })]);
+  const row = p.w.document.querySelector(".task");
+  assert.match(row.textContent, /Historical metadata unavailable/);
+  assert.match(row.textContent, /Prerequisites need checking before the next run/);
+  assert.doesNotMatch(row.textContent, /Dependency blocked by: dependency_unknown/);
+});
+
+
+test("real dependency invalidation still warns even on an old capture", async t => {
+  const p = await page(t, [task(context({ health: "blocked", freshness: "stale",
+    evidence_state: "stale", truncation_count: 0,
+    dependency_blockers: ["dependency_changed"] }), { stage: "planned" })]);
+  const row = p.w.document.querySelector(".task");
+  assert.match(row.textContent, /Context blocked/);
+  assert.match(row.textContent, /Predecessor changed/);
+  assert.equal(row.querySelector(".context-status .task-status").dataset.tone, "attention");
 });

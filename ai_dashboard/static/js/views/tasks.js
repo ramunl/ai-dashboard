@@ -26,11 +26,11 @@ const FINISHED_TASK_STAGES = ["pr", "done", "stopped"];
 // pre-v1 snapshot still carries the legacy status/reason/blockers/evidence
 // shape, which renders unchanged. Absent fields stay unknown.
 const CONTEXT_TASK_STATUS = {
-  healthy: { label: "Context healthy", tone: "done" },
-  degraded: { label: "Context degraded", tone: "attention" },
+  healthy: { label: "Context recorded", tone: "todo" },
+  degraded: { label: "Context incomplete", tone: "attention" },
   blocked: { label: "Context blocked", tone: "attention" },
   unavailable: { label: "Context unavailable", tone: "todo" },
-  unknown: { label: "Context unknown", tone: "todo" },
+  unknown: { label: "Context not recorded", tone: "todo" },
 };
 // The legacy CTX05 status values, kept for pre-v1 snapshots.
 const LEGACY_CONTEXT_TASK_STATUS = {
@@ -51,6 +51,10 @@ const CONTEXT_EVIDENCE_STATE = {
 const CONTEXT_DEPENDENCY_BLOCKERS = {
   dependency: "Dependency not merged",
   evidence: "Evidence missing",
+  dependency_unknown: "Check needed before the next run",
+  dependency_changed: "Predecessor changed",
+  dependency_unavailable: "Prerequisite evidence unavailable",
+  dependency_recovery_pending: "Prerequisite recovery pending",
 };
 
 let taskFilter = "active";
@@ -194,8 +198,9 @@ function contextEvidence(status) {
 
 // Age from the v1 observed_at timestamp; a missing one stays "age unknown".
 function taskContextAge(observedAt) {
-  if (typeof observedAt !== "number" || !Number.isFinite(observedAt)) return "age unknown";
-  return `age ${formatDuration(Math.max(0, Date.now() / 1000 - observedAt))}`;
+  if (typeof observedAt !== "number" || !Number.isFinite(observedAt)
+      || observedAt < 0 || observedAt > Date.now() / 1000) return "Capture time unavailable";
+  return `Captured ${formatDuration(Date.now() / 1000 - observedAt)} ago`;
 }
 
 // A v1 dependency blocker code rendered through the label map, or as itself.
@@ -222,40 +227,65 @@ function taskContextPacket(packet) {
   return parts.length ? el("div", parts.join(" · "), "card-note context-packet") : null;
 }
 
-// The v1 context_status row: health badge plus freshness, evidence_state, age,
-// counts, dependency blockers and packet refs on one status line.
-function contextV1Rows(status) {
+// Packet capture is historical evidence, not an expiring execution permission.
+function taskContextBadge(status, task) {
+  if (["blocked", "unavailable"].includes(status.health)) return CONTEXT_TASK_STATUS[status.health];
+  const historical = ["done", "deployed"].includes(task.stage);
+  const hasPackets = Array.isArray(status.packet_refs) && status.packet_refs.length > 0;
+  if (status.evidence_state === "not_planned") return {
+    label: task.stage === "planning" ? "Preparing context" : "Context not planned yet", tone: "todo" };
+  if (status.evidence_state === "metadata_unavailable" ||
+      (historical && !hasPackets)) return {
+    label: historical ? "Historical metadata unavailable" : "Context metadata unavailable", tone: "todo" };
+  if ([status.omission_count, status.truncation_count].some(count => Number.isInteger(count) && count > 0)) return {
+    label: historical ? "Historical context incomplete" : "Context incomplete", tone: "attention" };
+  if (hasPackets) return {
+    label: historical ? "Historical context" : "Context recorded", tone: "todo" };
+  return { label: "Context not recorded", tone: "todo" };
+}
+
+function contextV1Rows(status, task = {}) {
   const nodes = [];
-  const shown = CONTEXT_TASK_STATUS[status.health] || CONTEXT_TASK_STATUS.unknown;
+  const shown = taskContextBadge(status, task);
   const line = el("div", null, "context-status");
   const badge = el("span", shown.label, "task-status");
   badge.dataset.tone = shown.tone;
-  line.append(el("span", "Context"), badge);
-  const meta = [];
-  if (typeof status.freshness === "string" && status.freshness) {
-    meta.push(`freshness ${status.freshness}`);
+  line.append(badge);
+  if (typeof status.observed_at === "number") {
+    const captured = el("span", taskContextAge(status.observed_at), "card-note");
+    if (Number.isFinite(status.observed_at) && status.observed_at >= 0 && status.observed_at * 1000 <= 8640000000000000) {
+      captured.title = new Date(status.observed_at * 1000).toISOString();
+    }
+    line.append(" ", captured);
   }
-  if (typeof status.evidence_state === "string" && status.evidence_state) {
-    meta.push(CONTEXT_EVIDENCE_STATE[status.evidence_state] || status.evidence_state);
-  }
-  meta.push(taskContextAge(status.observed_at));
-  if (Number.isInteger(status.omission_count) || Number.isInteger(status.truncation_count)) {
-    const counts = [];
-    if (Number.isInteger(status.omission_count)) counts.push(`${status.omission_count} omitted`);
-    if (Number.isInteger(status.truncation_count)) counts.push(`${status.truncation_count} truncated`);
-    meta.push(counts.join(", "));
-  }
-  if (meta.length) line.append(" ", el("span", meta.join(" · "), "card-note"));
+  const counts = [];
+  if (Number.isInteger(status.omission_count) && status.omission_count > 0) counts.push(`${status.omission_count} omitted`);
+  if (Number.isInteger(status.truncation_count) && status.truncation_count > 0) counts.push(`${status.truncation_count} truncated`);
+  if (counts.length) line.append(" ", el("span", counts.join(", "), "card-note"));
   nodes.push(line);
   if (Array.isArray(status.dependency_blockers) && status.dependency_blockers.length) {
-    nodes.push(el("div", `Dependency blocked by: ${status.dependency_blockers.map(taskContextBlocker).join(" · ")}`,
-      "card-note context-blockers"));
+    const unknownOnly = status.dependency_blockers.every(code => code === "dependency_unknown");
+    const text = unknownOnly ? "Prerequisites need checking before the next run."
+      : `Dependency blocked by: ${status.dependency_blockers.map(taskContextBlocker).join(" · ")}`;
+    nodes.push(el("div", text, "card-note context-blockers"));
   }
+  const details = el("details", null, "context-details");
+  details.append(el("summary", "Context details"));
+  const meta = [];
+  if (typeof status.freshness === "string") meta.push(`freshness ${status.freshness}`);
+  if (typeof status.evidence_state === "string") meta.push(CONTEXT_EVIDENCE_STATE[status.evidence_state] || status.evidence_state);
+  if (status.observed_at == null) meta.push("Capture time unavailable");
+  if (typeof status.observed_at === "number" && Number.isFinite(status.observed_at)
+      && status.observed_at >= 0 && status.observed_at * 1000 <= 8640000000000000) {
+    meta.push(`Captured at ${new Date(status.observed_at * 1000).toISOString()}`);
+  }
+  if (meta.length) details.append(el("div", meta.join(" · "), "card-note"));
   const packets = Array.isArray(status.packet_refs) ? status.packet_refs : [];
   for (const packet of packets) {
     const ref = taskContextPacket(packet);
-    if (ref) nodes.push(ref);
+    if (ref) details.append(ref);
   }
+  nodes.push(details);
   return nodes;
 }
 
@@ -285,11 +315,13 @@ function contextLegacyRows(status) {
 function taskContext(task) {
   const status = task.context_status;
   if (!status || typeof status !== "object" || Array.isArray(status)) {
-    return [el("div", "Context unknown", "card-note context-status")];
+    return [el("div", ["done", "deployed"].includes(task.stage)
+      ? "Historical metadata unavailable" : "Context not recorded", "card-note context-status")];
   }
-  if (typeof status.health === "string") return contextV1Rows(status);
+  if (typeof status.health === "string") return contextV1Rows(status, task);
   if (typeof status.status === "string") return contextLegacyRows(status);
-  return [el("div", "Context unknown", "card-note context-status")];
+  return [el("div", ["done", "deployed"].includes(task.stage)
+      ? "Historical metadata unavailable" : "Context not recorded", "card-note context-status")];
 }
 
 // A task the worker proposed from the server logs: accept it or drop it.
