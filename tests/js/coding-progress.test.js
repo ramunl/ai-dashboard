@@ -11,14 +11,14 @@ const source = fs.readFileSync(path.join(root, "index.html"), "utf8")
     `<script>${fs.readFileSync(path.join(root, file), "utf8")}</script>`);
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
 
-const observed = (offset = -3600) => Math.floor(Date.now() / 1000) + offset;
+// The producer projects whole-second ages, not Unix timestamps.
 
 // The coding agent's v1 bounded progress: the active run's stage, elapsed,
 // last activity and ids. Absent/null means idle or a legacy snapshot.
 const progress = (over = {}) => ({
   stage: "implementing",
   elapsed: 3600,
-  last_activity: observed(),
+  last_activity: 3600,
   task_id: "0a1b2c3d",
   attempt_id: "a1b2c3d4",
   ...over,
@@ -116,7 +116,7 @@ test("a null stage and last_activity render unknown, never a guessed state", asy
 });
 
 test("a stale run stays in the Now card but not on an unrelated task row", async t => {
-  const stale = progress({ task_id: "other", last_activity: observed(-7200) });
+  const stale = progress({ task_id: "other", last_activity: 7200 });
   const now = cardByTitle(await page(t, { path: "coding",
     snapshot: codingSnapshot({ progress: stale }) }), "Now");
   assert.equal(rowValue(now, "Stage"), "Implementing");
@@ -155,4 +155,20 @@ test("progress values are text, never injected HTML", async t => {
   assert.ok(!now.innerHTML.includes("<img"));
   assert.equal(p.w.eval("globalThis.pwned"), undefined);
   assert.ok(now.textContent.includes(attack));
+});
+
+
+test("producer activity ages and canonical stages render without timestamp subtraction", async t => {
+  for (const age of [0, 595, 7200]) {
+    const p = await page(t, { path: "coding", snapshot: codingSnapshot({
+      progress: progress({ stage: "implement", last_activity: age }) }) });
+    const now = cardByTitle(p, "Now");
+    assert.equal(rowValue(now, "Stage"), "Implementing");
+    assert.equal(rowValue(now, "Last activity"), `${p.w.formatDuration(age)} ago`);
+  }
+  for (const age of [-1, null, "595"]) {
+    const p = await page(t, { path: "coding", snapshot: codingSnapshot({
+      progress: progress({ last_activity: age }) }) });
+    assert.equal(rowValue(cardByTitle(p, "Now"), "Last activity"), "no activity update available");
+  }
 });
