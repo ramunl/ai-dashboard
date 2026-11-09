@@ -2213,7 +2213,7 @@ test("a waiting part offers a prerequisite check while keeping its Waiting statu
   assert.strictEqual(row.querySelector(".task-status").textContent, "Waiting");
   assert.match(row.textContent, /starts after: drag todos \(ai-pm-agent, part 1\/2\)/);
   assert.strictEqual(buttonNamed(page, "Start planning"), undefined);
-  assert.ok(buttonNamed(page, "Check prerequisites and start"));
+  assert.ok(buttonNamed(page, "Check & start"));
   assert.equal(page.bodies.length, 0);
 });
 
@@ -2252,9 +2252,9 @@ test("a failed run can be retried with Claude or Codex and stays under Active", 
     onPost: async () => ({ ok: true, status: 202, json: async () => ({ id: "beef0051" }) }) });
   await sleep(60);
   assert.match(page.doc.querySelector(".task-switch").textContent, /Active 1/);
-  assert.ok(buttonNamed(page, "Start fresh with Codex"));
+  assert.ok(buttonNamed(page, "Restart · Codex"));
   const asked = confirmWith(page, true);
-  buttonNamed(page, "Start fresh with Claude").click();
+  buttonNamed(page, "Restart · Claude").click();
   await sleep(60);
   assert.match(asked[0], /fresh with Claude\? Same approved plan/);
   assert.deepStrictEqual(page.bodies, [{ action: "retry_task", args: { task: "0a1b2c3d", tool: "claude" } }]);
