@@ -112,7 +112,7 @@ function retryChoices(resume) {
 function retryButtons(task, resume) {
   return retryChoices(resume).map((choice, index) =>
     retryButton(task, choice.id, choice.label,
-      resume ? `Resume with ${choice.label}` : `Start fresh with ${choice.label}`,
+      resume ? `Resume with ${choice.label}` : `Restart · ${choice.label}`,
       resume && index === 0 ? "row-button" : "row-button work-secondary", resume));
 }
 
@@ -388,12 +388,6 @@ function taskActions(task) {
     actions.push(...retryButtons(task, true));
   }
   if (task.can_retry) {
-    if (task.can_resume !== true) {
-      const unavailable = el("button", "Resume unavailable", "row-button work-secondary");
-      unavailable.disabled = true;
-      unavailable.title = task.resume_reason || "No safe saved checkpoint is available.";
-      actions.push(unavailable);
-    }
     actions.push(...retryButtons(task, false));
   }
   if (task.queued && ["todo", "stopped", "blocked", "ops_required"].includes(task.stage)) {
@@ -405,7 +399,7 @@ function taskActions(task) {
     }));
   } else if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !canReopenTask(task)) {
     const key = `task:start:${task.id}`;
-    const label = task.waiting_for ? "Check prerequisites and start" : "Start planning";
+    const label = task.waiting_for ? "Check & start" : "Start planning";
     const question = task.waiting_for
       ? `Check prerequisites for "${task.title}"? If they pass, start planning in ${task.repo}${plannerText()} (uses AI tokens). If they do not pass, the task stays waiting.`
       : `Plan "${task.title}" in ${task.repo}${plannerText()}? This uses AI tokens.`;

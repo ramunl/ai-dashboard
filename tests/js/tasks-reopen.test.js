@@ -60,7 +60,7 @@ test("eligibility is explicit, including derived Deployed; Retry keeps its meani
   p.tasks = [{ ...task, stage: "stopped", can_retry: true }];
   await p.refresh();
   assert.equal(p.button("Start planning"), undefined);
-  p.button("Start fresh with Codex").click();
+  p.button("Restart · Codex").click();
   assert.match(p.confirmations[0].message, /Same approved plan/);
 });
 
@@ -185,10 +185,10 @@ test("missing or rejected checkpoints explain why resume is unavailable", async 
       resume_reason: "Checkpoint base changed" }];
     await p.refresh();
     assert.equal(p.button("Resume with Codex"), undefined);
-    assert.equal(p.button("Resume unavailable").disabled, true);
+    assert.equal(p.button("Resume unavailable"), undefined);
     assert.match(p.w.document.body.textContent, /Resume unavailable: Checkpoint base changed/);
   }
-  p.button("Start fresh with Codex").click();
+  p.button("Restart · Codex").click();
   assert.match(p.confirmations[0].message, /Saved work is preserved, but implementation restarts/);
   p.confirmations[0].callback(true); await tick();
   assert.deepEqual(p.posts, [{ action: "retry_task", args: { task: task.id, tool: "codex" } }]);
@@ -202,7 +202,7 @@ test("waiting tasks can request fresh checks, with confirmation and duplicate pr
   p.w.eval('taskFilter = "all"');
   await p.refresh();
   assert.equal(p.button("Start planning"), undefined);
-  const check = p.button("Check prerequisites and start");
+  const check = p.button("Check & start");
   assert.ok(check);
   check.click(); check.click();
   assert.equal(p.confirmations.length, 1);
@@ -221,7 +221,7 @@ test("waiting tasks can request fresh checks, with confirmation and duplicate pr
   await p.refresh();
   assert.match(p.w.document.getElementById("alert").textContent, /predecessor is unmerged/);
   assert.equal(p.w.document.querySelector(".task-status").textContent, "Waiting");
-  assert.equal(p.button("Check prerequisites and start").disabled, false);
+  assert.equal(p.button("Check & start").disabled, false);
 });
 
 test("stop implementation confirms exact attempt, cancellation sends nothing, stopping is disabled", async t => {
