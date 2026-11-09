@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import time
 
 from ai_dashboard.maintenance import invoke
@@ -146,11 +147,16 @@ class PackageService:
         self.last_upgrade: dict | None = self.saved.get("packages", "last_upgrade")
         self._task: asyncio.Task | None = None
         self._reconcile_task: asyncio.Task | None = None
+        self._worker_checked_at = 0.0
         if self.last_upgrade is not None:
             # Results saved before outcomes were tracked have no state.
             self.last_upgrade.setdefault(
                 "state", "completed" if self.last_upgrade.get("ok") else "failed"
             )
+            if self.last_upgrade.get("signal") and not self.last_upgrade.get(
+                "completion_confirmed"
+            ):
+                self._mark_unknown("the upgrade launcher was interrupted")
             if self.last_upgrade["state"] in ("accepted", "running"):
                 # The dashboard stopped mid-upgrade; whether it finished is unknown.
                 self._mark_unknown("the dashboard restarted while it ran")
@@ -185,9 +191,20 @@ class PackageService:
 
     def start_reconcile(self) -> None:
         """After a restart, ask the read-only status what an upgrade left behind."""
-        if self.reconciling or self.running or not self.unsettled_upgrade():
+        pending_worker = bool(
+            self.last_upgrade
+            and self.last_upgrade.get("signal")
+            and not self.last_upgrade.get("worker_reconciled")
+        )
+        if (
+            self.reconciling
+            or self.running
+            or (not self.unsettled_upgrade() and not pending_worker)
+            or time.time() - self._worker_checked_at < 30
+        ):
             return
         self.reconciling = True
+        self._worker_checked_at = time.time()
         self._reconcile_task = asyncio.create_task(self._reconcile())
 
     def unsettled_upgrade(self) -> bool:
@@ -195,6 +212,10 @@ class PackageService:
         upgrade = self.last_upgrade
         if not upgrade or upgrade.get("state") not in UNSETTLED:
             return False
+        if upgrade.get("worker_pending") or (
+            upgrade.get("signal") and not upgrade.get("worker_reconciled")
+        ):
+            return True
         report = self.report or {}
         proven = (
             bool(report.get("ok"))
@@ -219,6 +240,7 @@ class PackageService:
                 self.report = await invoke(
                     self.command, "check", TIMEOUTS["check"], "ai-packages"
                 )
+                self._apply_worker_result(self.report)
                 logger.info("Package check finished: ok=%s", self.report.get("ok"))
             else:
                 await self._upgrade(triggered_by, started)
@@ -240,7 +262,7 @@ class PackageService:
         logger.info("Package upgrade finished: ok=%s", result.get("ok"))
         ok = result.get("ok") is True
         state = "completed" if ok else "failed"
-        if result.get("timed_out"):
+        if result.get("timed_out") or result.get("signal"):
             state = "unknown"  # killed at the timeout: what it changed is not known
         self.last_upgrade = {
             **package_outcome(result),
@@ -273,9 +295,64 @@ class PackageService:
     async def _read_status(self, since: float) -> dict | None:
         """Counts from the read-only status, if stamped at or after ``since``."""
         answer = await invoke(self.command, STATUS_MODE, STATUS_TIMEOUT, "ai-packages")
+        self._apply_worker_result(answer)
         if answer.get("ok") is not True:
             return None
         return _counted(answer, "total", since, "status")
+
+    def _apply_worker_result(self, answer: dict) -> None:
+        """Reconcile the durable worker, never infer upgrade success from counts."""
+        saved = self.last_upgrade
+        job = answer.get("last_upgrade")
+        if not saved or not isinstance(job, dict):
+            return
+        run_id = job.get("run_id")
+        started = job.get("started_at")
+        if not isinstance(run_id, str) or not re.fullmatch(r"[0-9a-f]{32}", run_id):
+            return
+        if saved.get("run_id"):
+            if saved["run_id"] != run_id:
+                return
+        else:
+            # Older launchers did not save a run ID before waiting. Accept only
+            # the one worker reserved inside this recorded launch interval.
+            end = saved.get("finished_at", _since(saved) + 30)
+            if (
+                not _is_number(started)
+                or not _is_number(end)
+                or not _since(saved) <= started <= end
+            ):
+                return
+        if job.get("completion_confirmed") is not True:
+            self.last_upgrade = {
+                **saved,
+                "state": "unknown",
+                "worker_pending": True,
+                "run_id": run_id,
+            }
+            return
+        code = job.get("apt_exit_code")
+        if not isinstance(code, int) or isinstance(code, bool):
+            return
+        success = (
+            job.get("ok") is True
+            and code == 0
+            and job.get("execution") == "succeeded"
+            and job.get("verification") == "succeeded"
+        )
+        self.last_upgrade = {
+            **package_outcome(job),
+            "state": "completed" if success else "failed",
+            "ok": success,
+            "triggered_by": saved.get("triggered_by"),
+            "worker_reconciled": True,
+            "worker_pending": False,
+        }
+        if not success and not self.last_upgrade.get("error"):
+            self.last_upgrade["error"] = (
+                f"Package worker failed: apt exit {code}; "
+                f"verification {job.get('verification', 'unknown')}"
+            )
 
     def _mark_stale(self) -> None:
         """Counts we hold predate the upgrade and nothing has proven them since."""
