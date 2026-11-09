@@ -576,3 +576,12 @@ The MTG card also offers a confirmed restart through the existing owner-only
 Ops restart endpoint. Deploy the companion Ops update first to allowlist the
 fixed `mtg` container; older Ops versions show an update notice instead. Restart
 disconnects current clients. No automatic restart is added.
+
+### Recover merged tasks shown as Stopped or reopened
+
+With a supporting coding-agent snapshot, **Check merged PR** verifies the saved
+attempt's repository, task identity and head commit against its exact PR. Owner
+confirmation is required. Verified merged work returns to Done without another
+implementation; unchanged unstarted dependent links can be reviewed, while
+normal fresh prerequisite checks remain mandatory. Reopen still means a new
+attempt, not a status refresh. Deploy the companion coding-agent fix first.
