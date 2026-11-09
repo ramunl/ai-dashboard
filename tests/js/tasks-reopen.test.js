@@ -241,3 +241,24 @@ test("stop implementation confirms exact attempt, cancellation sends nothing, st
   p.tasks = [{ ...running, can_stop: false }]; await p.refresh();
   assert.equal(p.button("Stop implementation"), undefined);
 });
+
+
+test("merged-PR review is explicit and never starts another implementation", async t => {
+  const p = await page(t, [{...task, stage:"todo", can_reopen:false, can_reconcile:true}]);
+  p.w.eval('taskFilter = "all"'); await p.refresh();
+  const button=p.button("Check merged PR");
+  assert.ok(button);
+  button.click(); button.click();
+  assert.equal(p.confirmations.length,1);
+  assert.equal(p.posts.length,0);
+  assert.match(p.confirmations[0].message,/No implementation will start/);
+  p.confirmations[0].callback(false);
+  assert.equal(button.disabled,false);
+  button.click(); p.confirmations[1].callback(true); await tick();
+  assert.deepEqual(p.posts,[{action:"reconcile_task",args:{task:task.id}}]);
+});
+
+test("legacy snapshots do not offer completion reconciliation", async t => {
+  const p=await page(t,[{...task,stage:"stopped"}]);
+  assert.equal(p.button("Check merged PR"),undefined);
+});

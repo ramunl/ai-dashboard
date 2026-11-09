@@ -683,3 +683,15 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.client.get(path)).status, 200, path)
         self.assertEqual((await self.client.get("/coding/nope")).status, 404)
         self.assertEqual((await self.client.get("/pm/projects")).status, 404)
+
+
+class ReconcileActionTests(unittest.TestCase):
+    def test_completion_review_accepts_only_a_task_id(self):
+        check({"action": "reconcile_task", "args": {"task": "0a1b2c3d"}})
+        for args in (
+            {},
+            {"task": "invalid"},
+            {"task": "0a1b2c3d", "pr_url": "https://example.org"},
+        ):
+            with self.assertRaises(RequestError):
+                check({"action": "reconcile_task", "args": args})

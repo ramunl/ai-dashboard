@@ -383,6 +383,16 @@ function taskActions(task) {
     actions.push(taskButton(task.autopilot ? "Autopilot off" : "Autopilot on", key, "row-button work-secondary",
       (button) => { button.disabled = true; requestAction(key, "set_autopilot", { task: task.id, value }); }));
   }
+  if (task.can_reconcile === true) {
+    const key = `task:reconcile:${task.id}`;
+    actions.push(taskButton("Check merged PR", key, "row-button work-secondary", (button) => {
+      button.disabled = true;
+      askConfirmation(`Check the saved PR for "${task.title}"? If its archived commit is confirmed merged, restore Done and review unchanged prerequisite links. No implementation will start.`, (confirmed) => {
+        if (confirmed) requestAction(key, "reconcile_task", { task: task.id });
+        else button.disabled = false;
+      });
+    }));
+  }
   if (canReopenTask(task)) actions.push(reopenButton(task));
   if (task.can_resume === true) {
     actions.push(...retryButtons(task, true));
