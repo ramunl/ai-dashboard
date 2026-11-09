@@ -20,6 +20,7 @@ function isRestartPending(row) {
 }
 
 function restartWarning(unit, view) {
+  if (unit === "mtg") return " Existing proxy connections will be disconnected.";
   if (unit === "ai-dashboard") return " The dashboard reconnects in a few seconds.";
   const agent = view.agents.find((item) => item.unit === unit);
   if (agent && /^running\b/.test(agent.detail || "")) {
@@ -29,7 +30,8 @@ function restartWarning(unit, view) {
 }
 
 function restartButton(row, view) {
-  const button = el("button", "Restart", "row-button restart-button");
+  const label = row.unit === "mtg" ? "Restart MTG" : "Restart";
+  const button = el("button", label, "row-button restart-button");
   button.type = "button";
   button.disabled = isRestartPending(row);
   if (button.disabled) button.textContent = "Restarting…";
@@ -42,12 +44,19 @@ function restartButton(row, view) {
       }
       button.textContent = "Restarting…";
       try {
-        await postAction("ops/restart", tg ? tg.initData : "", { service: row.unit });
         restartsPending.set(row.unit, Date.now());
+        await postAction("ops/restart", tg ? tg.initData : "", { service: row.unit }, row.unit === "mtg" ? 120000 : undefined);
+        if (row.unit === "mtg") {
+          restartsPending.delete(row.unit);
+          button.disabled = false;
+          button.textContent = label;
+          showAlert("MTG restarted and port 9443 is listening. Connection statistics update on the next sample.");
+        }
       } catch (error) {
+        restartsPending.delete(row.unit);
         showAlert(`Restart of ${row.unit} failed: ${error.message}`);
         button.disabled = false;
-        button.textContent = "Restart";
+        button.textContent = label;
       }
     });
   });
@@ -71,7 +80,7 @@ function servicesCard(view) {
   if (!control) return card("Services", muted("Service status unavailable"));
   if (!control.ok) return card("Services", muted(control.error));
   return card("Services", ...control.services
-    .filter((row) => row.unit !== "iptv-proxy")
+    .filter((row) => !["iptv-proxy", "mtg"].includes(row.unit))
     .map((row) => serviceRow(row, view)));
 }
 
