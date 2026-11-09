@@ -103,9 +103,9 @@ class ServiceControl:
         by_unit = {row.get("unit"): row for row in agents if row.get("unit")}
         rows = []
         for unit in allowed:
-            if unit == IPTV_SERVICE:
+            if unit in {IPTV_SERVICE, "mtg"}:
                 raw = await run_command(
-                    "docker", "inspect", "--format", "{{.State.Status}}", IPTV_SERVICE
+                    "docker", "inspect", "--format", "{{.State.Status}}", unit
                 )
                 state = raw.strip() if raw else "unknown"
                 rows.append(

@@ -5,7 +5,7 @@ const path = require("node:path");
 const {JSDOM} = require("jsdom");
 function setup(state) {
   const dom = new JSDOM("<main></main>", {runScripts: "outside-only"});
-  for (const file of ["dom.js", "views/clients.js"]) dom.window.eval(fs.readFileSync(path.join(__dirname, "../../ai_dashboard/static/js", file), "utf8"));
+  for (const file of ["dom.js", "views/services.js", "views/coding-work.js", "views/clients.js"]) dom.window.eval(fs.readFileSync(path.join(__dirname, "../../ai_dashboard/static/js", file), "utf8"));
   dom.window.tg = null;
   dom.window.document.body.append(dom.window.clientsCard({clients: state}));
   return dom;
@@ -69,5 +69,44 @@ test("polling preserves service and device expansion by stable identity, includi
   await new Promise(resolve=>dom.window.setTimeout(resolve,10));
   assert.equal(doc.querySelector(".clients-service").open,false);
   assert.equal(doc.querySelectorAll(".clients-peer")[1].open,false);
+  dom.window.close();
+});
+
+
+test("MTG displays a full accept queue independently of live connection counts", () => {
+  const dom = setup({report:{ok:true,checked_at:Date.now()/1000,services:[{
+    id:"mtg",name:"Telegram mtg",available:true,active:0,unit:"incoming connections",
+    accept_queue_available:true,accept_queue:4097,accept_queue_capacity:4096,
+    accept_queue_full:true,close_wait_connections:4000,
+    sample:{since:1,peak:27,accept_queue_peak:4097}
+  }]}});
+  const text=dom.window.document.body.textContent;
+  assert.match(text,/accept queue full/);
+  assert.match(text,/Queued connections awaiting accept4,097/);
+  assert.match(text,/Accept queue capacity4,096/);
+  assert.match(text,/Sampled queue peak today4,097/);
+  assert.match(text,/CLOSE_WAIT/);
+  assert.match(text,/Update Ops service controls/);
+  dom.window.close();
+});
+
+test("MTG restart requires confirmation, uses the fixed endpoint and reports failure", async () => {
+  const dom=setup({}); const w=dom.window;
+  let confirm; const posts=[]; const alerts=[];
+  w.askConfirmation=(message,callback)=>{assert.match(message,/disconnected/);confirm=callback;};
+  w.postAction=async (...args)=>{posts.push(args);throw new Error("restart failed");};
+  w.showAlert=message=>alerts.push(message);
+  const control={ok:true,services:[{unit:"mtg",state:"active",up_seconds:null}]};
+  const node=w.clientServiceDetails({id:"mtg",name:"MTG",available:true,active:14,unit:"connections"},control);
+  w.document.body.append(node);
+  const button=node.querySelector("button");
+  button.click(); assert.equal(button.disabled,true); assert.equal(posts.length,0);
+  confirm(false); assert.equal(button.disabled,false);
+  button.click(); await confirm(true);
+  assert.equal(posts.length,1);
+  assert.equal(posts[0][0],"ops/restart");
+  assert.equal(posts[0][2].service,"mtg");
+  assert.match(alerts[0],/restart failed/);
+  assert.equal(button.disabled,false);
   dom.window.close();
 });

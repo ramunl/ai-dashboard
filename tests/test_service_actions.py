@@ -255,6 +255,22 @@ class IPTVControlTests(unittest.IsolatedAsyncioTestCase):
         systemd.assert_not_awaited()
         self.assertEqual(result["services"][0]["state"], "active")
 
+    async def test_mtg_state_uses_fixed_docker_container(self):
+        control = ServiceControl("/fake/ai-service")
+        control.allowed = ["mtg"]
+        with (
+            patch.object(
+                service_actions, "run_command", AsyncMock(return_value="running\n")
+            ) as query,
+            patch.object(service_actions, "unit_status", AsyncMock()) as systemd,
+        ):
+            result = await control.state([], None)
+        query.assert_awaited_once_with(
+            "docker", "inspect", "--format", "{{.State.Status}}", "mtg"
+        )
+        systemd.assert_not_awaited()
+        self.assertEqual(result["services"][0]["state"], "active")
+
 
 class IPTVEndpointTests(EndpointTests):
     async def change(self, payload, headers=None):

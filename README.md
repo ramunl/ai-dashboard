@@ -563,3 +563,16 @@ recovery finish. Stale attempt controls are rejected; Git publication and CI
 polling do not offer provider cancellation. The backend determines whether
 Resume is safe after a stop. Legacy agents without stop capabilities retain
 the existing UI.
+
+### MTG queue diagnostics
+
+The Connected clients card shows listener accept-queue occupancy/capacity,
+CLOSE_WAIT connections and the sampled daily queue peak from the Ops collector.
+A full queue is highlighted even if MTG's metrics endpoint responds. Missing
+queue readings remain unavailable rather than zero. These samples do not prove
+end-to-end Telegram connectivity and may miss short spikes.
+
+The MTG card also offers a confirmed restart through the existing owner-only
+Ops restart endpoint. Deploy the companion Ops update first to allowlist the
+fixed `mtg` container; older Ops versions show an update notice instead. Restart
+disconnects current clients. No automatic restart is added.

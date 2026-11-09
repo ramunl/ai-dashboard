@@ -30,16 +30,32 @@ function clientTrafficRows(service) {
   return rows;
 }
 
+function mtgRestartControl(control) {
+  const service = control && control.ok && control.services.find(item => item.unit === "mtg");
+  if (!service) return el("p", "Update Ops service controls to enable MTG restart.", "card-note");
+  const button = restartButton(service, { agents: [] });
+  if (!button.disabled) button.textContent = "Restart MTG";
+  return workActions(button);
+}
+
 function clientServiceDetails(service, control = null) {
   const serviceKey = service.id || service.name;
   const details = rememberDetails(el("details", null, "clients-service"), ["clients", serviceKey]);
   const count = service.available && typeof service.active === "number"
     ? `${service.active.toLocaleString("en-US")} ${service.unit}` : "Unavailable";
-  details.append(el("summary", `${service.name} · ${count}`));
+  details.append(el("summary", `${service.name} · ${count}${service.accept_queue_full === true ? " · accept queue full" : ""}`));
+  if (service.id === "mtg") details.append(mtgRestartControl(control));
+  if (service.accept_queue_full === true) {
+    const warning = el("p", "Accept queue full: new proxy connections may fail. MTG may have stopped accepting clients.", "card-note");
+    warning.prepend(statusDot("bad"), " ");
+    details.append(warning);
+  }
   if (service.id === "media") details.append(iptvControlButtons(control));
   if (!service.available) details.append(el("p", service.error || "Service data unavailable", "card-note"));
   const fields = [["configured", "Configured profiles"], ["connections", "Incoming TCP connections"],
-    ["source_addresses", "Distinct source addresses"], ["streams", "Live streams"],
+    ["source_addresses", "Distinct source addresses"],
+    ["accept_queue", "Queued connections awaiting accept"], ["accept_queue_capacity", "Accept queue capacity"],
+    ["close_wait_connections", "Client-closed connections (CLOSE_WAIT)"], ["streams", "Live streams"],
     ["protocol_connections", "mtg client connections"], ["fronting_connections", "mtg fronting connections"],
     ["sessions_total", "Sessions since service start"], ["streams_total", "Streams since service start"],
     ["rejected_total", "Rejected / limited"], ["replay_total", "Replay attempts"],
@@ -47,7 +63,11 @@ function clientServiceDetails(service, control = null) {
   for (const [key, label] of fields) {
     if (typeof service[key] === "number") details.append(row(label, service[key].toLocaleString("en-US")));
   }
+  if (service.accept_queue_available === false) details.append(el("p", "Accept queue reading unavailable.", "card-note"));
   if (service.sample) {
+    if (service.accept_queue_available === true && typeof service.sample.accept_queue_peak === "number") {
+      details.append(row("Sampled queue peak today", service.sample.accept_queue_peak.toLocaleString("en-US")));
+    }
     details.append(row("Sampled peak today", String(service.sample.peak)),
       el("p", `Daily sampling since ${new Date(service.sample.since * 1000).toLocaleString()}. Day boundary: UTC.`, "card-note"));
     if (service.sample.incomplete) details.append(el("p", "Sampling has gaps or a counter reset; daily usage may be incomplete.", "card-note"));
