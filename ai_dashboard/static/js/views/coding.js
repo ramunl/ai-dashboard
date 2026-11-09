@@ -12,6 +12,14 @@ function runningRows(running) {
 // and the attempt id. Idle and legacy snapshots have no "progress", and unknown
 // values stay unknown rather than being guessed.
 const PROGRESS_STAGE_LABELS = {
+  checkout: "Preparing checkout",
+  implement: "Implementing",
+  push: "Publishing changes",
+  ci: "Checking CI",
+  repair: "Repairing CI",
+  stopping: "Stopping",
+  working: "Working",
+  unknown: "Unknown",
   proposed: "Proposed",
   todo: "To do",
   planning: "Planning",
@@ -36,11 +44,11 @@ function progressRows(progress) {
   const stage = typeof progress.stage === "string" && progress.stage
     ? PROGRESS_STAGE_LABELS[progress.stage] || progress.stage
     : "Unknown";
-  const elapsed = Number.isFinite(progress.elapsed)
+  const elapsed = Number.isFinite(progress.elapsed) && progress.elapsed >= 0
     ? formatDuration(Math.max(0, progress.elapsed))
     : "unknown";
-  const activity = Number.isFinite(progress.last_activity)
-    ? `${formatDuration(Math.max(0, Date.now() / 1000 - progress.last_activity))} ago`
+  const activity = Number.isFinite(progress.last_activity) && progress.last_activity >= 0
+    ? `${formatDuration(progress.last_activity)} ago`
     : "no activity update available";
   const rows = [
     row("Stage", stage),
