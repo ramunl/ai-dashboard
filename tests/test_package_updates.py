@@ -223,10 +223,10 @@ class UpgradeOutcomeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(service.report["stale"])
         self.assertIn("cached", service.refusal("upgrade"))
 
-    async def test_a_signal_is_recorded_as_the_failure(self) -> None:
+    async def test_a_signal_is_an_unknown_worker_outcome(self) -> None:
         command, _ = _fake_packages(upgrade="kill -TERM $$")
         service = await self._upgrade(command)
-        self.assertEqual(service.last_upgrade["state"], "failed")
+        self.assertEqual(service.last_upgrade["state"], "unknown")
         self.assertEqual(service.last_upgrade["signal"], "SIGTERM")
         self.assertIn("killed by SIGTERM", service.last_upgrade["error"])
 
@@ -456,3 +456,65 @@ class PackagesEndpointTests(unittest.IsolatedAsyncioTestCase):
                 break
         self.assertEqual(state["packages"]["report"]["total"], 2)
         self.assertEqual(self.calls.read_text().split(), ["check"])
+
+
+class DurableWorkerResultTests(unittest.TestCase):
+    def test_worker_result_repairs_launcher_failure_but_not_unrelated_runs(self):
+        service = PackageService("/fake")
+        service.last_upgrade = {
+            "state": "failed",
+            "signal": "SIGTERM",
+            "started_at": 100,
+            "finished_at": 108,
+            "error": "launcher killed",
+        }
+        job = {
+            "run_id": "a" * 32,
+            "started_at": 101,
+            "finished_at": 130,
+            "completion_confirmed": True,
+            "ok": True,
+            "execution": "succeeded",
+            "verification": "succeeded",
+            "apt_exit_code": 0,
+            "upgraded": 1,
+            "remaining": 0,
+            "package_results": [{"name": "python3-pyasn1", "outcome": "upgraded"}],
+        }
+        service._apply_worker_result({"last_upgrade": {**job, "started_at": 90}})
+        self.assertEqual(service.last_upgrade["state"], "failed")
+        service._apply_worker_result({"last_upgrade": job})
+        self.assertEqual(service.last_upgrade["state"], "completed")
+        self.assertEqual(service.last_upgrade["upgraded"], 1)
+        self.assertNotIn("signal", service.last_upgrade)
+        self.assertNotIn("error", service.last_upgrade)
+
+    def test_running_worker_stays_unknown_even_with_fresh_zero_counts(self):
+        service = PackageService("/fake")
+        service.last_upgrade = {
+            "state": "unknown",
+            "started_at": 100,
+            "finished_at": 108,
+        }
+        service.report = {"ok": True, "total": 0, "checked_at": 999}
+        service._apply_worker_result(
+            {
+                "last_upgrade": {
+                    "run_id": "a" * 32,
+                    "started_at": 101,
+                    "completion_confirmed": False,
+                }
+            }
+        )
+        self.assertTrue(service.unsettled_upgrade())
+        service._apply_worker_result(
+            {
+                "last_upgrade": {
+                    "run_id": "b" * 32,
+                    "started_at": 101,
+                    "completion_confirmed": True,
+                    "apt_exit_code": 0,
+                }
+            }
+        )
+        self.assertEqual(service.last_upgrade["run_id"], "a" * 32)

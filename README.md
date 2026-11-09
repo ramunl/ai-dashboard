@@ -585,3 +585,10 @@ confirmation is required. Verified merged work returns to Done without another
 implementation; unchanged unstarted dependent links can be reviewed, while
 normal fresh prerequisite checks remain mandatory. Reopen still means a new
 attempt, not a status refresh. Deploy the companion coding-agent fix first.
+
+Interrupted package-upgrade launchers remain Unknown until durable worker evidence
+settles them. Read-only status/check reconciles the worker run ID (or, for older
+saved interruptions, its recorded launch interval), completion and apt exit
+status; current zero package counts alone never prove success. Deploy the
+companion Ops last_upgrade status contract first. Reconciliation never runs
+another upgrade.
