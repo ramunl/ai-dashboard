@@ -11,6 +11,7 @@ const ROUTES = {
   pm: { api: "pm", page: pmPage, title: "PM agent" },
   tokens: { api: "tokens", page: tokensPage, title: "Tokens" },
   tasks: { api: "coding", page: tasksPage, title: "Tasks" },
+  "tasks/group": { api: "coding", page: taskGroupPage, title: "Task group", parent: "tasks" },
 };
 const POPSTATE_GRACE_MS = 300;
 
