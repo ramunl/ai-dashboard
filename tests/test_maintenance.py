@@ -194,22 +194,33 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(state["cleanup"]["last_run"])
 
     async def test_start_then_conflict_then_visible_in_ops_window(self) -> None:
-        first = await self.client.post("/api/ops/cleanup", headers=_auth())
-        self.assertEqual(first.status, 202)
-        second = await self.client.post("/api/ops/cleanup", headers=_auth())
-        self.assertEqual(second.status, 409)
+        release = asyncio.Event()
 
-        running = await (await self.client.get("/api/ops", headers=_auth())).json()
-        self.assertTrue(running["cleanup"]["running"])
-        self.assertEqual(running["opened_from"], "ops")
+        async def controlled_cleanup(command, mode, timeout):
+            if mode == "run":
+                await release.wait()
+                return {"ok": True, "freed_bytes": 123, "steps": []}
+            return {"ok": True, "categories": [], "reclaimable_bytes": 5}
 
-        for _ in range(60):
-            await asyncio.sleep(0.05)
+        # Keep the run active until both requests and the running view are checked.
+        # A fixed sleep races request scheduling on a busy worker.
+        with patch.object(maintenance, "invoke", side_effect=controlled_cleanup):
+            first = await self.client.post("/api/ops/cleanup", headers=_auth())
+            self.assertEqual(first.status, 202)
+            second = await self.client.post("/api/ops/cleanup", headers=_auth())
+            self.assertEqual(second.status, 409)
+
+            running = await (await self.client.get("/api/ops", headers=_auth())).json()
+            self.assertTrue(running["cleanup"]["running"])
+            self.assertEqual(running["opened_from"], "ops")
+
+            release.set()
+            service = self.client.server.app[server.CLEANUP]
+            await asyncio.wait_for(asyncio.shield(service._task), timeout=5)
             state = await (await self.client.get("/api/ops", headers=_auth())).json()
-            if not state["cleanup"]["running"]:
-                break
-        self.assertEqual(state["cleanup"]["last_run"]["freed_bytes"], 123)
-        self.assertEqual(state["cleanup"]["last_run"]["triggered_by"], "ops")
+            self.assertFalse(state["cleanup"]["running"])
+            self.assertEqual(state["cleanup"]["last_run"]["freed_bytes"], 123)
+            self.assertEqual(state["cleanup"]["last_run"]["triggered_by"], "ops")
 
     async def test_overview_has_no_cleanup_data(self) -> None:
         with patch.dict(
