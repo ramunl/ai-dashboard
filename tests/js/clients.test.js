@@ -110,3 +110,18 @@ test("MTG restart requires confirmation, uses the fixed endpoint and reports fai
   assert.equal(button.disabled,false);
   dom.window.close();
 });
+
+test("XRay shows socket counts and listener without implying authenticated users", () => {
+  const dom = setup({report:{ok:true,checked_at:Date.now()/1000,services:[
+    {id:"xray",name:"XRay VLESS REALITY",available:true,active:2,
+      unit:"incoming connections",endpoint:"TCP 10443",source_addresses:1,
+      note:"Established TCP sockets, not authenticated VLESS users or unique devices."}
+  ]}});
+  const text = dom.window.document.body.textContent;
+  assert.match(text,/XRay VLESS REALITY · 2 incoming connections/);
+  assert.match(text,/ListenerTCP 10443/);
+  assert.match(text,/Distinct source addresses1/);
+  assert.match(text,/not authenticated VLESS users/);
+  assert.match(text,/Traffic counters unavailable/);
+  dom.window.close();
+});

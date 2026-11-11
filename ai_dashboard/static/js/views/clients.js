@@ -44,6 +44,7 @@ function clientServiceDetails(service, control = null) {
   const count = service.available && typeof service.active === "number"
     ? `${service.active.toLocaleString("en-US")} ${service.unit}` : "Unavailable";
   details.append(el("summary", `${service.name} · ${count}${service.accept_queue_full === true ? " · accept queue full" : ""}`));
+  if (service.endpoint) details.append(row("Listener", service.endpoint));
   if (service.id === "mtg") details.append(mtgRestartControl(control));
   if (service.accept_queue_full === true) {
     const warning = el("p", "Accept queue full: new proxy connections may fail. MTG may have stopped accepting clients.", "card-note");
