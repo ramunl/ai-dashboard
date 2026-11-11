@@ -600,6 +600,12 @@ status; current zero package counts alone never prove success. Deploy the
 companion Ops last_upgrade status contract first. Reconciliation never runs
 another upgrade.
 
+The active run shows Estimated time left when the coding agent supplies enough
+measured history (five successful runs in the same repository with the same
+provider). It is approximate and covers implementation through CI, not merging
+or deployment. Cold-start history shows Not enough history; overruns show
+Taking longer than usual. Requires the matching coding-agent ETA update.
+
 Connected Clients renders XRay VLESS REALITY when reported by Ops. Its details
 show TCP 10443 and established incoming socket counts, not authenticated users
 or unique devices. XRay traffic counters are unavailable from the socket probe.

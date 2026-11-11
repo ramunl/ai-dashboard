@@ -172,3 +172,20 @@ test("producer activity ages and canonical stages render without timestamp subtr
     assert.equal(rowValue(cardByTitle(p, "Now"), "Last activity"), "no activity update available");
   }
 });
+
+test("finish estimate is approximate, handles overruns and never claims a guaranteed finish", async t => {
+  const p = await page(t, {path:"coding", snapshot:codingSnapshot({progress:progress({
+    finish_estimate:{status:"estimated",remaining_seconds:121,samples:5}
+  })})});
+  let text = p.w.document.body.textContent;
+  assert.match(text,/Estimated time left/);
+  assert.match(text,/About 3m/);
+  assert.match(text,/Task complexity varies/);
+  p.snapshot.progress.finish_estimate = {status:"longer_than_usual",samples:5};
+  await p.refresh();
+  text = p.w.document.body.textContent;
+  assert.match(text,/Taking longer than usual/);
+  p.snapshot.progress.finish_estimate = {status:"insufficient_history",samples:2};
+  await p.refresh();
+  assert.match(p.w.document.body.textContent,/Not enough history/);
+});

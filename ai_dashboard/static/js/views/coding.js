@@ -55,6 +55,21 @@ function progressRows(progress) {
     row("Elapsed", elapsed),
     row("Last activity", activity),
   ];
+  if (!["unknown", "stopping", "ended", "stopped", "done", "deployed"].includes(progress.stage)) {
+    const estimate = progress.finish_estimate;
+    let remaining = "Not enough history";
+    if (estimate && estimate.status === "estimated"
+      && Number.isFinite(estimate.remaining_seconds) && estimate.remaining_seconds > 0
+      && Number.isInteger(estimate.samples) && estimate.samples >= 5) {
+      remaining = `About ${formatDuration(Math.max(60, Math.ceil(estimate.remaining_seconds / 60) * 60))}`;
+    } else if (estimate && estimate.status === "longer_than_usual") {
+      remaining = "Taking longer than usual";
+    }
+    rows.push(row("Estimated time left", remaining));
+    if (estimate && Number.isInteger(estimate.samples) && estimate.samples >= 5) {
+      rows.push(el("p", `Approximate, based on ${estimate.samples} recent successful runs in this repository with this provider. Includes implementation and CI; excludes merging and deployment. Task complexity varies.`, "card-note"));
+    }
+  }
   if (typeof progress.attempt_id === "string" && progress.attempt_id) {
     rows.push(row("Attempt", progress.attempt_id));
   }
