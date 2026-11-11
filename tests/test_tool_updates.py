@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 from aiohttp.test_utils import TestClient, TestServer
 
-from ai_dashboard import server, views
+from ai_dashboard import server, tool_updates, views
 from ai_dashboard.auth import sign_init_data
 from ai_dashboard.config import BotSource, Settings
 from ai_dashboard.tool_updates import ToolService
@@ -122,26 +122,42 @@ class ToolsEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.calls.exists())
 
     async def test_only_checked_tools_can_be_updated(self) -> None:
-        self.assertEqual(await self._post({"action": "update", "tool": "claude"}), 400)
-        self.assertEqual(await self._post({"action": "check"}), 202)
-        self.assertEqual(await self._post({"action": "check"}), 409)
-        await _finished(self.app[server.TOOLS])
-        for body in (
-            {"action": "update", "tool": "left-pad"},
-            {"action": "update", "tool": ["claude"]},
-            {"action": "update", "tool": "claude", "version": "1"},
-            {"action": "update"},
-            {"action": "install", "tool": "claude"},
-            {"action": "check", "tool": "claude"},
-            "check",
-        ):
-            self.assertEqual(await self._post(body), 400, body)
-        self.assertEqual(self.calls.read_text().splitlines(), ["check"])
-        self.assertEqual(await self._post({"action": "update", "tool": "claude"}), 202)
-        state = await (await self.client.get("/api/ops", headers=_auth())).json()
-        self.assertEqual(state["ai_tools"]["running"], "claude")
-        await _finished(self.app[server.TOOLS])
-        self.assertEqual(self.calls.read_text().splitlines()[1], "update claude")
+        release_check = asyncio.Event()
+        release_update = asyncio.Event()
+        invoke = tool_updates.invoke
+
+        async def controlled_tools(command, mode, *args):
+            await (release_check if mode == "check" else release_update).wait()
+            return await invoke(command, mode, *args)
+
+        # HTTP responses may take longer than the fake command on a busy host.
+        with patch.object(tool_updates, "invoke", side_effect=controlled_tools):
+            self.assertEqual(
+                await self._post({"action": "update", "tool": "claude"}), 400
+            )
+            self.assertEqual(await self._post({"action": "check"}), 202)
+            self.assertEqual(await self._post({"action": "check"}), 409)
+            release_check.set()
+            await asyncio.wait_for(asyncio.shield(self.app[server.TOOLS]._task), 5)
+            for body in (
+                {"action": "update", "tool": "left-pad"},
+                {"action": "update", "tool": ["claude"]},
+                {"action": "update", "tool": "claude", "version": "1"},
+                {"action": "update"},
+                {"action": "install", "tool": "claude"},
+                {"action": "check", "tool": "claude"},
+                "check",
+            ):
+                self.assertEqual(await self._post(body), 400, body)
+            self.assertEqual(self.calls.read_text().splitlines(), ["check"])
+            self.assertEqual(
+                await self._post({"action": "update", "tool": "claude"}), 202
+            )
+            state = await (await self.client.get("/api/ops", headers=_auth())).json()
+            self.assertEqual(state["ai_tools"]["running"], "claude")
+            release_update.set()
+            await asyncio.wait_for(asyncio.shield(self.app[server.TOOLS]._task), 5)
+            self.assertEqual(self.calls.read_text().splitlines()[1], "update claude")
 
     async def test_get_cannot_start_a_run(self) -> None:
         response = await self.client.get("/api/ops/tools", headers=_auth())
