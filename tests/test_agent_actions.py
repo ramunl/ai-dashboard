@@ -649,6 +649,24 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(switch.status, 202)
 
+    async def test_current_setup_snapshot_queues_deepseek_planning_only(self) -> None:
+        from tests.test_setup_capabilities import SETUP
+
+        (self.tmp / "snapshot.json").write_text(
+            json.dumps({"format": 2, "updated_at": time.time(), "setup": SETUP})
+        )
+        response = await self.post(
+            {"action": "set_planner", "args": {"value": "deepseek"}}
+        )
+        self.assertEqual(response.status, 202)
+        request_id = (await response.json())["id"]
+        saved = json.loads((self.inbox / f"{request_id}.json").read_text())
+        self.assertEqual(saved["args"], {"value": "deepseek"})
+        response = await self.post(
+            {"action": "set_implementer", "args": {"value": "deepseek"}}
+        )
+        self.assertEqual(response.status, 400)
+
     async def test_malformed_registry_snapshot_keeps_legacy_allowlist(self) -> None:
         snapshot = _registry_snapshot()
         snapshot["registry"]["tools"]["gpt"]["manageable"] = "no"

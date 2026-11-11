@@ -239,12 +239,16 @@ def registry_tools(snapshot: object | None) -> dict[str, dict] | None:
 def capabilities(snapshot: object | None) -> Capabilities | None:
     """Return the DS05 registry's validated allowlists, or None for legacy.
 
-    A missing or malformed registry returns None: the caller uses
-    LEGACY_CAPABILITIES, so an old snapshot keeps today's codex/claude
-    choices and a bad registry can never widen what a request may send.
+    Without a registry, current agents supply role options in setup. Missing
+    or malformed capability data returns None for the codex/claude fallback.
+    A present malformed registry cannot widen what a request may send.
     """
     tools = registry_tools(snapshot)
     if tools is None:
+        # Current agents publish role options in setup rather than DS05 registry.
+        # A present but malformed registry must still fail closed.
+        if isinstance(snapshot, dict) and snapshot.get("registry") is None:
+            return _setup_capabilities(snapshot.get("setup"))
         return None
     registry = snapshot.get("registry")
     roles = _registry_roles(registry.get("roles"), tools)
@@ -257,6 +261,32 @@ def capabilities(snapshot: object | None) -> Capabilities | None:
         switch_tools=switch,
         # Retrying or resuming a task re-runs implementation, so it accepts
         # exactly the tools the implementer role may run.
+        retry_tools=roles["implementer"],
+    )
+
+
+def _setup_capabilities(setup: object) -> Capabilities | None:
+    """Use only bounded role choices from the agent snapshot, never request data."""
+    if not isinstance(setup, dict):
+        return None
+    roles = {}
+    for role in _REGISTRY_ROLES:
+        options = setup.get(f"{role}_options")
+        if (
+            not isinstance(options, list)
+            or not 1 <= len(options) <= 64
+            or any(
+                not isinstance(item, str) or not _REGISTRY_ID.fullmatch(item)
+                for item in options
+            )
+            or setup.get(role) not in options
+        ):
+            return None
+        roles[role] = tuple(dict.fromkeys(options))
+    return Capabilities(
+        planner=roles["planner"],
+        implementer=roles["implementer"],
+        switch_tools=LEGACY_CAPABILITIES.switch_tools,
         retry_tools=roles["implementer"],
     )
 
