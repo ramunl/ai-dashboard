@@ -605,3 +605,8 @@ measured history (five successful runs in the same repository with the same
 provider). It is approximate and covers implementation through CI, not merging
 or deployment. Cold-start history shows Not enough history; overruns show
 Taking longer than usual. Requires the matching coding-agent ETA update.
+
+Connected Clients renders XRay VLESS REALITY when reported by Ops. Its details
+show TCP 10443 and established incoming socket counts, not authenticated users
+or unique devices. XRay traffic counters are unavailable from the socket probe.
+Requires the corresponding Ops collector update (ai-ops-agent PR #23).
