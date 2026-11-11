@@ -459,10 +459,10 @@ function taskRow(task, runProgress) {
   return node;
 }
 
-function taskFilterSwitch(tasks) {
+function taskFilterSwitch(tasks, finished = isTaskFinished) {
   const counts = {
-    active: tasks.filter((task) => !isTaskFinished(task)).length,
-    finished: tasks.filter(isTaskFinished).length,
+    active: tasks.filter((task) => !finished(task)).length,
+    finished: tasks.filter(finished).length,
   };
   const group = el("div", null, "pm-switch task-switch");
   group.setAttribute("role", "group");
@@ -479,12 +479,12 @@ function taskFilterSwitch(tasks) {
 }
 
 function tasksCard(tasks, runProgress) {
-  const shown = tasks.filter((task) => taskFilter === "all"
-    || (taskFilter === "finished") === isTaskFinished(task));
-  // Newest first: the task just made is the one to look at.
-  const rows = [...shown].reverse().map((task) => taskRow(task, runProgress));
+  const items = taskListItems(tasks);
+  const shown = items.filter((item) => taskFilter === "all"
+    || (taskFilter === "finished") === taskItemFinished(item));
+  const rows = [...shown].reverse().map((item) => item.subtasks ? taskGroupRow(item) : taskRow(item.task, runProgress));
   if (!rows.length) rows.push(muted(tasks.length ? "No tasks here." : "No tasks yet. Open a todo in the PM window and tap Make task."));
-  return card("Tasks", taskFilterSwitch(tasks), ...rows);
+  return card("Tasks", taskFilterSwitch(items, taskItemFinished), ...rows);
 }
 
 // Autopilot: the worker plans, approves and runs the task to a pull request.
@@ -502,7 +502,7 @@ function autopilotBox() {
   return label;
 }
 
-function tasksPage(view) {
+function taskPageState(view) {
   const setup = setupOf(view);
   settleActions(setup);
   const snapshot = view.snapshot;
@@ -516,11 +516,17 @@ function tasksPage(view) {
   const runProgress = (snapshot && snapshot.progress) || null;
   const problem = view.problem ? `coding agent ${view.problem}` : "";
   const page = { title: "Tasks", subtitle: "", status: view.problem ? "bad" : "ok", alert: problem || actionNoticeText() };
+  return { setup, snapshot, tasks, runProgress, page };
+}
+
+function tasksPage(view) {
+  const { setup, snapshot, tasks, runProgress, page } = taskPageState(view);
   if (!tasks) {
     return { ...page, nodes: [card("Tasks", muted("Update the coding agent to keep tasks here."))] };
   }
-  const waiting = tasks.filter((task) => ["planned", "proposed"].includes(task.stage)).length;
-  page.subtitle = `${tasks.length} task${tasks.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} need${waiting === 1 ? "s" : ""} you` : ""}`;
+  const items = taskListItems(tasks);
+  const waiting = items.filter(item => (item.subtasks || [item.task]).some(task => ["planned", "proposed"].includes(task.stage))).length;
+  page.subtitle = `${items.length} task${items.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} need${waiting === 1 ? "s" : ""} you` : ""}`;
   if (taskPlanner) page.subtitle += ` · planner ${taskPlanner}`;
   const nodes = taskDraft && setup ? [makeTaskCard(setup), tasksCard(tasks, runProgress)] : [tasksCard(tasks, runProgress)];
   if (snapshot.worker) nodes.push(workerCard(snapshot.worker));

@@ -289,6 +289,13 @@ starts planning it there (switching to that project if nothing is running or
 queued). The agent plans one thing at a time, so a task that cannot start yet
 waits as **To do** with the reason, and has **Start planning** and **Remove**.
 
+Split tasks appear as one card labelled **Split into N parts** in the main
+list. Open it to see every available part in order, with its own status and
+actions; **All tasks** returns to the main list. Counts in this window treat
+a group as one item. Removed or archived parts are shown as unavailable,
+never assumed complete. Existing snapshots work without a parent title;
+updating the coding agent supplies saved or recovered original titles.
+
 The coding agent keeps the list (`tasks` in its snapshot) and moves each task
 by what happens to its plan and branch, whether that was done here or in the
 chat: To do → Planning → Needs approval → Implementing → PR open → Done, or
