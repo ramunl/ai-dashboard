@@ -709,6 +709,12 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ReconcileActionTests(unittest.TestCase):
+    def test_blockage_resolution_accepts_only_a_task_id(self):
+        check({"action": "resolve_task_blockage", "args": {"task": "0a1b2c3d"}})
+        for args in ({}, {"task": "bad"}, {"task": "0a1b2c3d", "run": "78"}):
+            with self.assertRaises(RequestError):
+                check({"action": "resolve_task_blockage", "args": args})
+
     def test_completion_review_accepts_only_a_task_id(self):
         check({"action": "reconcile_task", "args": {"task": "0a1b2c3d"}})
         for args in (
