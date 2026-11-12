@@ -153,8 +153,36 @@ function taskButton(label, key, className, onClick) {
   return button;
 }
 
+function taskAiLabel(selection) {
+  if (!selection || typeof selection !== "object") return "";
+  const labels = { codex: "Codex", claude: "Claude", "claude-code": "Claude Code", deepseek: "DeepSeek" };
+  if (typeof selection.tool !== "string") return "";
+  const tool = labels[selection.tool] || selection.tool;
+  const model = selection.model === "default" ? "CLI default (exact model unknown)" : selection.model || "model not recorded";
+  return `${tool} · ${model}`;
+}
+
+function taskAiInfo(task) {
+  const node = el("div", null, "task-meta task-ai");
+  const ai = task.ai || {};
+  for (const [key, label] of [["split", "Split planned with"], ["planner", "Planned with"], ["implementer", "Implementer"]]) {
+    const text = taskAiLabel(ai[key]);
+    if (text) node.append(el("div", `${label}: ${text}`));
+  }
+  if (!ai.implementer && ["todo", "planning", "planned"].includes(task.stage)) {
+    node.append(el("div", "Implementer: chosen when queued; settings can change before then."));
+  } else if (!ai.implementer) {
+    node.append(el("div", "AI model history not recorded."));
+  }
+  return node;
+}
+
 function taskMeta(task) {
   const parts = [task.repo];
+  if (typeof task.created_at === "number" && Number.isFinite(task.created_at) && task.created_at > 0) {
+    const date = new Date(task.created_at * 1000);
+    if (!Number.isNaN(date.getTime())) parts.push(`Created ${date.toLocaleString()}`);
+  }
   if (task.stage === "planned" && task.plan_revision) {
     parts.push(task.plan_approved ? "approved · confirm to run" : `plan revision ${task.plan_revision}`);
   } else if (task.branch && task.stage !== "todo") {
@@ -466,7 +494,7 @@ function taskRow(task, runProgress) {
   const node = el("article", null, "task");
   const badge = el("span", status.label, "task-status");
   badge.dataset.tone = status.tone;
-  node.append(el("div", task.title, "task-title"), badge, taskMeta(task),
+  node.append(el("div", task.title, "task-title"), badge, taskMeta(task), taskAiInfo(task),
     ...progressNodes, ...taskContext(task),
     ...(task.blockage_resolved === true ? [muted("Blockage resolved: merged PR verified with newer default-branch CI. Original CI history preserved.")] : []),
     ...taskActions(task));
