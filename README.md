@@ -610,3 +610,12 @@ Connected Clients renders XRay VLESS REALITY when reported by Ops. Its details
 show TCP 10443 and established incoming socket counts, not authenticated users
 or unique devices. XRay traffic counters are unavailable from the socket probe.
 Requires the corresponding Ops collector update (ai-ops-agent PR #23).
+
+When an idle task offers **Resolve blockage**, confirm to ask the coding agent
+to verify the merged PR and newer default-branch CI covering its merge commit.
+Only verified evidence restores Done; a refusal stays visible and leaves the
+task blocked. Original CI/recovery history is preserved, other recovery blocks
+stay active, and deployment still needs separate verification. The button is
+shown only when the coding agent advertises `can_resolve_blockage`; update the
+coding agent first. The action starts no AI run and does not deploy or cancel
+GitHub workflows. Normal worker/dependency checks continue after resolution.

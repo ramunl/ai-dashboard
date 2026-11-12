@@ -383,6 +383,18 @@ function taskActions(task) {
     actions.push(taskButton(task.autopilot ? "Autopilot off" : "Autopilot on", key, "row-button work-secondary",
       (button) => { button.disabled = true; requestAction(key, "set_autopilot", { task: task.id, value }); }));
   }
+  if (task.can_resolve_blockage === true) {
+    const key = `task:resolve-blockage:${task.id}`;
+    actions.push(taskButton("Resolve blockage", key, "row-button work-secondary", (button) => {
+      button.disabled = true;
+      const origin = generation;
+      askConfirmation("Verify this PR is merged and newer default-branch CI covers it? If verified, restore Done and clear only this attempt’s blockage. Old CI and recovery history are preserved. No deployment or implementation starts.", (confirmed) => {
+        if (origin !== generation) return;
+        if (confirmed) requestAction(key, "resolve_task_blockage", { task: task.id });
+        else button.disabled = false;
+      });
+    }));
+  }
   if (task.can_reconcile === true) {
     const key = `task:reconcile:${task.id}`;
     actions.push(taskButton("Check merged PR", key, "row-button work-secondary", (button) => {
@@ -455,7 +467,9 @@ function taskRow(task, runProgress) {
   const badge = el("span", status.label, "task-status");
   badge.dataset.tone = status.tone;
   node.append(el("div", task.title, "task-title"), badge, taskMeta(task),
-    ...progressNodes, ...taskContext(task), ...taskActions(task));
+    ...progressNodes, ...taskContext(task),
+    ...(task.blockage_resolved === true ? [muted("Blockage resolved: merged PR verified with newer default-branch CI. Original CI history preserved.")] : []),
+    ...taskActions(task));
   return node;
 }
 
