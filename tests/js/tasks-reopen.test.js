@@ -262,3 +262,29 @@ test("legacy snapshots do not offer completion reconciliation", async t => {
   const p=await page(t,[{...task,stage:"stopped"}]);
   assert.equal(p.button("Check merged PR"),undefined);
 });
+
+test("task cards show creation time and saved AI history separately", async t => {
+  const created = 1794513508;
+  const p = await page(t, [{ ...task, created_at: created, ai: {
+    split: { tool: "codex", model: "gpt-6.1-sol" },
+    planner: { tool: "claude-code", model: "deepseek-v4-pro" },
+    implementer: { tool: "codex", model: "gpt-6.1-terra" },
+  } }]);
+  const text = p.w.document.body.textContent;
+  assert.ok(text.includes(`Created ${new p.w.Date(created * 1000).toLocaleString()}`));
+  assert.ok(text.includes("Split planned with: Codex · gpt-6.1-sol"));
+  assert.ok(text.includes("Planned with: Claude Code · deepseek-v4-pro"));
+  assert.ok(text.includes("Implementer: Codex · gpt-6.1-terra"));
+});
+
+test("missing historical models remain unknown and model text is escaped", async t => {
+  const p = await page(t, [{ ...task, created_at: null, ai: {
+    implementer: { tool: "claude", model: "<img src=x onerror=alert(1)>" },
+  } }]);
+  assert.equal(p.w.document.querySelector(".task-ai img"), null);
+  assert.ok(p.w.document.body.textContent.includes("<img src=x onerror=alert(1)>"));
+  assert.ok(!p.w.document.body.textContent.includes("Created Invalid Date"));
+  p.tasks = [{ ...task }];
+  await p.refresh();
+  assert.ok(p.w.document.body.textContent.includes("AI model history not recorded."));
+});

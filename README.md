@@ -619,3 +619,8 @@ stay active, and deployment still needs separate verification. The button is
 shown only when the coding agent advertises `can_resolve_blockage`; update the
 coding agent first. The action starts no AI run and does not deploy or cancel
 GitHub workflows. Normal worker/dependency checks continue after resolution.
+
+Task cards show creation time in the viewer's local timezone and retained AI selections
+for planning, split planning and implementation. Models missing from older snapshots
+remain unknown. Unstarted tasks explain that the implementer is selected when queued;
+changing Setup does not change a saved or running invocation.
