@@ -31,7 +31,6 @@ from ai_dashboard.saved_checks import SavedChecks
 logger = logging.getLogger(__name__)
 
 CHECK_SECONDS = 300
-MAX_REMEMBERED = 200
 MAX_ANCESTRY_RESULTS = 512
 MAX_GIT_WORKERS = 4
 
@@ -167,7 +166,8 @@ class TaskCloser:
         self.closed: list[str] = [str(item) for item in stored]
 
     def _remember(self, task_id: str) -> None:
-        self.closed = [*self.closed, task_id][-MAX_REMEMBERED:]
+        # Evicting an ID lets its finished task close a manually reopened todo.
+        self.closed = [*self.closed, task_id]
         self.saved.put("tasks", {"closed": self.closed})
 
     async def close_finished(
