@@ -122,6 +122,50 @@ class CloserTests(unittest.IsolatedAsyncioTestCase):
         again = TaskCloser("ai-pm-todos", SavedChecks(self.path), AsyncMock())
         self.assertEqual(again.closed, ["aaaa0001"])  # remembered across restarts
 
+    async def test_reopened_oldest_todo_stays_open_with_201_snapshot_tasks(
+        self,
+    ) -> None:
+        tasks = [
+            {
+                **TASK,
+                "id": f"task-{index}",
+                "repo": "com.randrgames.channelcast",
+                "todo": f"my_ai_agents:t{index}",
+            }
+            for index in range(201)
+        ]
+        self.assertNotIn(tasks[0]["repo"], progress.TARGETS)
+        items = [{"id": f"t{index}", "status": "open"} for index in range(201)]
+        self.workspace["items"] = items
+
+        async def pm(command: str, payload: dict) -> dict:
+            if payload["action"] == "update":
+                item = next(item for item in items if item["id"] == payload["id"])
+                item["status"] = payload["status"]
+            return {"ok": True, "workspace": self.workspace}
+
+        bridge = AsyncMock(side_effect=pm)
+        closer = TaskCloser("ai-pm-todos", SavedChecks(self.path), bridge)
+        self.assertEqual(
+            await closer.close_finished(tasks, {}), [task["id"] for task in tasks]
+        )
+        self.assertTrue(all(item["status"] == "done" for item in items))
+        self.assertEqual(
+            sum(call.args[1]["action"] == "update" for call in bridge.call_args_list),
+            201,
+        )
+
+        # Keep every task in the snapshot: none is eligible to be forgotten.
+        for restarted in (False, True):
+            with self.subTest(restarted=restarted):
+                if restarted:
+                    closer = TaskCloser("ai-pm-todos", SavedChecks(self.path), bridge)
+                items[0]["status"] = "open"
+                bridge.reset_mock()
+                self.assertEqual(await closer.close_finished(tasks, {}), [])
+                bridge.assert_not_called()
+                self.assertEqual(items[0]["status"], "open")
+
     async def test_waits_for_deployment_and_skips_tasks_without_a_todo(self) -> None:
         self.assertEqual(await self.closer.close_finished([TASK], {}), [])
         self.assertEqual(
