@@ -2,7 +2,9 @@
 
 import json
 import os
+import re
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -25,6 +27,7 @@ from ai_dashboard.sources import CODING_SNAPSHOT_FORMATS, read_snapshot
 
 OWNER = 777
 TOKEN = "111:CODING"
+_HEX16 = re.compile(r"^[0-9a-f]{16}$")
 
 
 def _auth(user_id: int = OWNER) -> dict:
@@ -532,6 +535,82 @@ class CheckTests(unittest.TestCase):
             submit(inbox, "create_task", args, "coding", [other])
         self.assertTrue(other.exists())
         self.assertEqual(len(list(inbox.glob("*.json"))), 1)
+
+    def test_concurrent_submissions_reserve_only_one_batch(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        inbox = tmp / "inbox"
+        uploads = inbox / "uploads"
+        existing = [f"{number:016x}" for number in range(3)]
+        for name in existing:
+            (uploads / name).mkdir(parents=True)
+        images = {
+            "a": tmp / "0123456789abcdef.png",
+            "b": tmp / "fedcba9876543210.png",
+        }
+        for image in images.values():
+            image.write_bytes(b"x")
+
+        args = {"repo": "repo", "text": "x", "todo": "-", "images": "id"}
+        start = threading.Barrier(2)
+        reserve = threading.Barrier(2)
+        real_mkdir = Path.mkdir
+        results: dict[str, tuple[str, str]] = {}
+
+        def reserve_folder(self: Path, mode=0o777, parents=False, exist_ok=False):
+            # The capacity check happens before folder.mkdir, so a thread here
+            # has already passed it. Coordinating at the reservation widens the
+            # pre-fix race window; after the fix the second thread is behind
+            # _MOVE_LOCK, so the first proceeds alone after a bounded wait.
+            if self.parent == uploads and _HEX16.match(self.name):
+                try:
+                    reserve.wait(timeout=5)
+                except threading.BrokenBarrierError:
+                    pass
+            return real_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
+
+        def submit_one(tag: str, image: Path) -> None:
+            try:
+                start.wait(timeout=5)
+            except threading.BrokenBarrierError:
+                pass
+            try:
+                request_id = submit(inbox, "create_task", args, "coding", [image])
+                results[tag] = ("ok", request_id)
+            except RequestError as exc:
+                results[tag] = ("error", str(exc))
+
+        with patch.object(Path, "mkdir", reserve_folder):
+            threads = [
+                threading.Thread(target=submit_one, args=(tag, images[tag]))
+                for tag in images
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=15)
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+
+        self.assertEqual(set(results), set(images))
+        accepted = [value for value in results.values() if value[0] == "ok"]
+        refused = [value for value in results.values() if value[0] == "error"]
+        self.assertEqual(len(accepted), 1)
+        self.assertEqual(len(refused), 1)
+        self.assertIn("not taken the last images", refused[0][1])
+
+        unclaimed = [
+            path
+            for path in uploads.iterdir()
+            if path.is_dir() and not (path / ".claimed").exists()
+        ]
+        self.assertEqual(len(unclaimed), 4)
+        for name in existing:
+            self.assertTrue((uploads / name).is_dir())
+        self.assertEqual(len(list(inbox.glob("*.json"))), 1)
+
+        refused_tag = next(tag for tag, value in results.items() if value[0] == "error")
+        accepted_tag = next(tag for tag, value in results.items() if value[0] == "ok")
+        self.assertTrue(images[refused_tag].exists())
+        self.assertFalse(images[accepted_tag].exists())
 
     def test_submit_puts_images_back_when_the_request_fails(self) -> None:
         tmp = Path(tempfile.mkdtemp())
