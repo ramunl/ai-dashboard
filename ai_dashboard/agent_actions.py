@@ -357,8 +357,9 @@ class RequestError(Exception):
     """The request is malformed; the message says what is wrong."""
 
 
-# Held while submit() checks that each staged image is still there and moves
-# it, so two requests for the same ids cannot both pass the check.
+# Held while submit() checks upload capacity, reserves an upload folder, and
+# checks that each staged image is still there before moving it, so two
+# requests cannot both pass the batch budget or take the same staged ids.
 _MOVE_LOCK = threading.Lock()
 
 
@@ -464,9 +465,9 @@ def submit(
     folder = inbox / UPLOADS_DIR / request_id
     moved: list[tuple[Path, Path]] = []
     try:
-        if images:
-            _make_upload_folder(inbox, folder)
         with _MOVE_LOCK:
+            if images:
+                _make_upload_folder(inbox, folder)
             for number, image in enumerate(images, 1):
                 target = folder / f"{number}{image.suffix}"
                 if not image.is_file():
