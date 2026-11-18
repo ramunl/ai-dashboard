@@ -1,6 +1,7 @@
 """Deployed tasks, and their todos ticked off once."""
 
 import asyncio
+import json
 import subprocess
 import tempfile
 import threading
@@ -122,6 +123,37 @@ class CloserTests(unittest.IsolatedAsyncioTestCase):
         again = TaskCloser("ai-pm-todos", SavedChecks(self.path), AsyncMock())
         self.assertEqual(again.closed, ["aaaa0001"])  # remembered across restarts
 
+    async def test_legacy_closed_list_is_preserved_when_appending_and_restarting(
+        self,
+    ) -> None:
+        legacy_ids = ["legacy-0001", "legacy-0002"]
+        self.path.write_text(
+            json.dumps({"tasks": {"closed": legacy_ids}}), encoding="utf-8"
+        )
+        bridge = AsyncMock(return_value={"ok": True, "workspace": self.workspace})
+        closer = TaskCloser("ai-pm-todos", SavedChecks(self.path), bridge)
+        self.assertEqual(closer.closed, legacy_ids)
+
+        self.assertEqual(
+            await closer.close_finished([TASK], {"aaaa0001": 1.0}), ["aaaa0001"]
+        )
+        expected = [*legacy_ids, "aaaa0001"]
+        self.assertEqual(closer.closed, expected)
+        self.assertEqual(
+            json.loads(self.path.read_text(encoding="utf-8")),
+            {"tasks": {"closed": expected}},
+        )
+
+        restarted = TaskCloser("ai-pm-todos", SavedChecks(self.path), bridge)
+        self.assertEqual(restarted.closed, expected)
+        bridge.reset_mock()
+        self.assertEqual(await restarted.close_finished([TASK], {"aaaa0001": 1.0}), [])
+        bridge.assert_not_called()
+        self.assertEqual(
+            json.loads(self.path.read_text(encoding="utf-8")),
+            {"tasks": {"closed": expected}},
+        )
+
     async def test_reopened_oldest_todo_stays_open_with_201_snapshot_tasks(
         self,
     ) -> None:
@@ -183,16 +215,51 @@ class CloserTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual([call["action"] for call in self.calls], ["read"])
 
-    async def test_a_failed_update_is_retried_on_the_next_pass(self) -> None:
-        async def refusing(command: str, payload: dict) -> dict:
-            if payload["action"] == "read":
-                return {"ok": True, "workspace": self.workspace}
-            return {"ok": False, "error": "This list changed."}
+    async def test_failed_reads_and_updates_are_retried_on_the_next_pass(self) -> None:
+        success = {"ok": True, "workspace": self.workspace}
+        failure = {"ok": False, "error": "PM unavailable or list changed."}
+        deployed = {"aaaa0001": 1.0}
+        for action in ("read", "update"):
+            with self.subTest(action=action):
+                saved = SavedChecks(self.path)
+                saved.put("tasks", {"closed": ["previous-task"]})
+                bridge = AsyncMock(
+                    side_effect=[failure] if action == "read" else [success, failure]
+                )
+                closer = TaskCloser("ai-pm-todos", saved, bridge)
+                with self.assertLogs("ai_dashboard.task_progress", "WARNING"):
+                    self.assertEqual(await closer.close_finished([TASK], deployed), [])
+                self.assertEqual(closer.closed, ["previous-task"])
+                self.assertEqual(
+                    json.loads(self.path.read_text(encoding="utf-8")),
+                    {"tasks": {"closed": ["previous-task"]}},
+                )
+                self.assertEqual(
+                    [call.args[1]["action"] for call in bridge.call_args_list],
+                    ["read"] if action == "read" else ["read", "update"],
+                )
 
-        closer = TaskCloser("ai-pm-todos", SavedChecks(self.path), refusing)
-        with self.assertLogs("ai_dashboard.task_progress", "WARNING"):
-            self.assertEqual(await closer.close_finished([TASK], {"aaaa0001": 1.0}), [])
-        self.assertEqual(closer.closed, [])
+                bridge.reset_mock()
+                bridge.side_effect = [success, success]
+                self.assertEqual(
+                    await closer.close_finished([TASK], deployed), ["aaaa0001"]
+                )
+                self.assertEqual(
+                    [call.args[1]["action"] for call in bridge.call_args_list],
+                    ["read", "update"],
+                )
+                expected = ["previous-task", "aaaa0001"]
+                self.assertEqual(closer.closed, expected)
+                self.assertEqual(
+                    json.loads(self.path.read_text(encoding="utf-8")),
+                    {"tasks": {"closed": expected}},
+                )
+                restarted = TaskCloser("ai-pm-todos", SavedChecks(self.path), bridge)
+                self.assertEqual(restarted.closed, expected)
+                bridge.reset_mock()
+                self.assertEqual(await closer.close_finished([TASK], deployed), [])
+                self.assertEqual(await restarted.close_finished([TASK], deployed), [])
+                bridge.assert_not_called()
 
     async def test_loop_reads_tasks_and_deployments_then_closes(self) -> None:
         reads = AsyncMock(return_value=[TASK])
