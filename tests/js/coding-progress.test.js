@@ -81,6 +81,11 @@ function cardByTitle(p, title) {
       && section.querySelector("h2").textContent === title);
 }
 
+function buttonNamed(p, title, label) {
+  return [...cardByTitle(p, title).querySelectorAll("button")]
+    .find(button => button.textContent === label);
+}
+
 // The value of a dom.js row() by its label, or null when the row is absent.
 function rowValue(node, label) {
   const rowNode = [...node.querySelectorAll(".row")]
@@ -188,4 +193,212 @@ test("finish estimate is approximate, handles overruns and never claims a guaran
   p.snapshot.progress.finish_estimate = {status:"insufficient_history",samples:2};
   await p.refresh();
   assert.match(p.w.document.body.textContent,/Not enough history/);
+});
+
+test("Coding starts eligible tasks in its selected project after confirmation", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({ tasks: [
+    task({ id: "11111111", title: "Waiting task", stage: "todo", waiting_for: "First part" }),
+    task({ id: "22222222", title: "Plain task", stage: "blocked" }),
+    task({ id: "33333333", title: "Other project", stage: "todo", repo: "other" }),
+    task({ id: "44444444", title: "Archived task", stage: "stopped", can_reopen: true }),
+    task({ id: "55555555", title: "Active task", stage: "implementing" }),
+  ] }) });
+  const work = cardByTitle(p, "Work");
+  assert.ok(cardByTitle(p, "Setup"));
+  assert.match(work.textContent, /Start a task.*Waiting task.*Plain task/);
+  assert.doesNotMatch(work.textContent, /Other project|Archived task|Active task/);
+
+  const plain = buttonNamed(p, "Work", "Start planning");
+  plain.click();
+  assert.match(p.confirmations[0].message, /Plan "Plain task" in repo with Codex.*AI tokens/);
+  p.confirmations.shift().callback(false);
+  assert.equal(plain.disabled, false);
+  assert.deepEqual(p.posts, []);
+
+  buttonNamed(p, "Work", "Check & start").click();
+  assert.match(p.confirmations[0].message, /Check prerequisites for "Waiting task".*AI tokens.*stays waiting/);
+  assert.deepEqual(p.posts, []);
+  p.confirmations.shift().callback(true);
+  assert.deepEqual(p.posts, [{ action: "start_task", args: { task: "11111111" } }]);
+  await tick();
+});
+
+test("Coding keeps both queues visible and targets their different IDs", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({
+    tasks: [task({ id: "00000007", title: "Ready for planning", stage: "todo", queued: true, repo: "other" })],
+    queue: [{ id: 7, branch: "feature/queued", label: "implementation" }],
+  }) });
+  const work = cardByTitle(p, "Work");
+  assert.match(work.textContent, /Tasks queued to start · 1.*Ready for planning · other/);
+  assert.match(work.textContent, /Implementation queue · 1.*#7 feature\/queued/);
+  assert.equal(buttonNamed(p, "Work", "Start planning"), undefined);
+
+  const remove = buttonNamed(p, "Work", "Remove");
+  remove.click();
+  assert.match(p.confirmations[0].message, /#7 \(feature\/queued\)/);
+  p.confirmations.shift().callback(false);
+  assert.equal(remove.disabled, false);
+  assert.deepEqual(p.posts, []);
+
+  remove.click();
+  p.confirmations.shift().callback(true);
+  assert.deepEqual(p.posts, [{ action: "remove_queued", args: { task: "7" } }]);
+
+  await tick();
+  p.snapshot.setup.actions = [{ id: "request1", status: "done" }];
+  await p.refresh();
+  buttonNamed(p, "Work", "Cancel start").click();
+  assert.deepEqual(p.confirmations, []);
+  assert.deepEqual(p.posts, [
+    { action: "remove_queued", args: { task: "7" } },
+    { action: "cancel_start", args: { task: "00000007" } },
+  ]);
+  await tick();
+});
+
+test("paused and legacy implementation queues have a confirmed resume control", async t => {
+  const queue = [{ id: 7, branch: "feature/queued", label: "implementation" }];
+  for (const [paused, label] of [[true, "Resume queue"], [undefined, "Run the queue"]]) {
+    const p = await page(t, { path: "coding", snapshot: codingSnapshot({
+      running: null, queue, queue_paused: paused,
+    }) });
+    const resume = buttonNamed(p, "Work", label);
+    resume.click();
+    assert.match(p.confirmations[0].message, /1 queued task.*AI tokens/);
+    p.confirmations.shift().callback(false);
+    assert.equal(resume.disabled, false);
+    assert.deepEqual(p.posts, []);
+    resume.click();
+    p.confirmations.shift().callback(true);
+    assert.deepEqual(p.posts, [{ action: "confirm_work", args: {} }]);
+    await tick();
+  }
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({
+    running: null, queue, queue_paused: false,
+  }) });
+  assert.ok(buttonNamed(p, "Work", "Remove"));
+  assert.equal(buttonNamed(p, "Work", "Resume queue"), undefined);
+  assert.equal(buttonNamed(p, "Work", "Run the queue"), undefined);
+
+  p.snapshot.queue_paused = true;
+  p.snapshot.pending_branch = "feature/pending";
+  await p.refresh();
+  assert.ok(buttonNamed(p, "Work", "Confirm and run"));
+  assert.equal(buttonNamed(p, "Work", "Resume queue"), undefined);
+});
+
+const stopToken = "0123456789abcdef".repeat(2);
+const stoppableRun = (over = {}) => ({
+  status: "RUNNING", branch: "feature/x", phase: "implementing",
+  can_stop: true, stop_token: stopToken, ...over,
+});
+
+test("Now confirms the displayed implementation and sends only its stop token", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({ running: stoppableRun() }) });
+  const stop = () => buttonNamed(p, "Now", "Stop implementation");
+  stop().click();
+  assert.match(p.confirmations[0].message, /feature\/x.*Saved work.*queue will pause/);
+  await p.refresh();
+  assert.equal(stop().disabled, true);
+  p.confirmations.shift().callback(false);
+  assert.equal(stop().disabled, false);
+  assert.deepEqual(p.posts, []);
+
+  stop().click();
+  await p.refresh();
+  p.confirmations.shift().callback(true);
+  assert.deepEqual(p.posts, [{ action: "stop_work", args: { token: stopToken } }]);
+  await tick();
+});
+
+test("Now hides Stop when idle or legacy and shows disabled Stopping through recovery", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({ running: null }) });
+  assert.match(cardByTitle(p, "Now").textContent, /Idle/);
+  assert.equal(cardByTitle(p, "Now").querySelector("button"), null);
+  for (const running of [codingSnapshot().running, stoppableRun({ can_stop: false }),
+    stoppableRun({ stop_token: undefined })]) {
+    p.snapshot.running = running;
+    await p.refresh();
+    assert.equal(cardByTitle(p, "Now").querySelector("button"), null);
+  }
+  for (const running of [stoppableRun({ stopping: true }),
+    stoppableRun({ stopping: true, can_stop: false, stop_token: undefined })]) {
+    p.snapshot.running = running;
+    await p.refresh();
+    const stopping = buttonNamed(p, "Now", "Stopping…");
+    assert.equal(stopping.disabled, true);
+    stopping.click();
+    assert.equal(buttonNamed(p, "Now", "Stop implementation"), undefined);
+  }
+  assert.deepEqual(p.confirmations, []);
+  assert.deepEqual(p.posts, []);
+});
+
+test("a Stop confirmation expires after navigation or a superseding snapshot", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({ running: stoppableRun() }) });
+  const stop = () => buttonNamed(p, "Now", "Stop implementation");
+  stop().click();
+  p.w.navigate("coding/projects");
+  await tick();
+  p.w.navigate("coding");
+  await tick();
+  p.confirmations.shift().callback(true);
+  assert.deepEqual(p.posts, []);
+
+  stop().click();
+  p.snapshot.running = stoppableRun({ stop_token: "a".repeat(32) });
+  await p.refresh();
+  p.confirmations.shift().callback(true);
+  assert.deepEqual(p.posts, []);
+  assert.equal(stop().disabled, false);
+
+  stop().click();
+  p.snapshot.running = null;
+  await p.refresh();
+  p.confirmations.shift().callback(true);
+  assert.deepEqual(p.posts, []);
+});
+
+test("Stop waits for a slow POST and reports a missing or rejected agent result", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({ running: stoppableRun() }) });
+  let acknowledge;
+  p.post = () => new Promise(resolve => { acknowledge = resolve; });
+  const stop = buttonNamed(p, "Now", "Stop implementation");
+  stop.click();
+  p.confirmations.shift().callback(true);
+  await p.refresh();
+  const sending = buttonNamed(p, "Now", "Sending…");
+  assert.equal(sending.disabled, true);
+  stop.click();
+  sending.click();
+  assert.equal(p.posts.length, 1);
+  acknowledge({ id: "request1" });
+  await tick();
+  assert.equal(buttonNamed(p, "Now", "Sending…").disabled, true);
+
+  p.w.eval("Date.now = ((now) => () => now() + ACTION_TIMEOUT_MS + 1)(Date.now)");
+  await p.refresh();
+  assert.match(p.w.document.querySelector("#alert").textContent, /No answer from the coding agent/);
+  assert.equal(buttonNamed(p, "Now", "Stop implementation").disabled, false);
+
+  p.post = async () => ({ id: "request2" });
+  buttonNamed(p, "Now", "Stop implementation").click();
+  p.confirmations.shift().callback(true);
+  await tick();
+  p.snapshot.setup.actions = [{ id: "request2", status: "rejected", message: "Implementation ended" }];
+  await p.refresh();
+  assert.match(p.w.document.querySelector("#alert").textContent, /Implementation ended/);
+});
+
+test("Stop reports a POST timeout and restores the control", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({ running: stoppableRun() }) });
+  p.w.eval("setTimeout = ((original) => (callback, ms) => original(callback, ms === FETCH_TIMEOUT_MS ? 0 : ms))(setTimeout)");
+  p.post = ({ signal }) => new Promise((resolve, reject) => {
+    signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+  });
+  buttonNamed(p, "Now", "Stop implementation").click();
+  p.confirmations.shift().callback(true);
+  await tick();
+  assert.match(p.w.document.querySelector("#alert").textContent, /Not sent: no answer within 15 s/);
+  assert.equal(buttonNamed(p, "Now", "Stop implementation").disabled, false);
 });

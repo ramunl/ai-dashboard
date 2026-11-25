@@ -95,14 +95,39 @@ function queuedRow(task) {
 }
 
 function queueRows(snapshot) {
-  const queue = snapshot.queue;
+  const queue = snapshot.queue || [];
   if (!queue.length) return [row("Queue", "empty")];
-  const rows = [el("div", `Queue · ${queue.length}`, "card-subtitle"), ...queue.map(queuedRow)];
-  // Queued tasks with nothing running: left over from a restart.
-  const isStalled = !snapshot.running && !snapshot.pending_plan && !snapshot.pending_branch;
-  if (isStalled) {
-    rows.push(workActions(workButton("Run the queue", "work:confirm", "row-button",
-      (button) => confirmedWork(`Run ${queue.length} queued task(s)? This uses AI tokens.`, "work:confirm", "confirm_work", {}, button))));
+  const paused = snapshot.queue_paused === true;
+  const rows = [el("div", `Implementation queue · ${queue.length}${paused ? " · paused" : ""}`, "card-subtitle"), ...queue.map(queuedRow)];
+  // confirm_work handles pending work first. Legacy snapshots infer a stalled
+  // queue from the absence of a running implementation.
+  const canResume = !snapshot.pending_plan && !snapshot.pending_branch && !snapshot.running
+    && (paused || typeof snapshot.queue_paused !== "boolean");
+  if (canResume) {
+    const label = paused ? "Resume queue" : "Run the queue";
+    const verb = paused ? "Resume" : "Run";
+    rows.push(workActions(workButton(label, "work:confirm", "row-button",
+      (button) => confirmedWork(`${verb} ${queue.length} queued task(s)? This uses AI tokens.`, "work:confirm", "confirm_work", {}, button))));
+  }
+  return rows;
+}
+
+function codingTaskStartRows(snapshot) {
+  const tasks = Array.isArray(snapshot.tasks) ? snapshot.tasks : [];
+  const project = snapshot.project?.name;
+  const startable = project ? tasks.filter((task) => task.repo === project && canStartTask(task)) : [];
+  const queued = tasks.filter(isTaskQueuedToStart);
+  const rows = [];
+  if (startable.length) {
+    const planner = taskPlannerName(codingToolsModel(snapshot), snapshot.setup);
+    rows.push(el("div", "Start a task", "card-subtitle"));
+    for (const task of startable) rows.push(row(task.title, startTaskButton(task, planner)));
+  }
+  if (queued.length) {
+    rows.push(el("div", `Tasks queued to start · ${queued.length}`, "card-subtitle"));
+    for (const task of queued) {
+      rows.push(row(`${task.title} · ${task.repo}`, cancelTaskStartButton(task, "Cancel start")));
+    }
   }
   return rows;
 }
@@ -136,5 +161,6 @@ function workCard(snapshot) {
   // row stands in for the empty form.
   const isNewWork = thinking && !snapshot.pending_plan && !snapshot.awaiting_bugfix_answer;
   const pending = isNewWork ? [] : pendingRows(snapshot);
-  return card("Work", ...workerRows(worker), ...thinkingRows(thinking), ...pending, ...queueRows(snapshot), ...lastRunRows(snapshot.last_execution));
+  return card("Work", ...workerRows(worker), ...thinkingRows(thinking), ...pending,
+    ...codingTaskStartRows(snapshot), ...queueRows(snapshot), ...lastRunRows(snapshot.last_execution));
 }

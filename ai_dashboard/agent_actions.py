@@ -120,6 +120,7 @@ ACTIONS: dict[str, dict] = {
     "confirm_work": {},
     "cancel_pending": {},
     "remove_queued": {"task": _TASK},
+    "stop_work": {"token": re.compile(r"[0-9a-f]{32}\Z")},
     # The only free text the dashboard sends: what to plan, build or fix. It
     # becomes the words after /plan, /implement or /bugfix, nothing else.
     "start_work": {"kind": _KINDS, "text": _TEXT},
