@@ -20,6 +20,7 @@ const TASK_STATUS = {
 const TASK_FILTERS = { active: "Active", finished: "Finished", all: "All" };
 // "PR open" counts as finished here: the agent's part is over, it waits on review.
 const FINISHED_TASK_STAGES = ["pr", "done", "stopped"];
+const STARTABLE_TASK_STAGES = ["todo", "stopped", "blocked", "ops_required"];
 // Context status (CTX09) shown beside each task. The coding agent publishes a
 // v1 "context_status" (health, freshness, evidence_state, observed_at,
 // omission_count, truncation_count, packet_refs, dependency_blockers); a
@@ -137,9 +138,16 @@ function reopenButton(task) {
   });
 }
 
+function taskPlannerName(model, setup) {
+  if (!model || !model.registry) return (setup && setup.planner) || "";
+  const planner = model.roles.planner;
+  const option = planner.options.find((option) => option.value === planner.current);
+  return option ? option.label || planner.current : planner.current;
+}
+
 // " with Codex" (the planner chosen in Setup), or "" when unknown.
-function plannerText() {
-  return taskPlanner ? ` with ${taskPlanner[0].toUpperCase()}${taskPlanner.slice(1)}` : "";
+function plannerText(planner = taskPlanner) {
+  return planner ? ` with ${planner[0].toUpperCase()}${planner.slice(1)}` : "";
 }
 
 function taskButton(label, key, className, onClick) {
@@ -151,6 +159,37 @@ function taskButton(label, key, className, onClick) {
     if (!button.disabled) onClick(button);
   });
   return button;
+}
+
+function isTaskQueuedToStart(task) {
+  return Boolean(task.queued) && STARTABLE_TASK_STAGES.includes(task.stage);
+}
+
+function canStartTask(task) {
+  return !task.queued && STARTABLE_TASK_STAGES.includes(task.stage) && !canReopenTask(task);
+}
+
+function cancelTaskStartButton(task, label = "Don't start") {
+  const key = `task:unqueue:${task.id}`;
+  return taskButton(label, key, "row-button work-secondary", (button) => {
+    button.disabled = true;
+    requestAction(key, "cancel_start", { task: task.id });
+  });
+}
+
+function startTaskButton(task, planner = taskPlanner) {
+  const key = `task:start:${task.id}`;
+  const label = task.waiting_for ? "Check & start" : "Start planning";
+  const question = task.waiting_for
+    ? `Check prerequisites for "${task.title}"? If they pass, start planning in ${task.repo}${plannerText(planner)} (uses AI tokens). If they do not pass, the task stays waiting.`
+    : `Plan "${task.title}" in ${task.repo}${plannerText(planner)}? This uses AI tokens.`;
+  return taskButton(label, key, "row-button", (button) => {
+    button.disabled = true;
+    askConfirmation(question, (isConfirmed) => {
+      if (isConfirmed) requestAction(key, "start_task", { task: task.id });
+      else button.disabled = false;
+    });
+  });
 }
 
 function taskAiLabel(selection) {
@@ -440,27 +479,8 @@ function taskActions(task) {
   if (task.can_retry) {
     actions.push(...retryButtons(task, false));
   }
-  if (task.queued && ["todo", "stopped", "blocked", "ops_required"].includes(task.stage)) {
-    // Already asked to start: the agent starts it as soon as it is free.
-    const key = `task:unqueue:${task.id}`;
-    actions.push(taskButton("Don't start", key, "row-button work-secondary", (button) => {
-      button.disabled = true;
-      requestAction(key, "cancel_start", { task: task.id });
-    }));
-  } else if (["todo", "stopped", "blocked", "ops_required"].includes(task.stage) && !canReopenTask(task)) {
-    const key = `task:start:${task.id}`;
-    const label = task.waiting_for ? "Check & start" : "Start planning";
-    const question = task.waiting_for
-      ? `Check prerequisites for "${task.title}"? If they pass, start planning in ${task.repo}${plannerText()} (uses AI tokens). If they do not pass, the task stays waiting.`
-      : `Plan "${task.title}" in ${task.repo}${plannerText()}? This uses AI tokens.`;
-    actions.push(taskButton(label, key, "row-button", (button) => {
-      button.disabled = true;
-      askConfirmation(question, (isConfirmed) => {
-        if (isConfirmed) requestAction(key, "start_task", { task: task.id });
-        else button.disabled = false;
-      });
-    }));
-  }
+  if (isTaskQueuedToStart(task)) actions.push(cancelTaskStartButton(task));
+  else if (canStartTask(task)) actions.push(startTaskButton(task));
   if (["todo", "stopped", "pr", "done", "blocked", "ops_required"].includes(task.stage)) {
     const key = `task:remove:${task.id}`;
     actions.push(taskButton("Remove", key, "row-button work-secondary", (button) => {
@@ -550,9 +570,7 @@ function taskPageState(view) {
   const snapshot = view.snapshot;
   const model = codingToolsModel(snapshot);
   taskTools = model;
-  taskPlanner = (model && model.registry
-    ? (model.roles.planner.options.find((option) => option.value === model.roles.planner.current) || {}).label || model.roles.planner.current
-    : ((setup && setup.planner) || ""));
+  taskPlanner = taskPlannerName(model, setup);
   taskProgress = { deployed: {}, deployable: [], closed: [], ...(view.task_progress || {}) };
   const tasks = (snapshot && snapshot.tasks) || null;
   const runProgress = (snapshot && snapshot.progress) || null;

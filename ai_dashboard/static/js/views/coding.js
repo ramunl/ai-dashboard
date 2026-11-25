@@ -1,4 +1,44 @@
 // Coding agent window (/coding): current run, setup, work, providers, limits.
+let codingStopAttempt = null;
+
+function codingStopRows(running) {
+  const token = running?.stop_token;
+  const isStopping = running?.stopping === true;
+  if (isStopping || running?.can_stop !== true || typeof token !== "string"
+    || !/^[0-9a-f]{32}$/.test(token)) {
+    codingStopAttempt = null;
+    if (!isStopping) return [];
+    const button = el("button", "Stopping…", "row-button work-secondary");
+    button.type = "button";
+    button.disabled = true;
+    return [workActions(button)];
+  }
+
+  // The token belongs to one provider attempt. Keep its dialog across polls
+  // for that attempt and retire it as soon as the capability changes.
+  if (codingStopAttempt?.token !== token || codingStopAttempt.generation !== generation) {
+    codingStopAttempt = { token, generation, confirming: false, button: null };
+  }
+  const attempt = codingStopAttempt;
+  const key = `work:stop:${token}`;
+  const isCurrent = () => attempt === codingStopAttempt && attempt.generation === generation;
+  const button = taskButton("Stop implementation", key, "row-button work-secondary", () => {
+    if (!isCurrent() || attempt.confirming || hasPendingActions()) return;
+    attempt.confirming = true;
+    attempt.button.disabled = true;
+    askConfirmation(`Stop implementation on "${running.branch}"? Saved work will be preserved and any remaining implementation queue will pause.`, (confirmed) => {
+      if (!isCurrent() || !attempt.confirming) return;
+      attempt.confirming = false;
+      const busy = hasPendingActions();
+      attempt.button.disabled = confirmed || busy;
+      if (confirmed && !busy) requestAction(key, "stop_work", { token });
+    });
+  });
+  attempt.button = button;
+  if (attempt.confirming) button.disabled = true;
+  return [workActions(button)];
+}
+
 function runningRows(running) {
   if (!running) return [muted("Idle")];
   return [
@@ -130,9 +170,10 @@ function runOutcomeCard(outcome) {
 }
 
 function codingCards(snapshot) {
+  const stop = codingStopRows(snapshot?.running);
   if (!snapshot) return [card("Coding agent", muted("No data from the agent yet."))];
   return [
-    card("Now", ...runningRows(snapshot.running), ...progressRows(snapshot.progress)),
+    card("Now", ...runningRows(snapshot.running), ...progressRows(snapshot.progress), ...stop),
     setupCard(snapshot.setup || null, snapshot),
     workCard(snapshot),
     ...runOutcomeCard(snapshot.last_run_outcome),
