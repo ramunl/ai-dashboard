@@ -176,6 +176,8 @@ function codingCards(snapshot) {
     card("Now", ...runningRows(snapshot.running), ...progressRows(snapshot.progress), ...stop),
     setupCard(snapshot.setup || null, snapshot),
     workCard(snapshot),
+    ...(snapshot.merge_conflict && typeof snapshot.merge_conflict === "object"
+      ? [card("Merge conflicts", ...mergeConflictRows(snapshot))] : []),
     ...runOutcomeCard(snapshot.last_run_outcome),
     ...contextCards(snapshot),
     card(

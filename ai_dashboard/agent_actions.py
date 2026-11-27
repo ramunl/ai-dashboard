@@ -116,6 +116,11 @@ ACTIONS: dict[str, dict] = {
     "switch_model": {"tool": ("claude", "codex"), "model": _MODEL},
     # Work on plans and the queue: the agent runs its own /approve, /confirm
     # and /cancel handlers and answers in the bot chat.
+    "fix_merge_conflicts": {
+        "url": re.compile(
+            r"https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/pull/[1-9][0-9]*\Z"
+        )
+    },
     "approve_plan": {},
     "confirm_work": {},
     "cancel_pending": {},
