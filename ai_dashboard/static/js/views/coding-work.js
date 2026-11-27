@@ -164,3 +164,42 @@ function workCard(snapshot) {
   return card("Work", ...workerRows(worker), ...thinkingRows(thinking), ...pending,
     ...codingTaskStartRows(snapshot), ...queueRows(snapshot), ...lastRunRows(snapshot.last_execution));
 }
+
+
+const mergeConflictDrafts = new Map();
+
+function mergeConflictRows(snapshot) {
+  const project = snapshot.project?.name || "";
+  const input = el("input", null, "setup-input");
+  input.type = "url";
+  input.value = mergeConflictDrafts.get(project) || "";
+  input.placeholder = "https://github.com/owner/repo/pull/123";
+  input.setAttribute("aria-label", "Pull request URL to resolve");
+  const button = workButton("Solve conflicts", "work:fixmerge", "row-button", (button) => {
+    const url = input.value.trim();
+    if (!/^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\/pull\/[1-9][0-9]*$/.test(url)) {
+      input.setCustomValidity("Enter a GitHub pull request URL.");
+      input.reportValidity();
+      return;
+    }
+    input.setCustomValidity("");
+    confirmedWork("Resolve conflicts for this PR? This uses AI tokens and pushes a merge commit to its branch.",
+      "work:fixmerge", "fix_merge_conflicts", { url }, button);
+  });
+  input.addEventListener("input", () => {
+    input.setCustomValidity("");
+    mergeConflictDrafts.set(project, input.value);
+  });
+  button.disabled = button.disabled || Boolean(snapshot.running) || Boolean(snapshot.queue?.length)
+    || Boolean(snapshot.pending_plan) || Boolean(snapshot.pending_branch)
+    || snapshot.awaiting_bugfix_answer === true;
+  const result = snapshot.merge_conflict;
+  const rows = [el("div", "Fix merge conflicts", "card-subtitle"),
+    el("div", "Use an open PR in the selected project. Fork PRs are unsupported.", "card-note"),
+    workActions(input, button)];
+  if (result && result.status) {
+    rows.push(row("Conflict fix", result.status));
+    if (result.message) rows.push(el("div", result.message, "card-note"));
+  }
+  return rows;
+}

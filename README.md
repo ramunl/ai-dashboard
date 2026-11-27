@@ -624,3 +624,16 @@ Task cards show creation time in the viewer's local timezone and retained AI sel
 for planning, split planning and implementation. Models missing from older snapshots
 remain unknown. Unstarted tasks explain that the implementer is selected when queued;
 changing Setup does not change a saved or running invocation.
+
+### Resolve a PR's merge conflicts
+
+In **Coding → Merge conflicts**, paste an open GitHub PR URL for the selected
+project, then choose **Solve conflicts** and confirm token usage and the branch
+update. The coding agent resolves in isolation, runs checks and pushes a merge
+commit to the existing PR branch. It does not merge the PR into the base branch.
+Fork PRs are unsupported. Progress and the final result appear in Coding and
+Telegram; failed checks or moved PR refs prevent publication.
+
+Deploy the updated coding agent first. This card appears only when its snapshot
+includes `merge_conflict`; older agents remain usable without the new control.
+The dashboard sends the mirrored `fix_merge_conflicts` inbox action with a `url`.

@@ -402,3 +402,49 @@ test("Stop reports a POST timeout and restores the control", async t => {
   assert.match(p.w.document.querySelector("#alert").textContent, /Not sent: no answer within 15 s/);
   assert.equal(buttonNamed(p, "Now", "Stop implementation").disabled, false);
 });
+
+test("merge conflict control confirms once and submits the PR URL", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({ running: null, merge_conflict: {} }) });
+  const section = cardByTitle(p, "Merge conflicts");
+  assert.ok(section);
+  const input = section.querySelector("input");
+  input.value = "https://github.com/owner/repo/pull/42";
+  input.dispatchEvent(new p.w.Event("input"));
+  const button = [...section.querySelectorAll("button")].find(b => b.textContent === "Solve conflicts");
+  button.click();
+  assert.equal(p.posts.length, 0);
+  assert.equal(p.confirmations.length, 1);
+  assert.match(p.confirmations[0].message, /AI tokens.*merge commit/);
+  p.confirmations[0].callback(true);
+  button.click();
+  await tick();
+  assert.equal(p.posts.length, 1);
+  assert.equal(p.posts[0].action, "fix_merge_conflicts");
+  assert.equal(p.posts[0].args.url, input.value);
+});
+
+test("merge conflict control rejects invalid URLs and preserves draft on refresh", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({ running: null, merge_conflict: {} }) });
+  let section = cardByTitle(p, "Merge conflicts");
+  const input = section.querySelector("input");
+  input.value = "https://example.com/pull/1";
+  input.dispatchEvent(new p.w.Event("input"));
+  section.querySelector("button").click();
+  assert.equal(p.confirmations.length, 0);
+  assert.equal(p.posts.length, 0);
+  assert.ok(input.validationMessage);
+  await p.refresh();
+  section = cardByTitle(p, "Merge conflicts");
+  assert.equal(section.querySelector("input").value, input.value);
+});
+
+test("merge conflict control waits for running work and renders results as text", async t => {
+  const p = await page(t, { path: "coding", snapshot: codingSnapshot({
+    merge_conflict: { status: "failed", message: "<img src=x onerror=alert(1)>" },
+  }) });
+  const section = cardByTitle(p, "Merge conflicts");
+  assert.equal(section.querySelector("button").disabled, true);
+  assert.match(section.textContent, /failed/);
+  assert.match(section.textContent, /<img/);
+  assert.equal(section.querySelector("img"), null);
+});

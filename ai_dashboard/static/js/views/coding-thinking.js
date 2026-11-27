@@ -3,6 +3,7 @@
 // publishes this as snapshot.thinking only while the AI call runs.
 
 const THINKING_LABELS = {
+  fixmerge: "Resolving merge conflicts",
   plan: "Planning",
   implement: "Planning",
   revise: "Revising the plan",
