@@ -145,6 +145,7 @@ ACTIONS: dict[str, dict] = {
     "start_task": {"task": _TASK_ID},
     # Archive the finished attempt and return to To do for fresh planning.
     "reopen_task": {"task": _TASK_ID},
+    "fix_task_conflicts": {"task": _TASK_ID},
     "reconcile_task": {"task": _TASK_ID},
     "resolve_task_blockage": {"task": _TASK_ID},
     "cancel_start": {"task": _TASK_ID},
