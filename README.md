@@ -637,3 +637,10 @@ Telegram; failed checks or moved PR refs prevent publication.
 Deploy the updated coding agent first. This card appears only when its snapshot
 includes `merge_conflict`; older agents remain usable without the new control.
 The dashboard sends the mirrored `fix_merge_conflicts` inbox action with a `url`.
+
+Tasks at **PR open** also offer **Solve conflicts** beside their other actions,
+including on the Subtasks page. The confirmation shows the saved PR URL and
+repository. Only the task ID is sent; the agent selects the task's repository
+and reads its stored PR URL. Progress and results appear on the matching task.
+The button requires the agent's `can_fix_conflicts` task capability and is hidden
+on older snapshots. Deploy the agent update before the dashboard update.

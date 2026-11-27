@@ -58,6 +58,8 @@ const CONTEXT_DEPENDENCY_BLOCKERS = {
   dependency_recovery_pending: "Prerequisite recovery pending",
 };
 
+let taskConflictFix = null;
+let taskConflictBusy = false;
 let taskFilter = "active";
 let taskPlanner = "";  // who plans: the registry label or the legacy codex/claude value
 let taskTools = null;  // the normalized DS05/legacy tools model from the snapshot
@@ -417,6 +419,22 @@ function proposalActions(task) {
   return nodes;
 }
 
+function taskConflictButton(task) {
+  const key = `task:fix-conflicts:${task.id}`;
+  const running = taskConflictFix?.task_id === task.id && taskConflictFix.status === "running";
+  const button = taskButton(running ? "Resolving…" : "Solve conflicts", key, "row-button", (button) => {
+    button.disabled = true;
+    const origin = generation;
+    askConfirmation(`Resolve conflicts for "${task.title}" in ${task.repo}? Uses AI tokens and pushes a merge commit to its existing PR branch.\n${task.pr_url}`, (confirmed) => {
+      if (origin !== generation) return;
+      if (confirmed) requestAction(key, "fix_task_conflicts", { task: task.id });
+      else button.disabled = hasPendingActions() || taskConflictBusy;
+    });
+  });
+  button.disabled = button.disabled || taskConflictBusy || running;
+  return button;
+}
+
 function taskActions(task) {
   if (task.stage === "proposed") return proposalActions(task);
   const actions = [];
@@ -472,6 +490,9 @@ function taskActions(task) {
       });
     }));
   }
+  if (task.stage === "pr" && task.can_fix_conflicts === true && task.pr_url) {
+    actions.push(taskConflictButton(task));
+  }
   if (canReopenTask(task)) actions.push(reopenButton(task));
   if (task.can_resume === true) {
     actions.push(...retryButtons(task, true));
@@ -492,6 +513,10 @@ function taskActions(task) {
     }));
   }
   const notes = [];
+  if (taskConflictFix?.task_id === task.id && taskConflictFix.status) {
+    notes.push(el("div", `Conflict fix: ${taskConflictFix.status}`, "card-note"));
+    if (taskConflictFix.message) notes.push(el("div", taskConflictFix.message, "card-note"));
+  }
   if (task.can_resume === true && typeof task.resume_summary === "string" && task.resume_summary) {
     notes.push(el("div", task.resume_summary, "card-note"));
   } else if (task.can_retry) {
@@ -568,6 +593,11 @@ function taskPageState(view) {
   const setup = setupOf(view);
   settleActions(setup);
   const snapshot = view.snapshot;
+  taskConflictFix = snapshot?.merge_conflict || null;
+  taskConflictBusy = Boolean(snapshot?.thinking || snapshot?.running || snapshot?.queue?.length
+    || snapshot?.pending_plan || snapshot?.pending_branch || snapshot?.awaiting_bugfix_answer
+    || (snapshot?.worker?.enabled && snapshot.worker.current_phase === "planning")
+    || taskConflictFix?.status === "running");
   const model = codingToolsModel(snapshot);
   taskTools = model;
   taskPlanner = taskPlannerName(model, setup);
